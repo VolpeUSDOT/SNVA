@@ -1,6 +1,5 @@
 # TF-WRAPPER
 #### Using Tensorflow & Inception to Detect Features in Video
-## Version 2.0.2
 
 An automation "wrapper" based on TF-SLIM to make it easy to detect various features in video using Tensorflow, FFMPEG, and various versions of the Inception neural network.
 
