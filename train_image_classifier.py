@@ -20,7 +20,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from tensorflow.python.ops import control_flow_ops
 from datasets import dataset_factory
 from deployment import model_deploy
 from nets import nets_factory
@@ -49,11 +48,11 @@ tf.app.flags.DEFINE_integer(
     'are handled locally by the worker.')
 
 tf.app.flags.DEFINE_integer(
-    'num_readers', 8,
+    'num_readers', 4,
     'The number of parallel readers that read data from the dataset.')
 
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 8,
+    'num_preprocessing_threads', 4,
     'The number of threads used to create the batches.')
 
 tf.app.flags.DEFINE_integer(
@@ -313,14 +312,6 @@ def _configure_optimizer(learning_rate):
   return optimizer
 
 
-def _add_variables_summaries(learning_rate):
-  summaries = []
-  for variable in slim.get_model_variables():
-    summaries.append(tf.summary.histogram(variable.op.name, variable))
-  summaries.append(tf.summary.scalar('training/Learning Rate', learning_rate))
-  return summaries
-
-
 def _get_init_fn():
   """Returns a function run by the chief worker to warm-start the training.
 
@@ -469,12 +460,12 @@ def main(_):
       # Specify the loss function #
       #############################
       if 'AuxLogits' in end_points:
-        tf.losses.softmax_cross_entropy(
-            logits=end_points['AuxLogits'], onehot_labels=labels,
-            label_smoothing=FLAGS.label_smoothing, weights=0.4, scope='aux_loss')
-      tf.losses.softmax_cross_entropy(
-          logits=logits, onehot_labels=labels,
-          label_smoothing=FLAGS.label_smoothing, weights=1.0)
+        slim.losses.softmax_cross_entropy(
+            end_points['AuxLogits'], labels,
+            label_smoothing=FLAGS.label_smoothing, weights=0.4,
+            scope='aux_loss')
+      slim.losses.softmax_cross_entropy(
+          logits, labels, label_smoothing=FLAGS.label_smoothing, weights=1.0)
       return end_points
 
     # Gather initial summaries.
@@ -526,10 +517,9 @@ def main(_):
       optimizer = tf.train.SyncReplicasOptimizer(
           opt=optimizer,
           replicas_to_aggregate=FLAGS.replicas_to_aggregate,
+          total_num_replicas=FLAGS.worker_replicas,
           variable_averages=variable_averages,
-          variables_to_average=moving_average_variables,
-          replica_id=tf.constant(FLAGS.task, tf.int32, shape=()),
-          total_num_replicas=FLAGS.worker_replicas)
+          variables_to_average=moving_average_variables)
     elif FLAGS.moving_average_decay:
       # Update ops executed locally by trainer.
       update_ops.append(variable_averages.apply(moving_average_variables))
@@ -551,8 +541,8 @@ def main(_):
     update_ops.append(grad_updates)
 
     update_op = tf.group(*update_ops)
-    train_tensor = control_flow_ops.with_dependencies([update_op], total_loss,
-                                                      name='train_op')
+    with tf.control_dependencies([update_op]):
+      train_tensor = tf.identity(total_loss, name='train_op')
 
     # Add the summaries from the first clone. These contain the summaries
     # created by model_fn and either optimize_clones() or _gather_clone_loss().
