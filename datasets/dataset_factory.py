@@ -20,10 +20,12 @@ from __future__ import print_function
 
 from datasets import construction
 from datasets import railroad
+from datasets import washington_street
 
 datasets_map = {
     'construction': construction,
     'railroad': railroad,
+    'washington_street': washington_street
 }
 
 
