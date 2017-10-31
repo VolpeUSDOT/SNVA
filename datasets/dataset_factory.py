@@ -18,18 +18,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from datasets import construction
-from datasets import railroad
-from datasets import washington_street
+from datasets import dataset
 
-datasets_map = {
-    'construction': construction,
-    'railroad': railroad,
-    'washington_street': washington_street
-}
+known_datasets = ['construction', 'railroad', 'washington_street']
 
 
-def get_dataset(name, split_name, dataset_dir, file_pattern=None, reader=None):
+def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader=None):
   """Given a dataset name and a split_name returns a Dataset.
 
   Args:
@@ -46,10 +40,11 @@ def get_dataset(name, split_name, dataset_dir, file_pattern=None, reader=None):
   Raises:
     ValueError: If the dataset `name` is unknown.
   """
-  if name not in datasets_map:
-    raise ValueError('Name of dataset unknown %s' % name)
-  return datasets_map[name].get_split(
-      split_name,
-      dataset_dir,
-      file_pattern,
-      reader)
+  if dataset_name not in known_datasets:
+    raise ValueError('Name of dataset unknown %s' % dataset_name)
+  return dataset.get_split(
+    dataset_name,
+    split_name,
+    dataset_dir,
+    file_pattern,
+    reader)

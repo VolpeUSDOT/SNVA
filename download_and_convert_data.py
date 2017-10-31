@@ -35,43 +35,51 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-
-from datasets import download_and_convert_construction
-from datasets import download_and_convert_railroad
+from datasets import dataset
 
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string(
-    'dataset_name',
-    None,
-    'The name of the dataset to convert, one of "cifar10", "construction", "railroad", "mnist".')
+  'dataset_name',
+  None,
+  'The name of the dataset to convert, one of "cifar10", "construction", "railroad", "mnist".')
 
 tf.app.flags.DEFINE_string(
-    'dataset_dir',
-    None,
-    'The directory where the output TFRecords and temporary files are saved.')
+  'dataset_dir',
+  None,
+  'The directory where the output TFRecords and temporary files are saved.')
+
+tf.app.flags.DEFINE_integer(
+  'batch_size',
+  32,
+  'The name of the dataset to convert, one of "cifar10", "construction", "railroad", "mnist".')
+
+tf.app.flags.DEFINE_float(
+  'validation_ratio',
+  0.3,
+  'The percentage of the total number of samples to be used for validation')
+
+tf.app.flags.DEFINE_integer(
+  'random_seed',
+  1,
+  'The random seed used to instantiate the pseudo-random number generator '
+  'that shuffles the samples before creating TFRecord shards')
+
+_DATASET_NAMES = ['cifar10', 'flowers', 'mnist', 'construction', 'railroad', 'washington_street']
 
 
 def main(_):
   if not FLAGS.dataset_name:
-    raise ValueError('You must supply the dataset name with --dataset_name')
+    raise ValueError('You must specify the dataset name using --dataset_name')
   if not FLAGS.dataset_dir:
-    raise ValueError('You must supply the dataset directory with --dataset_dir')
+    raise ValueError('You must specify the dataset directory using --dataset_dir')
 
-  if FLAGS.dataset_name == 'cifar10':
-    download_and_convert_cifar10.run(FLAGS.dataset_dir)
-  elif FLAGS.dataset_name == 'flowers':
-    download_and_convert_flowers.run(FLAGS.dataset_dir)
-  elif FLAGS.dataset_name == 'construction':
-    download_and_convert_construction.run(FLAGS.dataset_dir)
-  elif FLAGS.dataset_name == 'railroad':
-    download_and_convert_railroad.run(FLAGS.dataset_dir)
-  elif FLAGS.dataset_name == 'mnist':
-    download_and_convert_mnist.run(FLAGS.dataset_dir)
+  if FLAGS.dataset_name in _DATASET_NAMES:
+    dataset.convert(FLAGS.dataset_dir, FLAGS.dataset_name, FLAGS.batch_size, FLAGS.validation_ratio, FLAGS.random_seed)
   else:
     raise ValueError(
-        'dataset_name [%s] was not recognized.' % FLAGS.dataset_dir)
+      'dataset_name [%s] was not recognized.' % FLAGS.dataset_dir)
+
 
 if __name__ == '__main__':
   tf.app.run()
-
