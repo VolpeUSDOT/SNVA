@@ -65,7 +65,7 @@ def densenet_bc(inputs,
                 is_training=True,
                 growth_rate=12,
                 drop_rate=0,
-                depth=100,
+                depth=28,
                 for_imagenet=True,
                 reuse=None,
                 scope=None):
