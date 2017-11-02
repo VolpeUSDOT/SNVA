@@ -185,7 +185,7 @@ def read_split_file(tfrecords_dir, filename=SPLITS_FILENAME):
   splits_to_sizes = {}
   for line in lines:
     index = line.index(':')
-    splits_to_sizes[int(line[:index])] = line[index + 1:]
+    splits_to_sizes[line[:index]] = int(line[index + 1:])
   return splits_to_sizes
 
 
@@ -236,5 +236,5 @@ def read_description_file(tfrecords_dir, filename=DESCRIPTIONS_FILENAME):
   items_to_descriptions = {}
   for line in lines:
     index = line.index(':')
-    items_to_descriptions[int(line[:index])] = line[index + 1:]
+    items_to_descriptions[line[:index]] = line[index + 1:]
   return items_to_descriptions
