@@ -1,5 +1,6 @@
 import tensorflow as tf
 import sys
+import os
 from tensorflow.contrib import slim
 
 from nets import mobilenet_v1
@@ -8,7 +9,7 @@ from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_infe
 from preprocessing import inception_preprocessing
 
 checkpoints_dir = sys.argv[1]
-OUTPUT_PB_FILENAME = sys.argv[2]
+OUTPUT_PB_FILEPATH = sys.argv[2]
 NUM_CLASSES = 2
 
 # We need default size of image for a particular network.
@@ -67,4 +68,6 @@ with tf.Graph().as_default():
                                                           ["MobilenetV1/Predictions/Reshape_1"],
                                                           tf.string.as_datatype_enum)
         # Write the production ready graph to file.
-        tf.train.write_graph(optimized_constant_graph, '.', OUTPUT_PB_FILENAME, as_text=False)
+
+        dir_name, base_name = os.path.split(OUTPUT_PB_FILEPATH)
+        tf.train.write_graph(optimized_constant_graph, dir_name, base_name, as_text=False)
