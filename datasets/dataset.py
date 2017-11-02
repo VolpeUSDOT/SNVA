@@ -185,9 +185,12 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
   dataset_dir = os.path.join(datasets_root_dir, dataset_name)
   tfrecords_dir = os.path.join(dataset_dir, 'tfrecords')
 
-  splits_to_sizes = None
-  if dataset_utils.has_splits(tfrecords_dir):
-    splits_to_sizes = dataset_utils.read_split_file(tfrecords_dir)
+  splits_filename = dataset_name + '_splits.txt'
+
+  if dataset_utils.has_splits(tfrecords_dir, splits_filename):
+    splits_to_sizes = dataset_utils.read_split_file(tfrecords_dir, splits_filename)
+  else:
+    raise ValueError(os.path.join(tfrecords_dir, splits_filename) + ' does not exist')
 
   if split_name not in splits_to_sizes:
     raise ValueError('split name %s was not recognized.' % split_name)
@@ -282,17 +285,17 @@ def convert(datasets_root_dir, dataset_name, batch_size, validation_ratio, rando
                      tfrecords_dir, batch_size, splits_to_shards[split_name])
 
   # Then, write the labels file:
-  labels_filename = dataset_name + '-labels.txt'
+  labels_filename = dataset_name + '_labels.txt'
   labels_to_class_names = {ndx: class_name for (ndx, class_name) in enumerate(class_names)}
   dataset_utils.write_label_file(labels_to_class_names, tfrecords_dir, labels_filename)
 
   # Then, write the splits file:
-  splits_filename = dataset_name + '-splits.txt'
+  splits_filename = dataset_name + '_splits.txt'
   splits_to_sizes = {'train': num_training_samples, 'validation': num_validation_samples}
   dataset_utils.write_split_file(splits_to_sizes, tfrecords_dir, splits_filename)
 
   # Finally, write the descriptions file:
-  descriptions_filename = dataset_name + '-descriptions.txt'
+  descriptions_filename = dataset_name + '_descriptions.txt'
   items_to_descriptions = {'image': 'A color image of varying size.', 'label': 'A single integer between 0 and 1'}
   dataset_utils.write_description_file(items_to_descriptions, tfrecords_dir, descriptions_filename)
 
