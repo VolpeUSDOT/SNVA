@@ -24,6 +24,7 @@ import tensorflow as tf
 from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
+from tensorflow.contrib import metrics
 
 slim = tf.contrib.slim
 
@@ -152,9 +153,13 @@ def main(_):
 
     # Define the metrics:
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
-        'Accuracy': slim.metrics.streaming_accuracy(predictions, labels),
-        'Recall_5': slim.metrics.streaming_recall_at_k(
-            logits, labels, 5),
+        'Accuracy': metrics.streaming_accuracy(predictions, labels),
+        'Precision': metrics.streaming_precision(predictions, labels),
+        'Recall': metrics.streaming_recall(predictions, labels),
+        'True Positives': metrics.streaming_true_positives(predictions, labels),
+        'False Positives': metrics.streaming_false_positives(predictions, labels),
+        'True Negatives': metrics.streaming_true_negatives(predictions, labels),
+        'False Negatives': metrics.streaming_false_negatives(predictions, labels)
     })
 
     # Print the summaries to screen.
