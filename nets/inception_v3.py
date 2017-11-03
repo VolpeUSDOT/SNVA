@@ -515,7 +515,9 @@ def inception_v3(inputs,
         net = slim.avg_pool2d(net, kernel_size, padding='VALID',
                               scope='AvgPool_1a_{}x{}'.format(*kernel_size))
         # 1 x 1 x 2048
-        net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
+        if is_training:
+          net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
+
         end_points['PreLogits'] = net
         # 2048
         logits = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
