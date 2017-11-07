@@ -80,6 +80,10 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_integer(
     'eval_image_size', None, 'Eval image size')
 
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 1.0,
+    'The ratio of total memory across all available GPUs to use with this process.')
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -209,7 +213,7 @@ def main(_):
 
       session_config = tf.ConfigProto()
 
-      session_config.gpu_options.per_process_gpu_memory_fraction = 0.4
+      session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
       slim.evaluation.evaluate_once(
           master=FLAGS.master,
