@@ -157,10 +157,10 @@ def main(_):
           'Accuracy': metrics.streaming_accuracy(predictions, labels),
           'Precision': metrics.streaming_precision(predictions, labels),
           'Recall': metrics.streaming_recall(predictions, labels),
-          'True Positives': metrics.streaming_true_positives(predictions, labels),
-          'False Positives': metrics.streaming_false_positives(predictions, labels),
-          'True Negatives': metrics.streaming_true_negatives(predictions, labels),
-          'False Negatives': metrics.streaming_false_negatives(predictions, labels)
+          'True_Positives': metrics.streaming_true_positives(predictions, labels),
+          'False_Positives': metrics.streaming_false_positives(predictions, labels),
+          'True_Negatives': metrics.streaming_true_negatives(predictions, labels),
+          'False_Negatives': metrics.streaming_false_negatives(predictions, labels)
       })
 
       # Print the summaries to screen.
@@ -169,6 +169,29 @@ def main(_):
         op = tf.summary.scalar(summary_name, value, collections=[])
         op = tf.Print(op, [value], summary_name)
         tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+
+      # Also print summaries for imbalanced dataset aggregate metrics
+      summary_name = 'eval/Sum_of_True_Positives_and_Negatives'
+      stpn_value = tf.add(names_to_values['True_Positives'],
+                          names_to_values['True_Negatives'])
+      stpn_op = tf.summary.scalar(summary_name, stpn_value, collections=[])
+      stpn_op = tf.Print(stpn_op, [stpn_value], summary_name)
+      tf.add_to_collection(tf.GraphKeys.SUMMARIES, stpn_op)
+
+      summary_name = 'eval/Sum_of_False_Positives_and_Negatives'
+      stfn_value = tf.add(names_to_values['False_Positives'],
+                          names_to_values['False_Negatives'])
+      stfn_op = tf.summary.scalar(summary_name, stfn_value, collections=[])
+      stfn_op = tf.Print(stfn_op, [stfn_value], summary_name)
+      tf.add_to_collection(tf.GraphKeys.SUMMARIES, stfn_op)
+
+      summary_name = 'eval/Average_of_Accuracy_Precision_and_Recall'
+      aapr_value = tf.reduce_mean([names_to_values['Accuracy'],
+                                   names_to_values['Precision'],
+                                   names_to_values['Recall']])
+      aapr_op = tf.summary.scalar(summary_name, aapr_value, collections=[])
+      aapr_op = tf.Print(aapr_op, [aapr_value], summary_name)
+      tf.add_to_collection(tf.GraphKeys.SUMMARIES, aapr_op)
 
       # TODO(sguada) use num_epochs=1
       if FLAGS.max_num_batches:
