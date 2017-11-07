@@ -326,8 +326,11 @@ def mobilenet_v1(inputs,
         net = slim.avg_pool2d(net, kernel_size, padding='VALID',
                               scope='AvgPool_1a')
         end_points['AvgPool_1a'] = net
+
         # 1 x 1 x 1024
-        net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
+        if is_training:
+          net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
+
         logits = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
                              normalizer_fn=None, scope='Conv2d_1c_1x1')
         if spatial_squeeze:
