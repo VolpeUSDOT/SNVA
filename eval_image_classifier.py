@@ -81,7 +81,7 @@ tf.app.flags.DEFINE_integer(
     'eval_image_size', None, 'Eval image size')
 
 tf.app.flags.DEFINE_float(
-    'gpu_memory_fraction', 1.0,
+    'gpu_memory_fraction', 0.9,
     'The ratio of total memory across all available GPUs to use with this process.')
 
 FLAGS = tf.app.flags.FLAGS
