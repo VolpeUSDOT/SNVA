@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow.python.training import saver as tf_saver
 
 from datasets import dataset_factory
 from deployment import model_deploy
@@ -220,6 +221,11 @@ tf.app.flags.DEFINE_boolean(
 tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 1.0,
     'The ratio of total memory across all available GPUs to use with this process.')
+
+tf.app.flags.DEFINE_integer(
+    'max_checkpoints_to_keep', None,
+    'The maximum number of recent checkpoint files to keep. '
+    'As new files are created, older files are deleted.')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -558,9 +564,16 @@ def main(_):
       # Merge all summaries together.
       summary_op = tf.summary.merge(list(summaries), name='summary_op')
 
+      # Limit GPU memory utilization
       session_config = tf.ConfigProto()
 
-      session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
+      session_config.gpu_options.per_process_gpu_memory_fraction = \
+        FLAGS.gpu_memory_fraction
+
+
+      # Set limit on number of checkpoints to keep
+      saver = tf_saver.Saver(max_to_keep=FLAGS.max_checkpoints_to_keep) \
+        if FLAGS.max_checkpoints_to_keep else None
 
       ###########################
       # Kicks off the training. #
@@ -575,6 +588,7 @@ def main(_):
           number_of_steps=FLAGS.max_number_of_steps,
           log_every_n_steps=FLAGS.log_every_n_steps,
           save_summaries_secs=FLAGS.save_summaries_secs,
+          saver=saver,
           save_interval_secs=FLAGS.save_interval_secs,
           sync_optimizer=optimizer if FLAGS.sync_replicas else None,
           session_config=session_config)
