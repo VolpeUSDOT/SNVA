@@ -285,7 +285,7 @@ else:
     remove_video_frames()
     currentSrcVideo = args.video_path
     decode_video(currentSrcVideo)
-    primary_graph_lines = load_labels(args.label_path)
+    primary_graph_lines = load_labels(args.labelpath)
     runGraph(video_tempDir)
 
 if args.keeptemp == False:
