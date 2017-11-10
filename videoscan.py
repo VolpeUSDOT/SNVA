@@ -94,7 +94,7 @@ def decode_video(video_path):
     video_filename, video_file_extension = path.splitext(path.basename(video_path))
     print(' ')
     print('Decoding video file ' + video_filename)
-    video_temp = video_tempDir + str(video_filename) + '_%04d.jpg'
+    video_temp = os.path.join(video_tempDir, str(video_filename) + '_%04d.jpg')
     command = [
         FFMPEG_PATH, '-i', video_path,
         '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
