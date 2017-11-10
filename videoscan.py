@@ -278,17 +278,17 @@ if args.allfiles:
         runGraph(video_tempDir)
 else:
     filename, file_extension = path.splitext(path.basename(args.video_path))
+    reportTarget = setup_reporting(filename)
+    fileTarget = setup_logging(filename)
     n = 0
     flagfound = 0
-    reportTarget = setup_reporting(args.video_path)
-    fileTarget = setup_logging(args.video_path)
     remove_video_frames()
     currentSrcVideo = args.video_path
     decode_video(currentSrcVideo)
     primary_graph_lines = load_labels(args.labelpath)
     runGraph(video_tempDir)
 
-if args.keeptemp == False:
+if not args.keeptemp:
     remove_video_frames()
 
 print(' ')
