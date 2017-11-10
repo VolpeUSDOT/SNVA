@@ -198,8 +198,8 @@ def runGraph(image_path):
 
     # Read in the image_data
     image_data = []
-    for filename in os.listdir(video_tempDir):
-        image_data.append(tf.gfile.FastGFile(image_path + '/' + filename, 'rb').read())
+    for filename in os.listdir(image_path):
+        image_data.append(tf.gfile.FastGFile(os.path.join(image_path, filename), 'rb').read())
 
     # Feed the image_data as input to the graph and get first prediction
     softmax_tensor = sess1.graph.get_tensor_by_name("primary/InceptionResnetV2/Logits/Predictions:0")
