@@ -38,7 +38,7 @@ with tf.Graph().as_default():
     # In our case the batch size is one.
     processed_images = tf.expand_dims(processed_image, 0)
 
-    # Load the inception network structure
+    # Load the mobilenet network structure
     with slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope()):
         logits, _ = mobilenet_v1.mobilenet_v1(processed_images,
                                                   num_classes=NUM_CLASSES,
