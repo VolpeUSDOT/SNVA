@@ -32,7 +32,7 @@ parser.add_argument('--training', '-tr', dest='training', action='store_true', h
 parser.add_argument('--outputpadding', '-op', dest='outputpadding', action='store', default='45', help='Number of seconds added to the start and end of created video clips.')
 parser.add_argument('--filter', '-f', dest='filter', action='store', default='ALL', help='Value used to filter on a label.')
 parser.add_argument('--keeptemp', '-k', dest='keeptemp', action='store_true', help='Keep temporary extracted video frames.')
-parser.add_argument('video_path', action='store', help='Path to video file(s).')
+parser.add_argument('--video_path', '-v', dest='video_path', action='store', help='Path to video file(s).')
 
 args = parser.parse_args()
 currentSrcVideo = ''
