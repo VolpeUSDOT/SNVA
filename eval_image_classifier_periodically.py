@@ -88,137 +88,136 @@ FLAGS = tf.app.flags.FLAGS
 
 
 def main(_):
-  with tf.device('/gpu:1'):
-    if not FLAGS.dataset_dir:
-      raise ValueError('You must supply the dataset directory with --dataset_dir')
+  if not FLAGS.dataset_dir:
+    raise ValueError('You must supply the dataset directory with --dataset_dir')
 
-    tf.logging.set_verbosity(tf.logging.INFO)
-    with tf.Graph().as_default():
-      tf_global_step = slim.get_or_create_global_step()
+  tf.logging.set_verbosity(tf.logging.INFO)
+  with tf.Graph().as_default(), tf.device('/gpu:0'):
+    tf_global_step = slim.get_or_create_global_step()
 
-      ######################
-      # Select the dataset #
-      ######################
-      dataset = dataset_factory.get_dataset(
-          FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
+    ######################
+    # Select the dataset #
+    ######################
+    dataset = dataset_factory.get_dataset(
+        FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
 
-      ####################
-      # Select the model #
-      ####################
-      network_fn = nets_factory.get_network_fn(
-          FLAGS.model_name,
-          num_classes=(dataset.num_classes - FLAGS.labels_offset),
-          is_training=False)
+    ####################
+    # Select the model #
+    ####################
+    network_fn = nets_factory.get_network_fn(
+        FLAGS.model_name,
+        num_classes=(dataset.num_classes - FLAGS.labels_offset),
+        is_training=False)
 
-      ##############################################################
-      # Create a dataset provider that loads data from the dataset #
-      ##############################################################
-      provider = slim.dataset_data_provider.DatasetDataProvider(
-          dataset,
-          shuffle=False,
-          common_queue_capacity=2 * FLAGS.batch_size,
-          common_queue_min=FLAGS.batch_size)
-      [image, label] = provider.get(['image', 'label'])
-      label -= FLAGS.labels_offset
+    ##############################################################
+    # Create a dataset provider that loads data from the dataset #
+    ##############################################################
+    provider = slim.dataset_data_provider.DatasetDataProvider(
+        dataset,
+        shuffle=False,
+        common_queue_capacity=2 * FLAGS.batch_size,
+        common_queue_min=FLAGS.batch_size)
+    [image, label] = provider.get(['image', 'label'])
+    label -= FLAGS.labels_offset
 
-      #####################################
-      # Select the preprocessing function #
-      #####################################
-      preprocessing_name = FLAGS.preprocessing_name or FLAGS.model_name
-      image_preprocessing_fn = preprocessing_factory.get_preprocessing(
-          preprocessing_name,
-          is_training=False)
+    #####################################
+    # Select the preprocessing function #
+    #####################################
+    preprocessing_name = FLAGS.preprocessing_name or FLAGS.model_name
+    image_preprocessing_fn = preprocessing_factory.get_preprocessing(
+        preprocessing_name,
+        is_training=False)
 
-      eval_image_size = FLAGS.eval_image_size or network_fn.default_image_size
+    eval_image_size = FLAGS.eval_image_size or network_fn.default_image_size
 
-      image = image_preprocessing_fn(image, eval_image_size, eval_image_size)
+    image = image_preprocessing_fn(image, eval_image_size, eval_image_size)
 
-      images, labels = tf.train.batch(
-          [image, label],
-          batch_size=FLAGS.batch_size,
-          num_threads=FLAGS.num_preprocessing_threads,
-          capacity=5 * FLAGS.batch_size)
+    images, labels = tf.train.batch(
+        [image, label],
+        batch_size=FLAGS.batch_size,
+        num_threads=FLAGS.num_preprocessing_threads,
+        capacity=5 * FLAGS.batch_size)
 
-      ####################
-      # Define the model #
-      ####################
-      logits, _ = network_fn(images)
+    ####################
+    # Define the model #
+    ####################
+    logits, _ = network_fn(images)
 
-      if FLAGS.moving_average_decay:
-        variable_averages = tf.train.ExponentialMovingAverage(
-            FLAGS.moving_average_decay, tf_global_step)
-        variables_to_restore = variable_averages.variables_to_restore(
-            slim.get_model_variables())
-        variables_to_restore[tf_global_step.op.name] = tf_global_step
-      else:
-        variables_to_restore = slim.get_variables_to_restore()
+    if FLAGS.moving_average_decay:
+      variable_averages = tf.train.ExponentialMovingAverage(
+          FLAGS.moving_average_decay, tf_global_step)
+      variables_to_restore = variable_averages.variables_to_restore(
+          slim.get_model_variables())
+      variables_to_restore[tf_global_step.op.name] = tf_global_step
+    else:
+      variables_to_restore = slim.get_variables_to_restore()
 
-      predictions = tf.argmax(logits, 1)
-      labels = tf.squeeze(labels)
+    predictions = tf.argmax(logits, 1)
+    labels = tf.squeeze(labels)
 
-      # Define the metrics:
-      names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
-          'Accuracy': metrics.streaming_accuracy(predictions, labels),
-          'Precision': metrics.streaming_precision(predictions, labels),
-          'Recall': metrics.streaming_recall(predictions, labels),
-          'True_Positives': metrics.streaming_true_positives(predictions, labels),
-          'False_Positives': metrics.streaming_false_positives(predictions, labels),
-          'True_Negatives': metrics.streaming_true_negatives(predictions, labels),
-          'False_Negatives': metrics.streaming_false_negatives(predictions, labels)
-      })
+    # Define the metrics:
+    names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
+        'Accuracy': metrics.streaming_accuracy(predictions, labels),
+        'Precision': metrics.streaming_precision(predictions, labels),
+        'Recall': metrics.streaming_recall(predictions, labels),
+        'True_Positives': metrics.streaming_true_positives(predictions, labels),
+        'False_Positives': metrics.streaming_false_positives(predictions, labels),
+        'True_Negatives': metrics.streaming_true_negatives(predictions, labels),
+        'False_Negatives': metrics.streaming_false_negatives(predictions, labels)
+    })
 
-      # Print the summaries to screen.
-      for name, value in names_to_values.items():
-        summary_name = 'eval/%s' % name
-        op = tf.summary.scalar(summary_name, value, collections=[])
-        op = tf.Print(op, [value], summary_name)
-        tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+    # Print the summaries to screen.
+    for name, value in names_to_values.items():
+      summary_name = 'eval/%s' % name
+      op = tf.summary.scalar(summary_name, value, collections=[])
+      op = tf.Print(op, [value], summary_name)
+      tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
 
-      # Also print summaries for imbalanced dataset aggregate metrics
-      summary_name = 'eval/Sum_of_True_Positives_and_Negatives'
-      stpn_value = tf.add(names_to_values['True_Positives'],
-                          names_to_values['True_Negatives'])
-      stpn_op = tf.summary.scalar(summary_name, stpn_value, collections=[])
-      stpn_op = tf.Print(stpn_op, [stpn_value], summary_name)
-      tf.add_to_collection(tf.GraphKeys.SUMMARIES, stpn_op)
+    # Also print summaries for imbalanced dataset aggregate metrics
+    summary_name = 'eval/Sum_of_True_Positives_and_Negatives'
+    stpn_value = tf.add(names_to_values['True_Positives'],
+                        names_to_values['True_Negatives'])
+    stpn_op = tf.summary.scalar(summary_name, stpn_value, collections=[])
+    stpn_op = tf.Print(stpn_op, [stpn_value], summary_name)
+    tf.add_to_collection(tf.GraphKeys.SUMMARIES, stpn_op)
 
-      summary_name = 'eval/Sum_of_False_Positives_and_Negatives'
-      stfn_value = tf.add(names_to_values['False_Positives'],
-                          names_to_values['False_Negatives'])
-      stfn_op = tf.summary.scalar(summary_name, stfn_value, collections=[])
-      stfn_op = tf.Print(stfn_op, [stfn_value], summary_name)
-      tf.add_to_collection(tf.GraphKeys.SUMMARIES, stfn_op)
+    summary_name = 'eval/Sum_of_False_Positives_and_Negatives'
+    stfn_value = tf.add(names_to_values['False_Positives'],
+                        names_to_values['False_Negatives'])
+    stfn_op = tf.summary.scalar(summary_name, stfn_value, collections=[])
+    stfn_op = tf.Print(stfn_op, [stfn_value], summary_name)
+    tf.add_to_collection(tf.GraphKeys.SUMMARIES, stfn_op)
 
-      summary_name = 'eval/Average_of_Accuracy_Precision_and_Recall'
-      aapr_value = tf.reduce_mean([names_to_values['Accuracy'],
-                                   names_to_values['Precision'],
-                                   names_to_values['Recall']])
-      aapr_op = tf.summary.scalar(summary_name, aapr_value, collections=[])
-      aapr_op = tf.Print(aapr_op, [aapr_value], summary_name)
-      tf.add_to_collection(tf.GraphKeys.SUMMARIES, aapr_op)
+    summary_name = 'eval/Average_of_Accuracy_Precision_and_Recall'
+    aapr_value = tf.reduce_mean([names_to_values['Accuracy'],
+                                 names_to_values['Precision'],
+                                 names_to_values['Recall']])
+    aapr_op = tf.summary.scalar(summary_name, aapr_value, collections=[])
+    aapr_op = tf.Print(aapr_op, [aapr_value], summary_name)
+    tf.add_to_collection(tf.GraphKeys.SUMMARIES, aapr_op)
 
-      # TODO(sguada) use num_epochs=1
-      if FLAGS.max_num_batches:
-        num_batches = FLAGS.max_num_batches
-      else:
-        # This ensures that we make a single pass over all of the data.
-        num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
+    # TODO(sguada) use num_epochs=1
+    if FLAGS.max_num_batches:
+      num_batches = FLAGS.max_num_batches
+    else:
+      # This ensures that we make a single pass over all of the data.
+      num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
 
-      session_config = tf.ConfigProto()
+    session_config = tf.ConfigProto(allow_soft_placement=True)
 
-      session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
+    session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
-      tf.logging.info('Periodically Evaluating %s' % FLAGS.checkpoint_path)
+    tf.logging.info('Periodically Evaluating %s' % FLAGS.checkpoint_path)
 
-      slim.evaluation.evaluation_loop(
-        master=FLAGS.master,
-        checkpoint_dir=FLAGS.checkpoint_path,
-        logdir=FLAGS.eval_dir,
-        num_evals=num_batches,
-        eval_op=list(names_to_updates.values()),
-        variables_to_restore=variables_to_restore,
-        eval_interval_secs=17,
-        session_config=session_config)
+    slim.evaluation.evaluation_loop(
+      master=FLAGS.master,
+      checkpoint_dir=FLAGS.checkpoint_path,
+      logdir=FLAGS.eval_dir,
+      num_evals=num_batches,
+      eval_op=list(names_to_updates.values()),
+      variables_to_restore=variables_to_restore,
+      eval_interval_secs=17,
+      session_config=session_config)
 
 
 if __name__ == '__main__':
