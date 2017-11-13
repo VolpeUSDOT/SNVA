@@ -396,7 +396,7 @@ def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
 
-  with tf.Graph().as_default(), tf.device('/gpu:1'):
+  with tf.Graph().as_default():
     #######################
     # Config model_deploy #
     #######################
@@ -405,7 +405,8 @@ def main(_):
         clone_on_cpu=FLAGS.clone_on_cpu,
         replica_id=FLAGS.task,
         num_replicas=FLAGS.worker_replicas,
-        num_ps_tasks=FLAGS.num_ps_tasks)
+        num_ps_tasks=FLAGS.num_ps_tasks,
+        ps_job_name='localhost' if FLAGS.num_ps_tasks > 0 else None)
 
     # Create global_step
     with tf.device(deploy_config.variables_device()):
