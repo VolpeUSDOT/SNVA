@@ -65,7 +65,7 @@ tf.app.flags.DEFINE_integer(
   'The random seed used to instantiate the pseudo-random number generator '
   'that shuffles the samples before creating TFRecord shards')
 
-_DATASET_NAMES = ['cifar10', 'flowers', 'mnist', 'construction', 'railroad', 'washington_street']
+_DATASET_NAMES = ['cifar10', 'flowers', 'mnist', 'construction', 'railroad', 'shrp2_nds_a', 'washington_street', 'Run11-RouteB-7-27-16-1600-1830_02']
 
 
 def main(_):
