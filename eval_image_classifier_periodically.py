@@ -216,7 +216,6 @@ def main(_):
       num_evals=num_batches,
       eval_op=list(names_to_updates.values()),
       variables_to_restore=variables_to_restore,
-      eval_interval_secs=17,
       session_config=session_config)
 
 
