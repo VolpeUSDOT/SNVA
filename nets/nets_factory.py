@@ -58,7 +58,9 @@ networks_map = {'alexnet_v2': alexnet.alexnet_v2,
                 'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_075,
                 'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_050,
                 'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_025,
-                'densenet_bc': densenet_bc.densenet_bc
+                'densenet_bc': densenet_bc.densenet_bc,
+                'densenet_bc_12_100': densenet_bc.densenet_bc_12_100,
+                'densenet_bc_24_50': densenet_bc.densenet_bc_24_50
                }
 
 arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
@@ -86,7 +88,9 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_arg_scope,
-                  'densenet_bc': densenet_bc.densenet_arg_scope
+                  'densenet_bc': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_12_100': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_24_50': densenet_bc.densenet_arg_scope
                  }
 
 
