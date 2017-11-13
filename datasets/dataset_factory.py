@@ -20,7 +20,7 @@ from __future__ import print_function
 
 from datasets import dataset
 
-known_datasets = ['construction', 'railroad', 'washington_street']
+dataset_names = ['construction', 'railroad', 'shrp2_nds_a', 'washington_street', 'Run11-RouteB-7-27-16-1600-1830_02']
 
 
 def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader=None):
@@ -40,7 +40,7 @@ def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader
   Raises:
     ValueError: If the dataset `name` is unknown.
   """
-  if dataset_name not in known_datasets:
+  if dataset_name not in dataset_names:
     raise ValueError('Name of dataset unknown %s' % dataset_name)
   return dataset.get_split(
     dataset_name,
