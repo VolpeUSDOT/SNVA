@@ -9,13 +9,15 @@ import platform
 import argparse
 from glob import iglob
 from shutil import copy
+import timeit
 
 # TODO: Modify detection to only process data after inference has completed.
-# TODO: Modify model unpersist function to use loaded model name vs. static assignment.
+# DONE: Modify model unpersist function to use loaded model name vs. static assignment.
 # TODO: Add support for loading multiple primary and secondary models.
 
 # set start time
-start_time = time.time()
+# start_time = time.time()
+start = timeit.default_timer()
 
 parser = argparse.ArgumentParser(description='Process some video files using Machine Learning!')
 parser.add_argument('--temppath', '-tp', dest='temppath', action='store', default='../vidtemp/', help='Path to the directory where temporary files are stored.')
@@ -32,7 +34,7 @@ parser.add_argument('--training', '-tr', dest='training', action='store_true', h
 parser.add_argument('--outputpadding', '-op', dest='outputpadding', action='store', default='45', help='Number of seconds added to the start and end of created video clips.')
 parser.add_argument('--filter', '-f', dest='filter', action='store', default='ALL', help='Value used to filter on a label.')
 parser.add_argument('--keeptemp', '-k', dest='keeptemp', action='store_true', help='Keep temporary extracted video frames.')
-parser.add_argument('--video_path', '-v', dest='video_path', action='store', help='Path to video file(s).')
+parser.add_argument('--videopath', '-v', dest='video_path', action='store', help='Path to video file(s).')
 
 args = parser.parse_args()
 currentSrcVideo = ''
@@ -146,6 +148,11 @@ def load_labels(path):
                            in tf.gfile.GFile(path)]
     return [item[0].split(":") for item in file_data]
 
+def load_tensor_types(path):
+    # reads in the input and output tensors
+    with open(path) as file:
+        content = file.readlines()
+    return content[0].rstrip() + ':0', content[1].rstrip() + ':0'
 
 def setup_reporting(passed_filename):
     path = os.path.join(args.reportpath, '')
@@ -192,7 +199,7 @@ sess1 = tf.Session(graph=primary_graph)
 #     print('Processed potential construction zone in frame #' + str(n))
 
 
-def runGraph(image_path):
+def runGraph(image_path, input_tensor, output_tensor):
     global flagfound
     global n
 
@@ -202,8 +209,8 @@ def runGraph(image_path):
         image_data.append(tf.gfile.FastGFile(os.path.join(image_path, filename), 'rb').read())
 
     # Feed the image_data as input to the graph and get first prediction
-    softmax_tensor = sess1.graph.get_tensor_by_name("primary/InceptionResnetV2/Logits/Predictions:0")
-    input_placeholder = sess1.graph.get_tensor_by_name("primary/input_image:0")
+    softmax_tensor = sess1.graph.get_tensor_by_name('primary/' + output_tensor)
+    input_placeholder = sess1.graph.get_tensor_by_name('primary/' + input_tensor)
 
     print('Starting analysis on ' + str(len(image_data)) + ' video frames...')
 
@@ -234,8 +241,6 @@ def runGraph(image_path):
                     # runsecondarygraph(image)
                     reportTarget.write('\n')
                     smoothing = initial_smoothing
-                    # if len(event) == initial_smoothing:
-                        # print('Event start on frame ' + str(event[0]))
                     event.append(n)
                     if args.training == True:
                         save_training_frames(n)
@@ -275,7 +280,12 @@ if args.allfiles:
         currentSrcVideo = clean_video_path + video_file
         decode_video(currentSrcVideo)
         primary_graph_lines = load_labels(args.labelpath)
-        runGraph(video_tempDir)
+        if args.modelpath.endswith('.pb'):
+            tensorpath = args.modelpath[:-3] + '-model.txt'
+        else:
+            tensorpath = args.modelpath
+        input_tensor, output_tensor = load_tensor_types(tensorpath)
+        runGraph(video_tempDir, input_tensor, output_tensor)
 else:
     filename, file_extension = path.splitext(path.basename(args.video_path))
     reportTarget = setup_reporting(filename)
@@ -286,10 +296,20 @@ else:
     currentSrcVideo = args.video_path
     decode_video(currentSrcVideo)
     primary_graph_lines = load_labels(args.labelpath)
-    runGraph(video_tempDir)
+    if args.modelpath.endswith('.pb'):
+        tensorpath = args.modelpath[:-3] + '-model.txt'
+    else:
+        tensorpath = args.modelpath
+    input_tensor, output_tensor = load_tensor_types(tensorpath)
+    runGraph(video_tempDir, input_tensor, output_tensor)
 
 if not args.keeptemp:
     remove_video_frames()
 
 print(' ')
-print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
+# print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
+stop = timeit.default_timer()
+total_time = stop - start
+mins, secs = divmod(total_time, 60)
+hours, mins = divmod(mins, 60)
+sys.stdout.write("Total running time: %d:%d:%d.\n"  % (hours, mins, secs))
