@@ -32,7 +32,7 @@ parser.add_argument('--training', '-tr', dest='training', action='store_true', h
 parser.add_argument('--outputpadding', '-op', dest='outputpadding', action='store', default='45', help='Number of seconds added to the start and end of created video clips.')
 parser.add_argument('--filter', '-f', dest='filter', action='store', default='ALL', help='Value used to filter on a label.')
 parser.add_argument('--keeptemp', '-k', dest='keeptemp', action='store_true', help='Keep temporary extracted video frames.')
-parser.add_argument('video_path', action='store', help='Path to video file(s).')
+parser.add_argument('--video_path', '-v', dest='video_path', action='store', help='Path to video file(s).')
 
 args = parser.parse_args()
 currentSrcVideo = ''
@@ -94,7 +94,7 @@ def decode_video(video_path):
     video_filename, video_file_extension = path.splitext(path.basename(video_path))
     print(' ')
     print('Decoding video file ' + video_filename)
-    video_temp = video_tempDir + str(video_filename) + '_%04d.jpg'
+    video_temp = os.path.join(video_tempDir, str(video_filename) + '_%04d.jpg')
     command = [
         FFMPEG_PATH, '-i', video_path,
         '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
@@ -198,8 +198,8 @@ def runGraph(image_path):
 
     # Read in the image_data
     image_data = []
-    for filename in os.listdir(video_tempDir):
-        image_data.append(tf.gfile.FastGFile(image_path + '/' + filename, 'rb').read())
+    for filename in os.listdir(image_path):
+        image_data.append(tf.gfile.FastGFile(os.path.join(image_path, filename), 'rb').read())
 
     # Feed the image_data as input to the graph and get first prediction
     softmax_tensor = sess1.graph.get_tensor_by_name("primary/InceptionResnetV2/Logits/Predictions:0")
@@ -278,17 +278,17 @@ if args.allfiles:
         runGraph(video_tempDir)
 else:
     filename, file_extension = path.splitext(path.basename(args.video_path))
+    reportTarget = setup_reporting(filename)
+    fileTarget = setup_logging(filename)
     n = 0
     flagfound = 0
-    reportTarget = setup_reporting(args.video_path)
-    fileTarget = setup_logging(args.video_path)
     remove_video_frames()
     currentSrcVideo = args.video_path
     decode_video(currentSrcVideo)
-    primary_graph_lines = load_labels(args.label_path)
+    primary_graph_lines = load_labels(args.labelpath)
     runGraph(video_tempDir)
 
-if args.keeptemp == False:
+if not args.keeptemp:
     remove_video_frames()
 
 print(' ')
