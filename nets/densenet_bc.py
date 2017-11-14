@@ -135,7 +135,7 @@ def densenet_bc(inputs,
     bottleneck = True
     N = int((depth - 4) / (6 if bottleneck else 3))
 
-    def single_layer(inputs, n_out_channels):
+    def single_layer(input, n_out_channels):
 
         conv = slim.batch_norm(inputs, activation_fn=tf.nn.relu)
         conv = slim.conv2d(conv, n_out_channels, [3, 3], stride=[1, 1])
@@ -145,11 +145,11 @@ def densenet_bc(inputs,
 
         return out
 
-    def bottleneck_layer(inputs, n_output_channels):
+    def bottleneck_layer(input, n_output_channels):
 
         inter_channels = 4 * n_output_channels
 
-        conv = slim.batch_norm(inputs, activation_fn=tf.nn.relu)
+        conv = slim.batch_norm(input, activation_fn=tf.nn.relu)
         conv = slim.conv2d(conv, inter_channels, [1, 1], stride=[1, 1])
         conv = slim.dropout(conv, dropout_keep_prob, is_training=is_training, scope='Dropout')
 
@@ -166,9 +166,9 @@ def densenet_bc(inputs,
     else:
         add = single_layer
 
-    def transition(inputs, n_output_channels):
+    def transition(input, n_output_channels):
 
-        conv = slim.batch_norm(inputs, activation_fn=tf.nn.relu)
+        conv = slim.batch_norm(input, activation_fn=tf.nn.relu)
         conv = slim.conv2d(conv, n_output_channels, [1, 1], stride=[1, 1])
         conv = slim.dropout(conv, dropout_keep_prob, is_training=is_training, scope='Dropout')
         conv = slim.avg_pool2d(conv, [2, 2], stride=2)
