@@ -92,7 +92,7 @@ def main(_):
     raise ValueError('You must supply the dataset directory with --dataset_dir')
 
   tf.logging.set_verbosity(tf.logging.INFO)
-  with tf.Graph().as_default(), tf.device('/gpu:0'):
+  with tf.Graph().as_default(), tf.device('/gpu:1'):
     tf_global_step = slim.get_or_create_global_step()
 
     ######################
