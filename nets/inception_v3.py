@@ -528,6 +528,7 @@ def inception_v3(inputs,
       end_points['Logits'] = logits
       end_points['Predictions'] = prediction_fn(logits, scope='Predictions')
   return logits, end_points
+
 inception_v3.default_image_size = 299
 
 
