@@ -137,7 +137,7 @@ def densenet_bc(inputs,
 
     def single_layer(input, n_out_channels):
 
-        conv = slim.batch_norm(inputs, activation_fn=tf.nn.relu)
+        conv = slim.batch_norm(input, activation_fn=tf.nn.relu)
         conv = slim.conv2d(conv, n_out_channels, [3, 3], stride=[1, 1])
         conv = slim.dropout(conv, dropout_keep_prob, is_training=is_training, scope='Dropout')
 
