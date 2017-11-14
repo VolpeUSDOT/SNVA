@@ -315,8 +315,7 @@ def inception_resnet_v2(inputs, num_classes=1001, is_training=True,
                               scope='AvgPool_1a_8x8')
         net = slim.flatten(net)
 
-        net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-                           scope='Dropout')
+        net = slim.dropout(net, dropout_keep_prob, scope='Dropout')
 
         end_points['PreLogitsFlatten'] = net
         logits = slim.fully_connected(net, num_classes, activation_fn=None,
