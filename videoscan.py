@@ -214,8 +214,7 @@ def runGraph(image_path):
     smoothing = 0
     for image in image_data:
         n = n + 1
-        predictions = sess1.run(softmax_tensor, \
-                {input_placeholder : image})
+        predictions = sess1.run(softmax_tensor, {input_placeholder: image})
 
         top_k = [0, 1]
 
