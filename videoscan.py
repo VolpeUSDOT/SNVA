@@ -203,10 +203,10 @@ def runGraph(image_path, input_tensor, output_tensor):
     global flagfound
     global n
 
-    # Read in the image_data
-    image_data = []
-    for filename in os.listdir(image_path):
-        image_data.append(tf.gfile.FastGFile(os.path.join(image_path, filename), 'rb').read())
+    # Read in the image_data, but sort image paths first because os.listdir results are ordered arbitrarily
+    file_paths = [os.path.join(image_path, _) for _ in os.listdir(image_path)]
+    file_paths.sort()
+    image_data = [tf.gfile.FastGFile(_, 'rb').read() for _ in file_paths if os.path.isfile(_)]
 
     # Feed the image_data as input to the graph and get first prediction
     softmax_tensor = sess1.graph.get_tensor_by_name('primary/' + output_tensor)
@@ -221,8 +221,7 @@ def runGraph(image_path, input_tensor, output_tensor):
     smoothing = 0
     for image in image_data:
         n = n + 1
-        predictions = sess1.run(softmax_tensor, \
-                {input_placeholder : image})
+        predictions = sess1.run(softmax_tensor, {input_placeholder: image})
 
         top_k = [0, 1]
 
