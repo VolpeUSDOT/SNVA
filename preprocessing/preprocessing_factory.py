@@ -47,6 +47,8 @@ def get_preprocessing(name, is_training=False):
   preprocessing_fn_map = {
       'cifarnet': cifarnet_preprocessing,
       'densenet_bc': inception_preprocessing,
+      'densenet_bc_12_100': inception_preprocessing,
+      'densenet_bc_24_50': inception_preprocessing,
       'inception': inception_preprocessing,
       'inception_v1': inception_preprocessing,
       'inception_v2': inception_preprocessing,
