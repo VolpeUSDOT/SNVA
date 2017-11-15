@@ -120,3 +120,5 @@ python3 imagescan.py --modelpath /media/data_1/snva/Models/saved/fhwa/constructi
 
 
 python3 extract_video_frames.py --temppath=/media/uadmin/os_data/datasets/fhwa/NDS/images --videopath=/media/uadmin/os_data/datasets/fhwa/NDS/Run8part-1-RouteA-7-25-16-0700-1000.avi --fps=15
+
+python3 extract_video_frames.py --imagepath=/media/uadmin/os_data/datasets/fhwa/NDS/images --videopath=/media/uadmin/os_data/datasets/fhwa/NDS/videos --fps=15 --allfiles

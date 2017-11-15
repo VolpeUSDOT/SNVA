@@ -1,10 +1,11 @@
 import tensorflow as tf
 import sys
 import os
+import os.path as path
+import stat
 import subprocess
 import time
 import datetime
-import os.path as path
 import platform
 import argparse
 from glob import iglob
@@ -18,7 +19,7 @@ from shutil import copy
 start_time = time.time()
 
 parser = argparse.ArgumentParser(description='Process some video files using Machine Learning!')
-parser.add_argument('--temppath', '-tp', dest='temppath', action='store', default='../vidtemp/',
+parser.add_argument('--imagepath', '-tp', dest='imagepath', action='store', default='../vidtemp/',
                     help='Path to the directory where temporary files are stored.')
 parser.add_argument('--fps', '-fps', dest='fps', action='store', default='1',
                     help='Frames Per Second used to sample input video. '
@@ -39,8 +40,8 @@ else:
   FFMPEG_PATH = default_ffmpeg_path if path.exists(default_ffmpeg_path) else '/usr/bin/ffmpeg'
 
 # setup video temp directory for video frames
-if not os.path.isdir(args.temppath):
-  os.mkdir(args.temppath)
+if not os.path.isdir(args.imagepath):
+  os.mkdir(args.imagepath)
 
 
 def copy_files(src_glob, dst_folder):
@@ -51,7 +52,7 @@ def copy_files(src_glob, dst_folder):
 
 def save_training_frames(framenumber):
   # copies frames/images to the passed directory for the purposes of retraining the model
-  srcpath = os.path.join(args.temppath, '')
+  srcpath = os.path.join(args.imagepath, '')
   dstpath = os.path.join(args.trainingpath, '')
   copy_files(srcpath + '*' + str(framenumber) + '.jpg', dstpath)
 
@@ -60,12 +61,18 @@ def decode_video(video_path):
   video_filename, video_file_extension = path.splitext(path.basename(video_path))
   print(' ')
   print('Decoding video file ' + video_filename)
-  video_temp = os.path.join(args.temppath, str(video_filename) + '_%04d.jpg')
+  image_dir = os.path.join(args.imagepath, str(video_filename))
+  if not path.isdir(image_dir):
+    os.mkdir(image_dir)
+  image_path = os.path.join(image_dir, str(video_filename) + '_%04d.jpg')
   command = [
     FFMPEG_PATH, '-i', video_path,
-    '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
+    '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', image_path, '-hide_banner', '-loglevel', '0',
   ]
   subprocess.call(command)
+  for image in os.listdir(image_dir):
+    image_path = os.path.join(image_dir, image)
+    os.chmod(image_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
 
 
 def load_video_filenames(relevant_path):
