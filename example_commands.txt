@@ -117,3 +117,12 @@ python3 videoscan.py --modelpath /media/data_1/snva/Models/saved/fhwa/constructi
 
 
 python3 imagescan.py --modelpath /media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init/inception_resnet_v2.pb --labelpath /media/data_1/snva/Datasets/fhwa/construction/tfrecords/construction_labels.txt --reportpath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/reports --fps 15 --outputpadding 0 --keeptemp --temppath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/temp/work_zone --outputclips --training --trainingpath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/training
+
+
+# TESTING
+
+#MobilenetV1
+python3 eval_image_classifier.py --eval_dir=/media/data_1/snva/Models/saved/fhwa/construction/mobilenet_v1/transfer_init/test --checkpoint_path=/media/data_1/snva/Models/saved/fhwa/construction/mobilenet_v1/transfer_init --dataset_dir=/media/data_1/snva/Datasets/fhwa --dataset_name=Run11-RouteB-7-27-16-1600-1830_02 --dataset_split_name=validation --model_name=mobilenet_v1 --batch_size=64 --num_preprocessing_threads=20 --gpu_memory_fraction=0.15
+
+#InceptionResnetV2
+python3 eval_image_classifier.py --eval_dir=/media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init/test --checkpoint_path=/media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init --dataset_dir=/media/data_1/snva/Datasets/fhwa --dataset_name=Run11-RouteB-7-27-16-1600-1830_02 --dataset_split_name=validation --model_name=inception_resnet_v2 --batch_size=32 --num_preprocessing_threads=20 --gpu_memory_fraction=0.15
