@@ -126,3 +126,8 @@ python3 eval_image_classifier.py --eval_dir=/media/data_1/snva/Models/saved/fhwa
 
 #InceptionResnetV2
 python3 eval_image_classifier.py --eval_dir=/media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init/test --checkpoint_path=/media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init --dataset_dir=/media/data_1/snva/Datasets/fhwa --dataset_name=Run11-RouteB-7-27-16-1600-1830_02 --dataset_split_name=validation --model_name=inception_resnet_v2 --batch_size=32 --num_preprocessing_threads=20 --gpu_memory_fraction=0.15
+
+
+python3 extract_video_frames.py --temppath=/media/uadmin/os_data/datasets/fhwa/NDS/images --videopath=/media/uadmin/os_data/datasets/fhwa/NDS/Run8part-1-RouteA-7-25-16-0700-1000.avi --fps=15
+
+python3 extract_video_frames.py --imagepath=/media/uadmin/os_data/datasets/fhwa/NDS/images --videopath=/media/uadmin/os_data/datasets/fhwa/NDS/videos --fps=15 --allfiles
