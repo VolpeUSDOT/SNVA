@@ -117,3 +117,6 @@ python3 videoscan.py --modelpath /media/data_1/snva/Models/saved/fhwa/constructi
 
 
 python3 imagescan.py --modelpath /media/data_1/snva/Models/saved/fhwa/construction/inception_resnet_v2/transfer_init/inception_resnet_v2.pb --labelpath /media/data_1/snva/Datasets/fhwa/construction/tfrecords/construction_labels.txt --reportpath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/reports --fps 15 --outputpadding 0 --keeptemp --temppath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/temp/work_zone --outputclips --training --trainingpath /media/data_1/snva/Test_Results/fhwa/construction/inception_resnet_v2/transfer_init_2/training
+
+
+python3 extract_video_frames.py --temppath=/media/uadmin/os_data/datasets/fhwa/NDS/images --videopath=/media/uadmin/os_data/datasets/fhwa/NDS/Run8part-1-RouteA-7-25-16-0700-1000.avi --fps=15
