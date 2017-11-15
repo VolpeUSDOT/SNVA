@@ -85,10 +85,12 @@ def remove_video_frames():
             print(e)
 
 
-def save_training_frames(framenumber):
+def save_training_frames(framenumber, label):
     # copies frames/images to the passed directory for the purposes of retraining the model
     srcpath = os.path.join(args.temppath, '')
-    dstpath = os.path.join(args.trainingpath, '')
+    dstpath = os.path.join(args.trainingpath + '/' + label, '')
+    if not os.path.exists(dstpath):
+        os.makedirs(dstpath)
     copy_files(srcpath + '*' + str(framenumber) + '.jpg', dstpath)
 
 
@@ -229,6 +231,11 @@ def runGraph(image_path, input_tensor, output_tensor):
             human_string = primary_graph_lines[node_id][1]
             score = predictions[0][node_id]
             fileTarget.write('%s, %s, %.5f, ' % (n, human_string, score))
+
+            if args.training == True:
+                if score >= 0.75 and score <= 0.90:
+                    save_training_frames(n, human_string)
+
             if(human_string == args.labelname):                                                                         # if the label detected matches the passed label to search for
                 if score < 0.95 and score >= 0.75:
                     if args.filter.upper() == 'ALL':
@@ -241,8 +248,6 @@ def runGraph(image_path, input_tensor, output_tensor):
                     reportTarget.write('\n')
                     smoothing = initial_smoothing
                     event.append(n)
-                    if args.training == True:
-                        save_training_frames(n)
 
                 if score < 0.75:
                     if(smoothing == 0):
