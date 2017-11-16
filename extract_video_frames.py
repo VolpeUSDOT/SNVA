@@ -4,8 +4,7 @@ import os
 import os.path as path
 import stat
 import subprocess
-import time
-import datetime
+import timeit
 import platform
 import argparse
 from glob import iglob
@@ -78,7 +77,7 @@ def load_video_filenames(relevant_path):
           if any(fn.lower().endswith(ext) for ext in included_extenstions)]
 
 # set start time
-start_time = time.time()
+start = timeit.default_timer()
 
 if args.allfiles:
   video_files = load_video_filenames(args.video_path)
@@ -89,5 +88,8 @@ else:
   decode_video(args.video_path)
 
 print(' ')
-print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
-
+stop = timeit.default_timer()
+total_time = stop - start
+mins, secs = divmod(total_time, 60)
+hours, mins = divmod(mins, 60)
+sys.stdout.write("Total running time: %d:%d:%d.\n" % (hours, mins, secs))
