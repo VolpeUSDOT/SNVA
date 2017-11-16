@@ -15,9 +15,6 @@ from shutil import copy
 # TODO: Modify model unpersist function to use loaded model name vs. static assignment.
 # TODO: Add support for loading multiple primary and secondary models.
 
-# set start time
-start_time = time.time()
-
 parser = argparse.ArgumentParser(description='Process some video files using Machine Learning!')
 parser.add_argument('--imagepath', '-tp', dest='imagepath', action='store', default='../vidtemp/',
                     help='Path to the directory where temporary files are stored.')
@@ -80,6 +77,8 @@ def load_video_filenames(relevant_path):
   return [fn for fn in os.listdir(relevant_path)
           if any(fn.lower().endswith(ext) for ext in included_extenstions)]
 
+# set start time
+start_time = time.time()
 
 if args.allfiles:
   video_files = load_video_filenames(args.video_path)

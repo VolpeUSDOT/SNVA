@@ -9,13 +9,15 @@ import platform
 import argparse
 from glob import iglob
 from shutil import copy
+import timeit
 
 # TODO: Modify detection to only process data after inference has completed.
-# TODO: Modify model unpersist function to use loaded model name vs. static assignment.
+# DONE: Modify model unpersist function to use loaded model name vs. static assignment.
 # TODO: Add support for loading multiple primary and secondary models.
 
 # set start time
-start_time = time.time()
+# start_time = time.time()
+start = timeit.default_timer()
 
 parser = argparse.ArgumentParser(description='Process some video files using Machine Learning!')
 parser.add_argument('--temppath', '-tp', dest='temppath', action='store', default='../vidtemp/',
@@ -99,11 +101,13 @@ def remove_video_frames():
       print(e)
 
 
-def save_training_frames(framenumber):
-  # copies frames/images to the passed directory for the purposes of retraining the model
-  srcpath = os.path.join(args.temppath, '')
-  dstpath = os.path.join(args.trainingpath, '')
-  copy_files(srcpath + '*' + str(framenumber) + '.jpg', dstpath)
+def save_training_frames(framenumber, label):
+    # copies frames/images to the passed directory for the purposes of retraining the model
+    srcpath = os.path.join(args.temppath, '')
+    dstpath = os.path.join(args.trainingpath + '/' + label, '')
+    if not os.path.exists(dstpath):
+        os.makedirs(dstpath)
+    copy_files(srcpath + '*' + str(framenumber) + '.jpg', dstpath)
 
 
 def decode_video(video_path):
@@ -162,6 +166,11 @@ def load_labels(path):
                in tf.gfile.GFile(path)]
   return [item[0].split(":") for item in file_data]
 
+def load_tensor_types(path):
+    # reads in the input and output tensors
+    with open(path) as file:
+        content = file.readlines()
+    return content[0].rstrip() + ':0', content[1].rstrip() + ':0'
 
 def setup_reporting(passed_filename):
   path = os.path.join(args.reportpath, '')
@@ -208,18 +217,18 @@ sess1 = tf.Session(graph=primary_graph)
 #     print('Processed potential construction zone in frame #' + str(n))
 
 
-def runGraph(image_path):
-  global flagfound
-  global n
+def runGraph(image_path, input_tensor, output_tensor):
+    global flagfound
+    global n
 
   # Read in the image_data, but sort image paths first because os.listdir results are ordered arbitrarily
   file_paths = [os.path.join(image_path, _) for _ in os.listdir(image_path)]
   file_paths.sort()
   image_data = [tf.gfile.FastGFile(_, 'rb').read() for _ in file_paths if os.path.isfile(_)]
 
-  # Feed the image_data as input to the graph and get first prediction
-  softmax_tensor = sess1.graph.get_tensor_by_name("primary/InceptionResnetV2/Logits/Predictions:0")
-  input_placeholder = sess1.graph.get_tensor_by_name("primary/input_image:0")
+    # Feed the image_data as input to the graph and get first prediction
+    softmax_tensor = sess1.graph.get_tensor_by_name('primary/' + output_tensor)
+    input_placeholder = sess1.graph.get_tensor_by_name('primary/' + input_tensor)
 
   print('Starting analysis on ' + str(len(image_data)) + ' video frames...')
 
@@ -234,26 +243,27 @@ def runGraph(image_path):
 
     top_k = [0, 1]
 
-    for node_id in top_k:
-      human_string = primary_graph_lines[node_id][1]
-      score = predictions[0][node_id]
-      fileTarget.write('%s, %s, %.5f, ' % (n, human_string, score))
-      if (human_string == args.labelname):  # if the label detected matches the passed label to search for
-        if score < 0.95 and score >= 0.75:
-          if args.filter.upper() == 'ALL':
-            reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'Medium'))
-            reportTarget.write('\n')
+        for node_id in top_k:
+            human_string = primary_graph_lines[node_id][1]
+            score = predictions[0][node_id]
+            fileTarget.write('%s, %s, %.5f, ' % (n, human_string, score))
 
-        if score >= 0.95:
-          reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'High'))
-          # runsecondarygraph(image)
-          reportTarget.write('\n')
-          smoothing = initial_smoothing
-          # if len(event) == initial_smoothing:
-          # print('Event start on frame ' + str(event[0]))
-          event.append(n)
-          if args.training == True:
-            save_training_frames(n)
+            if args.training == True:
+                if score >= 0.75 and score <= 0.90:
+                    save_training_frames(n, human_string)
+
+            if(human_string == args.labelname):                                                                         # if the label detected matches the passed label to search for
+                if score < 0.95 and score >= 0.75:
+                    if args.filter.upper() == 'ALL':
+                        reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'Medium'))
+                        reportTarget.write('\n')
+
+                if score >= 0.95:
+                    reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'High'))
+                    # runsecondarygraph(image)
+                    reportTarget.write('\n')
+                    smoothing = initial_smoothing
+                    event.append(n)
 
         if score < 0.75:
           if (smoothing == 0):
@@ -277,34 +287,49 @@ def runGraph(image_path):
 # if only one file was passed for analysis then inject it into the passed array
 
 if args.allfiles:
-  video_files = load_video_filenames(args.video_path)
-  for video_file in video_files:
-    # setup reporting and search flags
-    filename, file_extension = path.splitext(path.basename(video_file))
+    video_files = load_video_filenames(args.video_path)
+    for video_file in video_files:
+        # setup reporting and search flags
+        filename, file_extension = path.splitext(path.basename(video_file))
+        reportTarget = setup_reporting(filename)
+        fileTarget = setup_logging(filename)
+        n = 0
+        flagfound = 0
+        remove_video_frames()
+        clean_video_path = os.path.join(args.video_path, '')
+        currentSrcVideo = clean_video_path + video_file
+        decode_video(currentSrcVideo)
+        primary_graph_lines = load_labels(args.labelpath)
+        if args.modelpath.endswith('.pb'):
+            tensorpath = args.modelpath[:-3] + '-model.txt'
+        else:
+            tensorpath = args.modelpath
+        input_tensor, output_tensor = load_tensor_types(tensorpath)
+        runGraph(video_tempDir, input_tensor, output_tensor)
+else:
+    filename, file_extension = path.splitext(path.basename(args.video_path))
     reportTarget = setup_reporting(filename)
     fileTarget = setup_logging(filename)
     n = 0
     flagfound = 0
     remove_video_frames()
-    clean_video_path = os.path.join(args.video_path, '')
-    currentSrcVideo = clean_video_path + video_file
+    currentSrcVideo = args.video_path
     decode_video(currentSrcVideo)
     primary_graph_lines = load_labels(args.labelpath)
-    runGraph(video_tempDir)
-else:
-  filename, file_extension = path.splitext(path.basename(args.video_path))
-  reportTarget = setup_reporting(filename)
-  fileTarget = setup_logging(filename)
-  n = 0
-  flagfound = 0
-  remove_video_frames()
-  currentSrcVideo = args.video_path
-  decode_video(currentSrcVideo)
-  primary_graph_lines = load_labels(args.labelpath)
-  runGraph(video_tempDir)
+    if args.modelpath.endswith('.pb'):
+        tensorpath = args.modelpath[:-3] + '-model.txt'
+    else:
+        tensorpath = args.modelpath
+    input_tensor, output_tensor = load_tensor_types(tensorpath)
+    runGraph(video_tempDir, input_tensor, output_tensor)
 
 if not args.keeptemp:
   remove_video_frames()
 
 print(' ')
-print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
+# print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
+stop = timeit.default_timer()
+total_time = stop - start
+mins, secs = divmod(total_time, 60)
+hours, mins = divmod(mins, 60)
+sys.stdout.write("Total running time: %d:%d:%d.\n"  % (hours, mins, secs))
