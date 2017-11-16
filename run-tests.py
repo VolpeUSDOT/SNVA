@@ -14,16 +14,16 @@ labelsPath = sys.argv[4]
 # define model types
 models = []
 models.append({'type': "inception_v3",
-                'path': modelPath,
-                'labels': labelsPath})
+               'path': modelPath,
+               'labels': labelsPath})
 
 models.append({'type': "inception_v4",
-                'path': modelPath,
-                'labels': labelsPath})
+               'path': modelPath,
+               'labels': labelsPath})
 
 models.append({'type': "inception_resnet_v2",
-                'path': modelPath,
-                'labels': labelsPath})
+               'path': modelPath,
+               'labels': labelsPath})
 
 fileTarget = open('../test-results/' + datasetName + '-test-results.txt', 'w')
 
@@ -39,11 +39,13 @@ slim = tf.contrib.slim
 batch_size = 3
 image_size = 299
 
+
 def load_labels(path):
     # load the labels and remove stuff we don't want to display
-    file_data =  [line.split() for line
-                           in tf.gfile.GFile(path)]
+    file_data = [line.split() for line
+                 in tf.gfile.GFile(path)]
     return [item[0].split(":") for item in file_data]
+
 
 def load_images(filenames):
     # load images into a tensor
@@ -57,6 +59,7 @@ def load_images(filenames):
         processed_images.append(processed_image)
 
     return processed_images
+
 
 def process_inceptionV3(image_tensor, model_path, filenames, labels):
     # accept image tensor of any size and return scores
@@ -103,14 +106,16 @@ def process_inceptionV3(image_tensor, model_path, filenames, labels):
 
     return results
 
+
 def runInceptionV3(filenames):
     with tf.Graph().as_default():
         with slim.arg_scope(inception_v3.inception_v3_arg_scope()):
-
             processed_images = load_images(filenames)
-            results = process_inceptionV3(processed_images, models[0]["path"], filenames, load_labels(models[0]["labels"]))
+            results = process_inceptionV3(processed_images, models[0]["path"], filenames,
+                                          load_labels(models[0]["labels"]))
             for result_item in results:
                 print(result_item)
+
 
 def process_inceptionV4(image_tensor, model_path, filenames, labels):
     # accept image tensor of any size and return scores
@@ -157,14 +162,16 @@ def process_inceptionV4(image_tensor, model_path, filenames, labels):
 
     return results
 
+
 def runInceptionV4(filenames):
     with tf.Graph().as_default():
         with slim.arg_scope(inception_v4.inception_v4_arg_scope()):
-
             processed_images = load_images(filenames)
-            results = process_inceptionV4(processed_images, models[1]["path"], filenames, load_labels(models[1]["labels"]))
+            results = process_inceptionV4(processed_images, models[1]["path"], filenames,
+                                          load_labels(models[1]["labels"]))
             for result_item in results:
                 print(result_item)
+
 
 def process_inceptionResnetV2(image_tensor, model_path, filenames, labels):
     # accept image tensor of any size and return scores
@@ -210,12 +217,13 @@ def process_inceptionResnetV2(image_tensor, model_path, filenames, labels):
 
     return results
 
+
 def runInceptionResnetV2(filenames):
     with tf.Graph().as_default():
         with slim.arg_scope(inception_resnet_v2.inception_resnet_v2_arg_scope()):
-
             processed_images = load_images(filenames)
-            results = process_inceptionResnetV2(processed_images, models[2]["path"], filenames, load_labels(models[2]["labels"]))
+            results = process_inceptionResnetV2(processed_images, models[2]["path"], filenames,
+                                                load_labels(models[2]["labels"]))
             for result_item in results:
                 print(result_item)
 
@@ -227,10 +235,10 @@ fileTarget.write("\n")
 fileTarget.write('####################################################################################')
 fileTarget.write("\n")
 
-if(modelType == 'inception_resnet_v2'):
+if (modelType == 'inception_resnet_v2'):
     runInceptionResnetV2(file_names)
-if(modelType == 'inception_v4'):
+if (modelType == 'inception_v4'):
     runInceptionV4(file_names)
-if(modelType == 'inception_v3'):
+if (modelType == 'inception_v3'):
     runInceptionV3(file_names)
 fileTarget.write('\n')

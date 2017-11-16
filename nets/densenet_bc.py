@@ -28,45 +28,45 @@ def densenet_arg_scope(weight_decay=0.0001,
                        batch_norm_decay=0.997,
                        batch_norm_epsilon=1e-5,
                        batch_norm_scale=True):
-  """Defines the default DenseNet arg scope.
+    """Defines the default DenseNet arg scope.
 
-  Args:
-    weight_decay: The weight decay to use for regularizing the model.
-    batch_norm_decay: The moving average decay when estimating layer activation
-      statistics in batch normalization.
-    batch_norm_epsilon: Small constant to prevent division by zero when
-      normalizing activations by their variance in batch normalization.
-    batch_norm_scale: If True, uses an explicit `gamma` multiplier to scale the
-      activations in the batch normalization layer.
+    Args:
+      weight_decay: The weight decay to use for regularizing the model.
+      batch_norm_decay: The moving average decay when estimating layer activation
+        statistics in batch normalization.
+      batch_norm_epsilon: Small constant to prevent division by zero when
+        normalizing activations by their variance in batch normalization.
+      batch_norm_scale: If True, uses an explicit `gamma` multiplier to scale the
+        activations in the batch normalization layer.
 
-  Returns:
-    An `arg_scope` to use for the densenet models.
-  """
-  batch_norm_params = {
-    'decay': batch_norm_decay,
-    'epsilon': batch_norm_epsilon,
-    'scale': batch_norm_scale,
-    'updates_collections': tf.GraphKeys.UPDATE_OPS,
-  }
+    Returns:
+      An `arg_scope` to use for the densenet models.
+    """
+    batch_norm_params = {
+        'decay': batch_norm_decay,
+        'epsilon': batch_norm_epsilon,
+        'scale': batch_norm_scale,
+        'updates_collections': tf.GraphKeys.UPDATE_OPS,
+    }
 
-  with slim.arg_scope(
-          [slim.conv2d],
-          weights_regularizer=slim.l2_regularizer(weight_decay),
-          weights_initializer=slim.variance_scaling_initializer(),
-          activation_fn=tf.nn.relu,
-  ):
-    with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-      with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
-        return arg_sc
+    with slim.arg_scope(
+            [slim.conv2d],
+            weights_regularizer=slim.l2_regularizer(weight_decay),
+            weights_initializer=slim.variance_scaling_initializer(),
+            activation_fn=tf.nn.relu,
+    ):
+        with slim.arg_scope([slim.batch_norm], **batch_norm_params):
+            with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
+                return arg_sc
 
 
 def densenet_bc_12_100(inputs,
-                     num_classes=None,
-                     is_training=True,
-                     dropout_keep_prob=0.8,
-                     for_imagenet=True,
-                     reuse=None,
-                     scope='DensenetBC'):
+                       num_classes=None,
+                       is_training=True,
+                       dropout_keep_prob=0.8,
+                       for_imagenet=True,
+                       reuse=None,
+                       scope='DensenetBC'):
     return densenet_bc(inputs,
                        num_classes,
                        is_training=is_training,
@@ -77,16 +77,17 @@ def densenet_bc_12_100(inputs,
                        reuse=reuse,
                        scope=scope)
 
+
 densenet_bc_12_100.default_image_size = 224
 
 
 def densenet_bc_24_50(inputs,
-                     num_classes=None,
-                     is_training=True,
-                     dropout_keep_prob=0.8,
-                     for_imagenet=True,
-                     reuse=None,
-                     scope='DensenetBC'):
+                      num_classes=None,
+                      is_training=True,
+                      dropout_keep_prob=0.8,
+                      for_imagenet=True,
+                      reuse=None,
+                      scope='DensenetBC'):
     return densenet_bc(inputs,
                        num_classes,
                        is_training=is_training,
@@ -96,6 +97,7 @@ def densenet_bc_24_50(inputs,
                        for_imagenet=for_imagenet,
                        reuse=reuse,
                        scope=scope)
+
 
 densenet_bc_24_50.default_image_size = 224
 
@@ -249,5 +251,6 @@ def densenet_bc(inputs,
                     end_points['Predictions'] = slim.softmax(net, scope='Predictions')
 
                 return net, end_points
+
 
 densenet_bc.default_image_size = 224

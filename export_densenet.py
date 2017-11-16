@@ -41,8 +41,8 @@ with tf.Graph().as_default():
     # Load the inception network structure
     with slim.arg_scope(densenet_bc.densenet_arg_scope()):
         logits, _ = densenet_bc.densenet_bc(processed_images,
-                                                  num_classes=NUM_CLASSES,
-                                                  is_training=False)
+                                            num_classes=NUM_CLASSES,
+                                            is_training=False)
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 

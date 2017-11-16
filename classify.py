@@ -10,6 +10,7 @@ def create_graph(model_file):
         graph_def.ParseFromString(f.read())
         _ = tf.import_graph_def(graph_def, name='')
 
+
 model_file = sys.argv[1]
 
 path = sys.argv[2]

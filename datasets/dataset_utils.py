@@ -30,39 +30,39 @@ DESCRIPTIONS_FILENAME = 'splits.txt'
 
 
 def int64_feature(values):
-  """Returns a TF-Feature of int64s.
+    """Returns a TF-Feature of int64s.
 
-  Args:
-    values: A scalar or list of values.
+    Args:
+      values: A scalar or list of values.
 
-  Returns:
-    a TF-Feature.
-  """
-  if not isinstance(values, (tuple, list)):
-    values = [values]
-  return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
+    Returns:
+      a TF-Feature.
+    """
+    if not isinstance(values, (tuple, list)):
+        values = [values]
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
 
 def bytes_feature(values):
-  """Returns a TF-Feature of bytes.
+    """Returns a TF-Feature of bytes.
 
-  Args:
-    values: A string.
+    Args:
+      values: A string.
 
-  Returns:
-    a TF-Feature.
-  """
-  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[values]))
+    Returns:
+      a TF-Feature.
+    """
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[values]))
 
 
 def image_to_tfexample(image_data, image_format, height, width, class_id):
-  return tf.train.Example(features=tf.train.Features(feature={
-      'image/encoded': bytes_feature(image_data),
-      'image/format': bytes_feature(image_format),
-      'image/class/label': int64_feature(class_id),
-      'image/height': int64_feature(height),
-      'image/width': int64_feature(width),
-  }))
+    return tf.train.Example(features=tf.train.Features(feature={
+        'image/encoded': bytes_feature(image_data),
+        'image/format': bytes_feature(image_format),
+        'image/class/label': int64_feature(class_id),
+        'image/height': int64_feature(height),
+        'image/width': int64_feature(width),
+    }))
 
 
 # def download_and_uncompress_tarball(tarball_url, dataset_dir):
@@ -88,153 +88,153 @@ def image_to_tfexample(image_data, image_format, height, width, class_id):
 
 def write_label_file(labels_to_class_names, tfrecords_dir,
                      filename=LABELS_FILENAME):
-  """Writes a file with the list of class names.
+    """Writes a file with the list of class names.
 
-  Args:
-    labels_to_class_names: A map of (integer) labels to class names.
-    dataset_dir: The directory in which the labels file should be written.
-    filename: The filename where the class names are written.
-  """
-  labels_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(labels_filename, 'w') as f:
-    for label in labels_to_class_names:
-      class_name = labels_to_class_names[label]
-      f.write('%d:%s\n' % (label, class_name))
+    Args:
+      labels_to_class_names: A map of (integer) labels to class names.
+      dataset_dir: The directory in which the labels file should be written.
+      filename: The filename where the class names are written.
+    """
+    labels_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(labels_filename, 'w') as f:
+        for label in labels_to_class_names:
+            class_name = labels_to_class_names[label]
+            f.write('%d:%s\n' % (label, class_name))
 
 
 def has_labels(tfrecords_dir, filename=LABELS_FILENAME):
-  """Specifies whether or not the dataset directory contains a label map file.
+    """Specifies whether or not the dataset directory contains a label map file.
 
-  Args:
-    dataset_dir: The directory in which the labels file is found.
-    filename: The filename where the class names are written.
+    Args:
+      dataset_dir: The directory in which the labels file is found.
+      filename: The filename where the class names are written.
 
-  Returns:
-    `True` if the labels file exists and `False` otherwise.
-  """
-  return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
+    Returns:
+      `True` if the labels file exists and `False` otherwise.
+    """
+    return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
 
 
 def read_label_file(tfrecords_dir, filename=LABELS_FILENAME):
-  """Reads the labels file and returns a mapping from ID to class name.
+    """Reads the labels file and returns a mapping from ID to class name.
 
-  Args:
-    tfrecords_dir: The directory in which the labels file is found.
-    filename: The filename where the class names are written.
+    Args:
+      tfrecords_dir: The directory in which the labels file is found.
+      filename: The filename where the class names are written.
 
-  Returns:
-    A map from a label (integer) to class name.
-  """
-  labels_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(labels_filename, 'rb') as f:
-    lines = f.read().decode()
-  lines = lines.split('\n')
-  lines = filter(None, lines)
+    Returns:
+      A map from a label (integer) to class name.
+    """
+    labels_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(labels_filename, 'rb') as f:
+        lines = f.read().decode()
+    lines = lines.split('\n')
+    lines = filter(None, lines)
 
-  labels_to_class_names = {}
-  for line in lines:
-    index = line.index(':')
-    labels_to_class_names[int(line[:index])] = line[index+1:]
-  return labels_to_class_names
+    labels_to_class_names = {}
+    for line in lines:
+        index = line.index(':')
+        labels_to_class_names[int(line[:index])] = line[index + 1:]
+    return labels_to_class_names
 
 
 def write_split_file(splits_to_sizes, tfrecords_dir, filename=SPLITS_FILENAME):
-  """Writes a file with the list of class names.
+    """Writes a file with the list of class names.
 
-  Args:
-    labels_to_class_names: A map of (integer) labels to class names.
-    tfrecords_dir: The directory in which the labels file should be written.
-    filename: The filename where the class names are written.
-  """
-  splits_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(splits_filename, 'w') as f:
-    for split in splits_to_sizes:
-      size = splits_to_sizes[split]
-      f.write('%s:%d\n' % (split, size))
+    Args:
+      labels_to_class_names: A map of (integer) labels to class names.
+      tfrecords_dir: The directory in which the labels file should be written.
+      filename: The filename where the class names are written.
+    """
+    splits_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(splits_filename, 'w') as f:
+        for split in splits_to_sizes:
+            size = splits_to_sizes[split]
+            f.write('%s:%d\n' % (split, size))
 
 
 def has_splits(tfrecords_dir, filename=SPLITS_FILENAME):
-  """Specifies whether or not the dataset directory contains a split map file.
+    """Specifies whether or not the dataset directory contains a split map file.
 
-  Args:
-    tfrecords_dir: The directory in which the splits file is found.
-    filename: The filename where the dataset split sizes are written.
+    Args:
+      tfrecords_dir: The directory in which the splits file is found.
+      filename: The filename where the dataset split sizes are written.
 
-  Returns:
-    `True` if the splits file exists and `False` otherwise.
-  """
-  return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
+    Returns:
+      `True` if the splits file exists and `False` otherwise.
+    """
+    return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
 
 
 def read_split_file(tfrecords_dir, filename=SPLITS_FILENAME):
-  """Reads the splits file and returns a mapping from ID to class name.
+    """Reads the splits file and returns a mapping from ID to class name.
 
-  Args:
-    dataset_dir: The directory in which the splits file is found.
-    filename: The filename where the class names are written.
+    Args:
+      dataset_dir: The directory in which the splits file is found.
+      filename: The filename where the class names are written.
 
-  Returns:
-    A map from a split (integer) to class name.
-  """
-  splits_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(splits_filename, 'rb') as f:
-    lines = f.read().decode()
-  lines = lines.split('\n')
-  lines = filter(None, lines)
+    Returns:
+      A map from a split (integer) to class name.
+    """
+    splits_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(splits_filename, 'rb') as f:
+        lines = f.read().decode()
+    lines = lines.split('\n')
+    lines = filter(None, lines)
 
-  splits_to_sizes = {}
-  for line in lines:
-    index = line.index(':')
-    splits_to_sizes[line[:index]] = int(line[index + 1:])
-  return splits_to_sizes
+    splits_to_sizes = {}
+    for line in lines:
+        index = line.index(':')
+        splits_to_sizes[line[:index]] = int(line[index + 1:])
+    return splits_to_sizes
 
 
 def write_description_file(items_to_descriptions, tfrecords_dir, filename=DESCRIPTIONS_FILENAME):
-  """Writes a file with the list of class names.
+    """Writes a file with the list of class names.
 
-  Args:
-    items_to_descriptions: A map of (integer) labels to class names.
-    tfrecords_dir: The directory in which the labels file should be written.
-    filename: The filename where the class names are written.
-  """
-  descriptions_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(descriptions_filename, 'w') as f:
-    for item in items_to_descriptions:
-      description = items_to_descriptions[item]
-      f.write('%s:%s\n' % (item, description))
+    Args:
+      items_to_descriptions: A map of (integer) labels to class names.
+      tfrecords_dir: The directory in which the labels file should be written.
+      filename: The filename where the class names are written.
+    """
+    descriptions_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(descriptions_filename, 'w') as f:
+        for item in items_to_descriptions:
+            description = items_to_descriptions[item]
+            f.write('%s:%s\n' % (item, description))
 
 
 def has_descriptions(tfrecords_dir, filename=DESCRIPTIONS_FILENAME):
-  """Specifies whether or not the dataset directory contains a description map file.
+    """Specifies whether or not the dataset directory contains a description map file.
 
-  Args:
-    tfrecords_dir: The directory in which the descriptions file is found.
-    filename: The filename where the dataset description sizes are written.
+    Args:
+      tfrecords_dir: The directory in which the descriptions file is found.
+      filename: The filename where the dataset description sizes are written.
 
-  Returns:
-    `True` if the descriptions file exists and `False` otherwise.
-  """
-  return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
+    Returns:
+      `True` if the descriptions file exists and `False` otherwise.
+    """
+    return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
 
 
 def read_description_file(tfrecords_dir, filename=DESCRIPTIONS_FILENAME):
-  """Reads the descriptions file and returns a mapping from ID to class name.
+    """Reads the descriptions file and returns a mapping from ID to class name.
 
-  Args:
-    dataset_dir: The directory in which the descriptions file is found.
-    filename: The filename where the class names are written.
+    Args:
+      dataset_dir: The directory in which the descriptions file is found.
+      filename: The filename where the class names are written.
 
-  Returns:
-    A map from a description (integer) to class name.
-  """
-  descriptions_filename = os.path.join(tfrecords_dir, filename)
-  with tf.gfile.Open(descriptions_filename, 'rb') as f:
-    lines = f.read().decode()
-  lines = lines.split('\n')
-  lines = filter(None, lines)
+    Returns:
+      A map from a description (integer) to class name.
+    """
+    descriptions_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(descriptions_filename, 'rb') as f:
+        lines = f.read().decode()
+    lines = lines.split('\n')
+    lines = filter(None, lines)
 
-  items_to_descriptions = {}
-  for line in lines:
-    index = line.index(':')
-    items_to_descriptions[line[:index]] = line[index + 1:]
-  return items_to_descriptions
+    items_to_descriptions = {}
+    for line in lines:
+        index = line.index(':')
+        items_to_descriptions[line[:index]] = line[index + 1:]
+    return items_to_descriptions

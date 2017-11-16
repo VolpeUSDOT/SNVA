@@ -40,8 +40,8 @@ with tf.Graph().as_default():
     # Load the inception network structure
     with slim.arg_scope(inception.inception_v3_arg_scope()):
         logits, _ = inception.inception_v3(processed_images,
-                                                  num_classes=NUM_CLASSES,
-                                                  is_training=False)
+                                           num_classes=NUM_CLASSES,
+                                           is_training=False)
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 

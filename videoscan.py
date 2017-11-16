@@ -55,50 +55,50 @@ args = parser.parse_args()
 currentSrcVideo = ''
 
 if platform.system() == 'Windows':
-  # path to ffmpeg bin
-  FFMPEG_PATH = 'ffmpeg.exe'
+    # path to ffmpeg bin
+    FFMPEG_PATH = 'ffmpeg.exe'
 else:
-  # path to ffmpeg bin
-  default_ffmpeg_path = '/usr/local/bin/ffmpeg'
-  FFMPEG_PATH = default_ffmpeg_path if path.exists(default_ffmpeg_path) else '/usr/bin/ffmpeg'
+    # path to ffmpeg bin
+    default_ffmpeg_path = '/usr/local/bin/ffmpeg'
+    FFMPEG_PATH = default_ffmpeg_path if path.exists(default_ffmpeg_path) else '/usr/bin/ffmpeg'
 
 # setup video temp directory for video frames
 video_tempDir = args.temppath
 if not os.path.isdir(video_tempDir):
-  os.mkdir(video_tempDir)
+    os.mkdir(video_tempDir)
 
 
 def drawProgressBar(percent, barLen=20):
-  sys.stdout.write("\r")
-  progress = ""
-  for i in range(barLen):
-    if i < int(barLen * percent):
-      progress += "="
-    else:
-      progress += " "
-  sys.stdout.write("[ %s ] %.2f%%" % (progress, percent * 100))
-  sys.stdout.flush()
+    sys.stdout.write("\r")
+    progress = ""
+    for i in range(barLen):
+        if i < int(barLen * percent):
+            progress += "="
+        else:
+            progress += " "
+    sys.stdout.write("[ %s ] %.2f%%" % (progress, percent * 100))
+    sys.stdout.flush()
 
 
 def percentage(part, whole):
-  return 100 * (float(part) / float(whole))
+    return 100 * (float(part) / float(whole))
 
 
 def copy_files(src_glob, dst_folder):
-  for fname in iglob(src_glob):
-    newfilename = os.path.basename(fname)
-    copy(fname, os.path.join(dst_folder, newfilename))
+    for fname in iglob(src_glob):
+        newfilename = os.path.basename(fname)
+        copy(fname, os.path.join(dst_folder, newfilename))
 
 
 def remove_video_frames():
-  for the_file in os.listdir(video_tempDir):
-    file_path = os.path.join(video_tempDir, the_file)
-    try:
-      if os.path.isfile(file_path):
-        os.unlink(file_path)
-        # elif os.path.isdir(file_path): shutil.rmtree(file_path)
-    except Exception as e:
-      print(e)
+    for the_file in os.listdir(video_tempDir):
+        file_path = os.path.join(video_tempDir, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+                # elif os.path.isdir(file_path): shutil.rmtree(file_path)
+        except Exception as e:
+            print(e)
 
 
 def save_training_frames(framenumber, label):
@@ -111,60 +111,61 @@ def save_training_frames(framenumber, label):
 
 
 def decode_video(video_path):
-  video_filename, video_file_extension = path.splitext(path.basename(video_path))
-  print(' ')
-  print('Decoding video file ' + video_filename)
-  video_temp = os.path.join(video_tempDir, str(video_filename) + '_%04d.jpg')
-  command = [
-    FFMPEG_PATH, '-i', video_path,
-    '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
-  ]
-  subprocess.call(command)
+    video_filename, video_file_extension = path.splitext(path.basename(video_path))
+    print(' ')
+    print('Decoding video file ' + video_filename)
+    video_temp = os.path.join(video_tempDir, str(video_filename) + '_%04d.jpg')
+    command = [
+        FFMPEG_PATH, '-i', video_path,
+        '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
+    ]
+    subprocess.call(command)
 
 
 def create_clip(video_path, event, totalframes, videoclipend):
-  # creates a video clip of the detected event
-  if (event[0] - (int(args.outputpadding) * int(args.fps))) >= 1:
-    start = event[0] - int(args.outputpadding) * int(args.fps)
-  else:
-    start = 1
-  if ((int(args.outputpadding) * int(args.fps)) + event[-1]) <= totalframes:
-    end = event[-1] + (int(args.outputpadding) * int(args.fps))
-  else:
-    end = totalframes
+    # creates a video clip of the detected event
+    if (event[0] - (int(args.outputpadding) * int(args.fps))) >= 1:
+        start = event[0] - int(args.outputpadding) * int(args.fps)
+    else:
+        start = 1
+    if ((int(args.outputpadding) * int(args.fps)) + event[-1]) <= totalframes:
+        end = event[-1] + (int(args.outputpadding) * int(args.fps))
+    else:
+        end = totalframes
 
-  if event[0] >= videoclipend:
-    starttime = datetime.timedelta(seconds=(start / int(args.fps)))
-    endtime = datetime.timedelta(seconds=(end / int(args.fps)))
-    duration = endtime - starttime
-    # print('Creating video clip from event which starts at ' + str(starttime) + ' and ends at ' + str(endtime) + '.')
+    if event[0] >= videoclipend:
+        starttime = datetime.timedelta(seconds=(start / int(args.fps)))
+        endtime = datetime.timedelta(seconds=(end / int(args.fps)))
+        duration = endtime - starttime
+        # print('Creating video clip from event which starts at ' + str(starttime) + ' and ends at ' + str(endtime) + '.')
 
-    video_reportDir = os.path.join(args.reportpath, '')
-    video_filename, video_file_extension = path.splitext(path.basename(video_path))
-    video_clip = video_reportDir + str(video_filename) + '_' + str(start) + '.mp4'
+        video_reportDir = os.path.join(args.reportpath, '')
+        video_filename, video_file_extension = path.splitext(path.basename(video_path))
+        video_clip = video_reportDir + str(video_filename) + '_' + str(start) + '.mp4'
 
-    command = [
-      FFMPEG_PATH, '-ss', str(starttime), '-i', str(currentSrcVideo),
-      '-t', str(duration), video_clip, '-y', '-loglevel', '0',
-    ]
-    subprocess.call(command)
-    return end
-  else:
-    return videoclipend
+        command = [
+            FFMPEG_PATH, '-ss', str(starttime), '-i', str(currentSrcVideo),
+            '-t', str(duration), video_clip, '-y', '-loglevel', '0',
+        ]
+        subprocess.call(command)
+        return end
+    else:
+        return videoclipend
 
 
 def load_video_filenames(relevant_path):
-  included_extenstions = ['avi', 'mp4', 'asf', 'mkv']
-  return [fn for fn in os.listdir(relevant_path)
-          if any(fn.lower().endswith(ext) for ext in included_extenstions)]
+    included_extenstions = ['avi', 'mp4', 'asf', 'mkv']
+    return [fn for fn in os.listdir(relevant_path)
+            if any(fn.lower().endswith(ext) for ext in included_extenstions)]
 
 
 # Loads label files, strips off carriage return
 def load_labels(path):
-  # load the labels and remove stuff we don't want to display
-  file_data = [line.split() for line
-               in tf.gfile.GFile(path)]
-  return [item[0].split(":") for item in file_data]
+    # load the labels and remove stuff we don't want to display
+    file_data = [line.split() for line
+                 in tf.gfile.GFile(path)]
+    return [item[0].split(":") for item in file_data]
+
 
 def load_tensor_types(path):
     # reads in the input and output tensors
@@ -172,22 +173,24 @@ def load_tensor_types(path):
         content = file.readlines()
     return content[0].rstrip() + ':0', content[1].rstrip() + ':0'
 
+
 def setup_reporting(passed_filename):
-  path = os.path.join(args.reportpath, '')
-  reportFileName = path + passed_filename + '_report.csv'
-  return open(reportFileName, 'w')
+    path = os.path.join(args.reportpath, '')
+    reportFileName = path + passed_filename + '_report.csv'
+    return open(reportFileName, 'w')
 
 
 def setup_logging(passed_filename):
-  path = os.path.join(args.reportpath, '')
-  filename = path + passed_filename + '_results.csv'
-  return open(filename, 'w')
+    path = os.path.join(args.reportpath, '')
+    filename = path + passed_filename + '_results.csv'
+    return open(filename, 'w')
+
 
 # Unpersists primary graph from file
 with tf.gfile.FastGFile(args.modelpath, 'rb') as f:
-  graph_def1 = tf.GraphDef()
-  graph_def1.ParseFromString(f.read())
-  primary_graph = tf.import_graph_def(graph_def1, name='primary')
+    graph_def1 = tf.GraphDef()
+    graph_def1.ParseFromString(f.read())
+    primary_graph = tf.import_graph_def(graph_def1, name='primary')
 
 # # Unpersists secondary graph from file
 # with tf.gfile.FastGFile("models/zone-features_graph.pb", 'rb') as g:
@@ -197,6 +200,8 @@ with tf.gfile.FastGFile(args.modelpath, 'rb') as f:
 
 # setup sessions ahead of time
 sess1 = tf.Session(graph=primary_graph)
+
+
 # sess2 = tf.Session(graph=secondary_graph)
 
 # def runsecondarygraph(image_tensor):
@@ -221,27 +226,26 @@ def runGraph(image_path, input_tensor, output_tensor):
     global flagfound
     global n
 
-  # Read in the image_data, but sort image paths first because os.listdir results are ordered arbitrarily
-  file_paths = [os.path.join(image_path, _) for _ in os.listdir(image_path)]
-  file_paths.sort()
-  image_data = [tf.gfile.FastGFile(_, 'rb').read() for _ in file_paths if os.path.isfile(_)]
-
+    # Read in the image_data, but sort image paths first because os.listdir results are ordered arbitrarily
+    file_paths = [os.path.join(image_path, _) for _ in os.listdir(image_path)]
+    file_paths.sort()
+    image_data = [tf.gfile.FastGFile(_, 'rb').read() for _ in file_paths if os.path.isfile(_)]
     # Feed the image_data as input to the graph and get first prediction
     softmax_tensor = sess1.graph.get_tensor_by_name('primary/' + output_tensor)
     input_placeholder = sess1.graph.get_tensor_by_name('primary/' + input_tensor)
 
-  print('Starting analysis on ' + str(len(image_data)) + ' video frames...')
+    print('Starting analysis on ' + str(len(image_data)) + ' video frames...')
 
-  event = []  # setup event tracking
-  videoclipend = 0
-  initial_smoothing = int(args.smoothing)  # apply a per frame smoothing factor to the data
-  initial_smoothing = initial_smoothing * int(args.fps)
-  smoothing = 0
-  for image in image_data:
-    n = n + 1
-    predictions = sess1.run(softmax_tensor, {input_placeholder: image})
+    event = []  # setup event tracking
+    videoclipend = 0
+    initial_smoothing = int(args.smoothing)  # apply a per frame smoothing factor to the data
+    initial_smoothing = initial_smoothing * int(args.fps)
+    smoothing = 0
+    for image in image_data:
+        n = n + 1
+        predictions = sess1.run(softmax_tensor, {input_placeholder: image})
 
-    top_k = [0, 1]
+        top_k = [0, 1]
 
         for node_id in top_k:
             human_string = primary_graph_lines[node_id][1]
@@ -252,7 +256,7 @@ def runGraph(image_path, input_tensor, output_tensor):
                 if score >= 0.75 and score <= 0.90:
                     save_training_frames(n, human_string)
 
-            if(human_string == args.labelname):                                                                         # if the label detected matches the passed label to search for
+            if (human_string == args.labelname):  # if the label detected matches the passed label to search for
                 if score < 0.95 and score >= 0.75:
                     if args.filter.upper() == 'ALL':
                         reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'Medium'))
@@ -266,25 +270,24 @@ def runGraph(image_path, input_tensor, output_tensor):
                     event.append(n)
 
         if score < 0.75:
-          if (smoothing == 0):
-            if len(event) >= initial_smoothing:
-              # print('Event end on frame ' + str(n))
-              if args.outputclips == True:
-                videoclipend = create_clip(video_file, event, len(image_data), videoclipend)
-            event = []
-            smoothing = initial_smoothing
-          else:
-            smoothing = smoothing - 1
-            # reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'Low'))
-            # reportTarget.write('\n')
+            if (smoothing == 0):
+                if len(event) >= initial_smoothing:
+                    # print('Event end on frame ' + str(n))
+                    if args.outputclips == True:
+                        videoclipend = create_clip(video_file, event, len(image_data), videoclipend)
+                event = []
+                smoothing = initial_smoothing
+            else:
+                smoothing = smoothing - 1
+                # reportTarget.write('%s, %s, %.5f, %s, ' % (n, human_string, score, 'Low'))
+                # reportTarget.write('\n')
 
     fileTarget.write("\n")
     # print('Current = ' + str(n) + '  Total = ' + str(len(image_data)))
     # print(int(percentage(n, len(image_data))))
-    drawProgressBar(percentage(n, len(image_data)) / 100, 40)
+    drawProgressBar(percentage(n, len(image_data)) / 100, 40)  # --------------------- Start processing logic
+    # if only one file was passed for analysis then inject it into the passed array
 
-# --------------------- Start processing logic
-# if only one file was passed for analysis then inject it into the passed array
 
 if args.allfiles:
     video_files = load_video_filenames(args.video_path)
@@ -324,7 +327,7 @@ else:
     runGraph(video_tempDir, input_tensor, output_tensor)
 
 if not args.keeptemp:
-  remove_video_frames()
+    remove_video_frames()
 
 print(' ')
 # print("--- Completed in %s seconds ---" % (datetime.datetime.fromtimestamp(time.time() - start_time)).strftime('%M:%S'))
@@ -332,4 +335,4 @@ stop = timeit.default_timer()
 total_time = stop - start
 mins, secs = divmod(total_time, 60)
 hours, mins = divmod(mins, 60)
-sys.stdout.write("Total running time: %d:%d:%d.\n"  % (hours, mins, secs))
+sys.stdout.write("Total running time: %d:%d:%d.\n" % (hours, mins, secs))

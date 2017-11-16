@@ -41,8 +41,8 @@ with tf.Graph().as_default():
     # Load the mobilenet network structure
     with slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope()):
         logits, _ = mobilenet_v1.mobilenet_v1(processed_images,
-                                                  num_classes=NUM_CLASSES,
-                                                  is_training=False)
+                                              num_classes=NUM_CLASSES,
+                                              is_training=False)
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 
