@@ -66,9 +66,6 @@ def decode_video(video_path):
         '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', image_path, '-hide_banner', '-loglevel', '0',
     ]
     subprocess.call(command)
-    for image in os.listdir(image_dir):
-        image_path = os.path.join(image_dir, image)
-        os.chmod(image_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
 
 
 def load_video_filenames(relevant_path):
