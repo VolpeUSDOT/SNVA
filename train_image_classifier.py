@@ -219,7 +219,7 @@ tf.app.flags.DEFINE_boolean(
     'When restoring a checkpoint would ignore missing variables.')
 
 tf.app.flags.DEFINE_float(
-    'gpu_memory_fraction', 1.0,
+    'gpu_memory_fraction', 0.9,
     'The ratio of total memory across all available GPUs to use with this process.')
 
 tf.app.flags.DEFINE_integer(
