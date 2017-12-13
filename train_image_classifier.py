@@ -71,6 +71,10 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'task', 0, 'Task id of the replica running the training.')
 
+tf.app.flags.DEFINE_float(
+  'dropout_rate', 0.2,
+  'The ratio of activations that are randomly ignored each training step.')
+
 ######################
 # Optimization Flags #
 ######################
@@ -395,7 +399,7 @@ def main(_):
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
-    with tf.Graph().as_default():
+    with tf.Graph().as_default(), tf.device('/gpu:1'):
         #######################
         # Config model_deploy #
         #######################
@@ -424,7 +428,8 @@ def main(_):
             FLAGS.model_name,
             num_classes=(dataset.num_classes - FLAGS.labels_offset),
             weight_decay=FLAGS.weight_decay,
-            is_training=True)
+            is_training=True,
+            dropout_rate=FLAGS.dropout_rate)
 
         #####################################
         # Select the preprocessing function #
