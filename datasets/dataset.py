@@ -20,14 +20,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from datasets import dataset_utils
 import math
 import os
+from os import path
 import random
 import sys
-
 import tensorflow as tf
-
-from datasets import dataset_utils
 
 slim = tf.contrib.slim
 
@@ -52,8 +51,19 @@ class ImageReader(object):
         return image
 
 
-def _get_filenames_and_classes(dataset_root):
-    """Returns a list of filenames and inferred class names.
+def _get_classes(data_subset_dir):
+    class_names = []
+    
+    for filename in os.listdir(data_subset_dir):
+        if filename != 'tfrecords':
+            if path.isdir(path.join(data_subset_dir, filename)):
+                class_names.append(filename)
+
+    return sorted(class_names)
+                
+                
+def _get_filepaths(data_subset_dir, split_name):
+    """Returns a list of filepaths and inferred class names.
   
     Args:
       dataset_dir: A directory containing a set of subdirectories representing
@@ -63,66 +73,69 @@ def _get_filenames_and_classes(dataset_root):
       A list of image file paths, relative to `dataset_dir` and the list of
       subdirectories, representing class names.
     """
-    directories = []
-    class_names = []
-    for filename in os.listdir(dataset_root):
+    image_filepaths = []
+
+    # if not eval split, sort before shuffling for repeatability given a random seed
+    # if eval split, sort anyway to preserve original frame ordering.
+    filenames = sorted(os.listdir(data_subset_dir))
+
+    if split_name != 'eval':
+        random.shuffle(filenames)
+
+    for filename in filenames:
         if filename != 'tfrecords':
-            path = os.path.join(dataset_root, filename)
-            if os.path.isdir(path):
-                directories.append(path)
-                class_names.append(filename)
+            filepath = os.path.join(data_subset_dir, filename)
+            if os.path.isdir(filepath):
+                for imagename in os.listdir(filepath):
+                    image_filepath = path.join(filepath, imagename)
+                    image_filepaths.append(image_filepath)
 
-    photo_filenames = []
-    for directory in directories:
-        for filename in os.listdir(directory):
-            path = os.path.join(directory, filename)
-            photo_filenames.append(path)
-
-    return photo_filenames, sorted(class_names)
+    return image_filepaths
 
 
 def _get_dataset_filename(tfrecords_dir, dataset_name, split_name, shard_id, num_shards):
     output_filename = dataset_name + '_%s_%05d-of-%05d.tfrecord' % (
         split_name, shard_id, num_shards)
-    return os.path.join(tfrecords_dir, output_filename)
+    return path.join(tfrecords_dir, output_filename)
 
 
-def _convert_dataset(dataset_name, split_name, filenames, class_names_to_ids, tfrecords_dir, batch_size, num_shards):
-    """Converts the given filenames to a TFRecord dataset.
+def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tfrecords_dir,
+                     batch_size, num_shards):
+    """Converts the given filepaths to a TFRecord dataset.
   
     Args:
-      split_name: The name of the dataset, either 'train' or 'validation'.
-      filenames: A list of absolute paths to png or jpg images.
+      split_name: The name of the data subset; either 'training', 'dev', 'test' or 'eval'.
+      filepaths: A list of absolute paths to png or jpg images.
       class_names_to_ids: A dictionary from class names (strings) to ids
         (integers).
-      dataset_dir: The directory where the converted datasets are stored.
+      tfrecords_dir: The directory where the converted datasets are stored.
     """
-    assert split_name in ['train', 'validation']
+    if not path.exists(path.join(path.join(tfrecords_dir, '..'), split_name)):
+        raise AssertionError()
 
-    filenames_len = len(filenames)
+    filepaths_len = len(filepaths)
 
     with tf.Graph().as_default():
         image_reader = ImageReader()
 
         with tf.Session('') as sess:
-
             for shard_id in range(num_shards):
                 output_filename = _get_dataset_filename(
                     tfrecords_dir, dataset_name, split_name, shard_id, num_shards)
 
                 with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
                     start_ndx = shard_id * batch_size
-                    end_ndx = min((shard_id + 1) * batch_size, filenames_len)
+                    end_ndx = min((shard_id + 1) * batch_size, filepaths_len)
                     for i in range(start_ndx, end_ndx):
-                        sys.stdout.write('\r>> Converting image %d/%d shard %d' % (i + 1, filenames_len, shard_id))
+                        sys.stdout.write('\r>> Converting image %d/%d shard %d' % (i + 1, filepaths_len, shard_id))
                         sys.stdout.flush()
 
                         # Read the filename:
-                        print(filenames[i])
-                        image_data = tf.gfile.FastGFile(filenames[i], 'rb').read()
+                        print(filepaths[i])
+                        image_data = tf.gfile.FastGFile(filepaths[i], 'rb').read()
                         height, width = image_reader.read_image_dims(sess, image_data)
 
-                        class_name = os.path.basename(os.path.dirname(filenames[i]))
+                        class_name = path.basename(path.dirname(filepaths[i]))
                         class_id = class_names_to_ids[class_name]
 
                         example = dataset_utils.image_to_tfexample(image_data, b'jpg', height, width, class_id)
@@ -132,20 +145,6 @@ def _convert_dataset(dataset_name, split_name, filenames, class_names_to_ids, tf
     sys.stdout.flush()
 
 
-# def _clean_up_temporary_files(dataset_dir):
-#     """Removes temporary files used to create the dataset.
-#
-#     Args:
-#       dataset_dir: The directory where the temporary files are stored.
-#     """
-#     filename = _DATA_URL.split('/')[-1]
-#     filepath = os.path.join(dataset_dir, filename)
-#     tf.gfile.Remove(filepath)
-#
-#     tmp_dir = os.path.join(dataset_dir, 'flower_photos')
-#     tf.gfile.DeleteRecursively(tmp_dir)
-
-
 def _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
     """Returns false if a named file does not exist or if the number of
     shards to be written is not equal to the number of shards that exists.
@@ -153,13 +152,13 @@ def _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
     Args:
       dataset_name: The name of the dataset.
       tfrecords_dir: The full path to the directory containing TFRecord shards.
-      splits_to_shards: a map from split names (e.g. 'train') to a number of shards
+      splits_to_shards: a map from split names (e.g. 'training') to a number of shards
     """
-    for split_name in ['train', 'validation']:
-        num_shards = splits_to_shards[split_name]
+    for split_name, num_shards in splits_to_shards.items():
         for shard_id in range(num_shards):
             output_filename = _get_dataset_filename(
                 tfrecords_dir, dataset_name, split_name, shard_id, num_shards)
+
             if not tf.gfile.Exists(output_filename):
                 return False
     return True
@@ -169,7 +168,7 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
     """Gets a dataset tuple with instructions for reading construction.
   
     Args:
-      split_name: A train/validation split name.
+      split_name: A training/dev split name.
       dataset_dir: The base directory of the dataset sources.
       file_pattern: The file pattern to use when matching the dataset sources.
         It is assumed that the pattern contains a '%s' string so that the split
@@ -180,24 +179,24 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
       A `Dataset` namedtuple.
   
     Raises:
-      ValueError: if `split_name` is not a valid train/validation split.
+      ValueError: if `split_name` is not a valid training/dev split.
     """
-    dataset_dir = os.path.join(datasets_root_dir, dataset_name)
-    tfrecords_dir = os.path.join(dataset_dir, 'tfrecords')
+    dataset_dir = path.join(datasets_root_dir, dataset_name)
+    tfrecords_dir = path.join(dataset_dir, 'tfrecords')
 
     splits_filename = dataset_name + '_splits.txt'
 
     if dataset_utils.has_splits(tfrecords_dir, splits_filename):
         splits_to_sizes = dataset_utils.read_split_file(tfrecords_dir, splits_filename)
     else:
-        raise ValueError(os.path.join(tfrecords_dir, splits_filename) + ' does not exist')
+        raise ValueError(path.join(tfrecords_dir, splits_filename) + ' does not exist')
 
     if split_name not in splits_to_sizes:
         raise ValueError('split name %s was not recognized.' % split_name)
 
     if not file_pattern:
         file_pattern = dataset_name + '_%s_*.tfrecord'
-    file_pattern = os.path.join(tfrecords_dir, file_pattern % split_name)
+    file_pattern = path.join(tfrecords_dir, file_pattern % split_name)
 
     # Allowing None in the signature so that dataset_factory can use the default.
     if reader is None:
@@ -218,13 +217,15 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
     decoder = slim.tfexample_decoder.TFExampleDecoder(
         keys_to_features, items_to_handlers)
 
+    labels_filename = dataset_name + '_labels.txt'
     labels_to_names = None
-    if dataset_utils.has_labels(tfrecords_dir):
-        labels_to_names = dataset_utils.read_label_file(tfrecords_dir)
+    if dataset_utils.has_labels(tfrecords_dir, labels_filename):
+        labels_to_names = dataset_utils.read_label_file(tfrecords_dir, labels_filename)
 
+    descriptions_filename = dataset_name + '_descriptions.txt'
     items_to_descriptions = None
-    if dataset_utils.has_descriptions(tfrecords_dir):
-        items_to_descriptions = dataset_utils.read_description_file(tfrecords_dir)
+    if dataset_utils.has_descriptions(tfrecords_dir, descriptions_filename):
+        items_to_descriptions = dataset_utils.read_description_file(tfrecords_dir, descriptions_filename)
 
     return slim.dataset.Dataset(
         data_sources=file_pattern,
@@ -232,32 +233,51 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
         decoder=decoder,
         num_samples=splits_to_sizes[split_name],
         items_to_descriptions=items_to_descriptions,
-        num_classes=len(os.listdir(dataset_dir)) - 1,  # dataset_dir has one folder per class, plus the tfrecords folder
+        num_classes=len(labels_to_names),
         labels_to_names=labels_to_names)
 
 
-def convert(datasets_root_dir, dataset_name, batch_size, validation_ratio, random_seed):
+def convert(datasets_root_dir, dataset_name, batch_size, random_seed, split_names):
     """Runs the download and conversion operation.
-  
+
     Args:
-      dataset_dir: The dataset directory where the dataset is stored.
+      datasets_root_dir: The directory where all datasets are stored.
+      dataset_name: The the subfolder where the named dataset's TFRecords are stored.
+      batch_size: The number of shards per batch of TFRecords.
+      random_seed: The random seed used to instantiate the pseudo-random number generator
+      that shuffles non-eval samples before creating TFRecord shards
+      convert_eval_subset: If True, assume an subdir named 'eval' exists in datasets_root_dir
+      and create TFRecords for the samples in that directory.
     """
-    dataset_dir = os.path.join(datasets_root_dir, dataset_name)
+    
+    dataset_dir = path.join(datasets_root_dir, dataset_name)
 
     if not tf.gfile.Exists(dataset_dir):
         raise ValueError('The dataset ' + dataset_name + ' either does not exist or is misnamed')
 
-    photo_filenames, class_names = _get_filenames_and_classes(dataset_dir)
-    photo_filenames_len = len(photo_filenames)
+    random.seed(random_seed)
 
-    num_validation_samples = int(round(photo_filenames_len * validation_ratio))
-    num_training_samples = photo_filenames_len - num_validation_samples
+    splits_to_filepaths = {}
+    splits_to_sizes = {}
+    splits_to_shards = {}
 
-    splits_to_shards = {
-        'train': int(math.ceil(num_training_samples / batch_size)),
-        'validation': int(math.ceil(num_validation_samples / batch_size))}
+    class_path = path.join(dataset_dir, split_names[0])
 
-    tfrecords_dir = os.path.join(dataset_dir, 'tfrecords')
+    if not path.exists(class_path):
+        os.mkdir(class_path)
+
+    class_names = _get_classes(class_path)
+
+    for split_name in split_names:
+        split_dir = path.join(dataset_dir, split_name)
+        image_filepaths = _get_filepaths(split_dir, split_name)
+        num_samples = len(image_filepaths)
+
+        splits_to_filepaths[split_name] = image_filepaths
+        splits_to_sizes[split_name] = num_samples
+        splits_to_shards[split_name] = int(math.ceil(num_samples / batch_size))
+
+    tfrecords_dir = path.join(dataset_dir, 'tfrecords')
 
     if tf.gfile.Exists(tfrecords_dir):
         if _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
@@ -265,38 +285,33 @@ def convert(datasets_root_dir, dataset_name, batch_size, validation_ratio, rando
             return
         else:
             for file in os.listdir(tfrecords_dir):
-                os.remove(os.path.join(tfrecords_dir, file))
+                os.remove(path.join(tfrecords_dir, file))
     else:
         tf.gfile.MakeDirs(tfrecords_dir)
 
-    # Divide into train and test:
-    random.seed(random_seed)
-    random.shuffle(photo_filenames)
+    class_name_enum = [class_name for class_name in enumerate(class_names)]
 
-    splits_to_filenames = {
-        'train': photo_filenames[num_validation_samples:],
-        'validation': photo_filenames[:num_validation_samples]}
+    class_names_to_ids = {class_name: ndx for (ndx, class_name) in class_name_enum}
 
-    class_names_to_ids = {class_name: ndx for (ndx, class_name) in enumerate(class_names)}
-
-    # First, convert the training and validation sets.
-    for split_name in ['train', 'validation']:
-        _convert_dataset(dataset_name, split_name, splits_to_filenames[split_name], class_names_to_ids,
+    # First, convert the traininging and dev sets.
+    for split_name in split_names:
+        _convert_dataset(dataset_name, split_name, splits_to_filepaths[split_name], class_names_to_ids,
                          tfrecords_dir, batch_size, splits_to_shards[split_name])
 
     # Then, write the labels file:
     labels_filename = dataset_name + '_labels.txt'
-    labels_to_class_names = {ndx: class_name for (ndx, class_name) in enumerate(class_names)}
+    labels_to_class_names = {ndx: class_name for (ndx, class_name) in class_name_enum}
     dataset_utils.write_label_file(labels_to_class_names, tfrecords_dir, labels_filename)
 
     # Then, write the splits file:
     splits_filename = dataset_name + '_splits.txt'
-    splits_to_sizes = {'train': num_training_samples, 'validation': num_validation_samples}
+    # splits_to_sizes = {'training': num_traininging_samples, 'dev': num_dev_samples}
     dataset_utils.write_split_file(splits_to_sizes, tfrecords_dir, splits_filename)
 
     # Finally, write the descriptions file:
     descriptions_filename = dataset_name + '_descriptions.txt'
-    items_to_descriptions = {'image': 'A color image of varying size.', 'label': 'A single integer between 0 and 1'}
+    items_to_descriptions = {'image': 'A color image of varying size.',
+                             'label': 'A single integer between 0 and 1'}
     dataset_utils.write_description_file(items_to_descriptions, tfrecords_dir, descriptions_filename)
 
     # _clean_up_temporary_files(tfrecords_dir)

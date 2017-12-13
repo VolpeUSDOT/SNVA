@@ -36,6 +36,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 from datasets import dataset
+from os import path
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -52,12 +53,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_integer(
     'batch_size',
     32,
-    'The name of the dataset to convert, one of "cifar10", "construction", "railroad", "mnist".')
-
-tf.app.flags.DEFINE_float(
-    'validation_ratio',
-    0.3,
-    'The percentage of the total number of samples to be used for validation')
+    'The name of the dataset to convert, one of "cifar10", "mnist", or something custom')
 
 tf.app.flags.DEFINE_integer(
     'random_seed',
@@ -65,8 +61,21 @@ tf.app.flags.DEFINE_integer(
     'The random seed used to instantiate the pseudo-random number generator '
     'that shuffles the samples before creating TFRecord shards')
 
-_DATASET_NAMES = ['cifar10', 'flowers', 'mnist', 'construction', 'railroad', 'shrp2_nds_a', 'washington_street',
-                  'Run11-RouteB-7-27-16-1600-1830_02']
+tf.app.flags.DEFINE_bool(
+    'convert_standard_subsets',
+    True,
+    'If True, create TFRecords for the samples in the training, dev, and '
+    'test sub-directories of datasets_root_dir.'
+)
+
+tf.app.flags.DEFINE_bool(
+    'convert_eval_subset',
+    False,
+    'If True, create TFRecords for the samples in the '
+    'eval sub-directory of datasets_root_dir.'
+)
+
+DATASET_NAMES = ['cifar10', 'flowers', 'mnist']
 
 
 def main(_):
@@ -75,12 +84,24 @@ def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must specify the dataset directory using --dataset_dir')
 
-    if FLAGS.dataset_name in _DATASET_NAMES:
-        dataset.convert(FLAGS.dataset_dir, FLAGS.dataset_name, FLAGS.batch_size, FLAGS.validation_ratio,
-                        FLAGS.random_seed)
+    subset_names = []
+
+    if FLAGS.convert_standard_subsets:
+        subset_names.extend(['training', 'dev', 'test'])
+
+    if FLAGS.convert_eval_subset:
+        subset_names.append('eval')
+
+    if len(subset_names) > 0:
+        if path.exists(path.join(FLAGS.dataset_dir, FLAGS.dataset_name)) or FLAGS.dataset_name in DATASET_NAMES:
+            dataset.convert(FLAGS.dataset_dir, FLAGS.dataset_name, FLAGS.batch_size, FLAGS.random_seed, subset_names)
+        else:
+            raise ValueError(
+                'dataset_name [%s] was not recognized.' % FLAGS.dataset_name)
     else:
         raise ValueError(
-            'dataset_name [%s] was not recognized.' % FLAGS.dataset_dir)
+            'Dataset conversion aborted because no subsets were specified.'
+        )
 
 
 if __name__ == '__main__':
