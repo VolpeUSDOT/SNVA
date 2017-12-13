@@ -3,9 +3,9 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--checkpoint_root_dir', '-crd',
+parser.add_argument('--checkpoint_root_dir', '-c',
                     default='/media/data_1/snva/Checkpoints/fhwa')
-parser.add_argument('--dataset_name', '-dn', required=True)
+parser.add_argument('--dataset_name', '-d', required=True)
 
 args = parser.parse_args()
 
@@ -14,8 +14,8 @@ ckpt_dir = os.path.join(args.checkpoint_root_dir, args.dataset_name)
 if not os.path.exists(ckpt_dir):
     os.mkdir(ckpt_dir)
 
-archs = ['densenet_bc_12_100', 'densenet_bc_24_50', 'inception_resnet_v2',
-         'inception_v3', 'inception_v4', 'mobilenet_v1']
+archs = ['inception_resnet_v2', 'inception_v3', 'mobilenet_v1']
+# 'densenet_bc_12_100', 'densenet_bc_24_50', 'inception_v4',
 
 inits = ['random_init', 'transfer_init']
 
