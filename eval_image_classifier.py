@@ -82,7 +82,18 @@ tf.app.flags.DEFINE_integer(
 
 tf.app.flags.DEFINE_float(
     'gpu_memory_fraction', 0.9,
-    'The ratio of total memory across all available GPUs to use with this process.')
+    'The ratio of total memory across all available GPUs to use with this process. '
+    'Defaults to a suggested max of 0.9.')
+
+tf.app.flags.DEFINE_integer(
+    'gpu_device_num', 0,
+    'The device number of a single GPU to use for evaluation on a multi-GPU system. '
+    'Defaults to zero.')
+
+tf.app.flags.DEFINE_boolean(
+    'cpu_only', False,
+    'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
+    'Defaults to False.')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -92,7 +103,13 @@ def main(_):
         raise ValueError('You must supply the dataset directory with --dataset_dir')
 
     tf.logging.set_verbosity(tf.logging.INFO)
-    with tf.Graph().as_default(), tf.device('/gpu:1'):
+
+    if FLAGS.cpu_only:
+        device_name = '/cpu:0'
+    else:
+        device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+    with tf.Graph().as_default(), tf.device(device_name):
         tf_global_step = slim.get_or_create_global_step()
 
         ######################
