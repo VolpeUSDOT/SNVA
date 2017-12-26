@@ -55,12 +55,17 @@ networks_map = {'alexnet_v2': alexnet.alexnet_v2,
                 'resnet_v2_152': resnet_v2.resnet_v2_152,
                 'resnet_v2_200': resnet_v2.resnet_v2_200,
                 'mobilenet_v1': mobilenet_v1.mobilenet_v1,
+                'mobilenet_v1_200': mobilenet_v1.mobilenet_v1_200,
+                'mobilenet_v1_150': mobilenet_v1.mobilenet_v1_150,
                 'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_075,
                 'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_050,
                 'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_025,
                 'densenet_bc': densenet_bc.densenet_bc,
                 'densenet_bc_12_100': densenet_bc.densenet_bc_12_100,
-                'densenet_bc_24_50': densenet_bc.densenet_bc_24_50
+                'densenet_bc_18_75': densenet_bc.densenet_bc_18_75,
+                'densenet_bc_24_50': densenet_bc.densenet_bc_24_50,
+                'densenet_bc_36_25': densenet_bc.densenet_bc_36_25,
+                'densenet_bc_6_50': densenet_bc.densenet_bc_6_50
                 }
 
 arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
@@ -85,12 +90,17 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   'resnet_v2_152': resnet_v2.resnet_arg_scope,
                   'resnet_v2_200': resnet_v2.resnet_arg_scope,
                   'mobilenet_v1': mobilenet_v1.mobilenet_v1_arg_scope,
+                  'mobilenet_v1_200': mobilenet_v1.mobilenet_v1_arg_scope,
+                  'mobilenet_v1_150': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_arg_scope,
                   'densenet_bc': densenet_bc.densenet_arg_scope,
                   'densenet_bc_12_100': densenet_bc.densenet_arg_scope,
-                  'densenet_bc_24_50': densenet_bc.densenet_arg_scope
+                  'densenet_bc_18_75': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_24_50': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_36_25': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_6_50': densenet_bc.densenet_arg_scope
                   }
 
 

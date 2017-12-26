@@ -350,6 +350,8 @@ def wrapped_partial(func, *args, **kwargs):
     return partial_func
 
 
+mobilenet_v1_200 = wrapped_partial(mobilenet_v1, depth_multiplier=2.00)
+mobilenet_v1_150 = wrapped_partial(mobilenet_v1, depth_multiplier=1.50)
 mobilenet_v1_075 = wrapped_partial(mobilenet_v1, depth_multiplier=0.75)
 mobilenet_v1_050 = wrapped_partial(mobilenet_v1, depth_multiplier=0.50)
 mobilenet_v1_025 = wrapped_partial(mobilenet_v1, depth_multiplier=0.25)
