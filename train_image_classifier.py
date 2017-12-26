@@ -222,14 +222,25 @@ tf.app.flags.DEFINE_boolean(
     'ignore_missing_vars', False,
     'When restoring a checkpoint would ignore missing variables.')
 
-tf.app.flags.DEFINE_float(
-    'gpu_memory_fraction', 0.9,
-    'The ratio of total memory across all available GPUs to use with this process.')
-
 tf.app.flags.DEFINE_integer(
     'max_checkpoints_to_keep', None,
     'The maximum number of recent checkpoint files to keep. '
     'As new files are created, older files are deleted.')
+
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 0.9,
+    'The ratio of total memory across all available GPUs to use with this process. '
+    'Defaults to a suggested max of 0.9.')
+
+tf.app.flags.DEFINE_integer(
+    'gpu_device_num', 0,
+    'The device number of a single GPU to use for evaluation on a multi-GPU system. '
+    'Defaults to zero.')
+
+tf.app.flags.DEFINE_boolean(
+    'cpu_only', False,
+    'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
+    'Defaults to False.')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -399,7 +410,12 @@ def main(_):
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
-    with tf.Graph().as_default(), tf.device('/gpu:1'):
+    if FLAGS.cpu_only:
+        device_name = '/cpu:0'
+    else:
+        device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+    with tf.Graph().as_default() if FLAGS.num_clones > 1 else tf.Graph().as_default(), tf.device(device_name):
         #######################
         # Config model_deploy #
         #######################
