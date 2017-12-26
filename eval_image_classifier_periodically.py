@@ -20,13 +20,13 @@ from __future__ import print_function
 
 import math
 import tensorflow as tf
-
+from tensorflow.contrib import slim
+from tensorflow.contrib import metrics
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import math_ops
 from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
-from tensorflow.contrib import metrics
-
-slim = tf.contrib.slim
 
 tf.app.flags.DEFINE_integer(
     'batch_size', 100, 'The number of samples in each batch.')
@@ -173,15 +173,57 @@ def main(_):
         labels = tf.squeeze(labels)
 
         # Define the metrics:
+        false_positives_name = 'False_Positives'
+        false_negatives_name = 'False_Negatives'
+        precision_name = 'Precision'
+        recall_name = 'Recall'
+
         names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
             'Accuracy': metrics.streaming_accuracy(predictions, labels),
-            'Precision': metrics.streaming_precision(predictions, labels),
-            'Recall': metrics.streaming_recall(predictions, labels),
-            'True_Positives': metrics.streaming_true_positives(predictions, labels),
-            'False_Positives': metrics.streaming_false_positives(predictions, labels),
-            'True_Negatives': metrics.streaming_true_negatives(predictions, labels),
-            'False_Negatives': metrics.streaming_false_negatives(predictions, labels)
+            precision_name: metrics.streaming_precision(predictions, labels),
+            recall_name: metrics.streaming_recall(predictions, labels),
+            false_positives_name: metrics.streaming_false_positives(predictions, labels),
+            false_negatives_name: metrics.streaming_false_negatives(predictions, labels)
         })
+
+        names_to_values['Sum_of_False_Positives_and_Negatives'] = tf.add(names_to_values[false_positives_name],
+                                                                         names_to_values[false_negatives_name])
+
+        def safe_divide(numerator, denominator):
+            """Divides two values, returning 0 if the denominator is <= 0.
+            Copied from the metric_ops.py protected member function.
+
+            Args:
+              numerator: A real `Tensor`.
+              denominator: A real `Tensor`, with dtype matching `numerator`.
+              name: Name for the returned op.
+
+            Returns:
+              0 if `denominator` <= 0, else `numerator` / `denominator`
+            """
+            return array_ops.where(
+                math_ops.greater(denominator, 0),
+                math_ops.truediv(numerator, denominator),
+                0)
+
+        def f_beta_measure(beta=1.0):
+            beta_squared = math_ops.multiply(beta, beta)
+            f_value = math_ops.multiply(
+                math_ops.add(1.0, beta_squared),
+                safe_divide(
+                    math_ops.multiply(names_to_values[precision_name], names_to_values[recall_name]),
+                    math_ops.add(
+                        math_ops.multiply(beta_squared, names_to_values[precision_name]),
+                        names_to_values[recall_name]
+                    )
+                )
+            )
+
+            return f_value
+
+        names_to_values['F1'] = f_beta_measure()
+        names_to_values['F2'] = f_beta_measure(2.0)
+        names_to_values['F0.5'] = f_beta_measure(0.5)
 
         # Print the summaries to screen.
         for name, value in names_to_values.items():
@@ -189,29 +231,6 @@ def main(_):
             op = tf.summary.scalar(summary_name, value, collections=[])
             op = tf.Print(op, [value], summary_name)
             tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
-
-        # Also print summaries for imbalanced dataset aggregate metrics
-        summary_name = 'eval/Sum_of_True_Positives_and_Negatives'
-        stpn_value = tf.add(names_to_values['True_Positives'],
-                            names_to_values['True_Negatives'])
-        stpn_op = tf.summary.scalar(summary_name, stpn_value, collections=[])
-        stpn_op = tf.Print(stpn_op, [stpn_value], summary_name)
-        tf.add_to_collection(tf.GraphKeys.SUMMARIES, stpn_op)
-
-        summary_name = 'eval/Sum_of_False_Positives_and_Negatives'
-        stfn_value = tf.add(names_to_values['False_Positives'],
-                            names_to_values['False_Negatives'])
-        stfn_op = tf.summary.scalar(summary_name, stfn_value, collections=[])
-        stfn_op = tf.Print(stfn_op, [stfn_value], summary_name)
-        tf.add_to_collection(tf.GraphKeys.SUMMARIES, stfn_op)
-
-        summary_name = 'eval/Average_of_Accuracy_Precision_and_Recall'
-        aapr_value = tf.reduce_mean([names_to_values['Accuracy'],
-                                     names_to_values['Precision'],
-                                     names_to_values['Recall']])
-        aapr_op = tf.summary.scalar(summary_name, aapr_value, collections=[])
-        aapr_op = tf.Print(aapr_op, [aapr_value], summary_name)
-        tf.add_to_collection(tf.GraphKeys.SUMMARIES, aapr_op)
 
         # TODO(sguada) use num_epochs=1
         if FLAGS.max_num_batches:
