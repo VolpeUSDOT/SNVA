@@ -40,7 +40,7 @@ def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader
       ValueError: If the dataset is not found in dataset_dir.
     """
     if dataset_name not in os.listdir(dataset_dir):
-        raise ValueError('The dataset named %s was not found in the directory %s'
-                         % dataset_name, dataset_dir)
+        raise ValueError('The dataset named {0} was not found in the directory {1}',
+                         dataset_name, dataset_dir)
 
     return dataset.get_split(dataset_name, split_name, dataset_dir, file_pattern, reader)
