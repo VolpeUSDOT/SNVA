@@ -72,7 +72,7 @@ tf.app.flags.DEFINE_integer(
     'task', 0, 'Task id of the replica running the training.')
 
 tf.app.flags.DEFINE_float(
-  'dropout_rate', 0.2,
+  'dropout_rate', None,
   'The ratio of activations that are randomly ignored each training step.')
 
 ######################

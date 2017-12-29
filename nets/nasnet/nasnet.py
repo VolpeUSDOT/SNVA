@@ -34,8 +34,8 @@ slim = tf.contrib.slim
 # cosine (single period) learning rate decay
 # auxiliary head loss weighting: 0.4
 # clip global norm of all gradients by 5
-def _cifar_config(is_training=True):
-  drop_path_keep_prob = 1.0 if not is_training else 0.6
+def _cifar_config(dropout_keep_prob, is_training=True):
+  drop_path_keep_prob = 1.0 if not is_training else dropout_keep_prob
   return tf.contrib.training.HParams(
       stem_multiplier=3.0,
       drop_path_keep_prob=drop_path_keep_prob,
@@ -64,8 +64,8 @@ def _cifar_config(is_training=True):
 # auxiliary head loss weighting: 0.4
 # label smoothing: 0.1
 # clip global norm of all gradients by 10
-def _large_imagenet_config(is_training=True):
-  drop_path_keep_prob = 1.0 if not is_training else 0.7
+def _large_imagenet_config(dropout_keep_prob, is_training=True):
+  drop_path_keep_prob = 1.0 if not is_training else dropout_keep_prob
   return tf.contrib.training.HParams(
       stem_multiplier=3.0,
       dense_dropout_keep_prob=0.5,
@@ -91,10 +91,10 @@ def _large_imagenet_config(is_training=True):
 # auxiliary head weighting: 0.4
 # label smoothing: 0.1
 # clip global norm of all gradients by 10
-def _mobile_imagenet_config():
+def _mobile_imagenet_config(dropout_keep_prob):
   return tf.contrib.training.HParams(
       stem_multiplier=1.0,
-      dense_dropout_keep_prob=0.5,
+      dense_dropout_keep_prob=dropout_keep_prob,
       num_cells=12,
       filter_scaling_rate=2.0,
       drop_path_keep_prob=1.0,
@@ -273,9 +273,9 @@ def _cifar_stem(inputs, hparams):
 
 
 def build_nasnet_cifar(
-    images, num_classes, is_training=True):
+    images, num_classes, is_training=True, dropout_keep_prob=0.6):
   """Build NASNet model for the Cifar Dataset."""
-  hparams = _cifar_config(is_training=is_training)
+  hparams = _cifar_config(dropout_keep_prob=dropout_keep_prob, is_training=is_training)
 
   if tf.test.is_gpu_available() and hparams.data_format == 'NHWC':
     tf.logging.info('A GPU is available on the machine, consider using NCHW '
@@ -318,9 +318,10 @@ build_nasnet_cifar.default_image_size = 32
 
 def build_nasnet_mobile(images, num_classes,
                         is_training=True,
+                        dropout_keep_prob=0.5,
                         final_endpoint=None):
   """Build NASNet Mobile model for the ImageNet Dataset."""
-  hparams = _mobile_imagenet_config()
+  hparams = _mobile_imagenet_config(dropout_keep_prob)
 
   if tf.test.is_gpu_available() and hparams.data_format == 'NHWC':
     tf.logging.info('A GPU is available on the machine, consider using NCHW '
@@ -366,9 +367,10 @@ build_nasnet_mobile.default_image_size = 224
 
 def build_nasnet_large(images, num_classes,
                        is_training=True,
+                       dropout_keep_prob=0.7,
                        final_endpoint=None):
   """Build NASNet Large model for the ImageNet Dataset."""
-  hparams = _large_imagenet_config(is_training=is_training)
+  hparams = _large_imagenet_config(dropout_keep_prob, is_training=is_training)
 
   if tf.test.is_gpu_available() and hparams.data_format == 'NHWC':
     tf.logging.info('A GPU is available on the machine, consider using NCHW '
