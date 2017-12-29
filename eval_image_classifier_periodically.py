@@ -173,6 +173,8 @@ def main(_):
         labels = tf.squeeze(labels)
 
         # Define the metrics:
+        true_positives_name = 'True_Positives'
+        true_negatives_name = 'True_Negatives'
         false_positives_name = 'False_Positives'
         false_negatives_name = 'False_Negatives'
         precision_name = 'Precision'
@@ -182,11 +184,13 @@ def main(_):
             'Accuracy': metrics.streaming_accuracy(predictions, labels),
             precision_name: metrics.streaming_precision(predictions, labels),
             recall_name: metrics.streaming_recall(predictions, labels),
+            true_positives_name: metrics.streaming_true_positives(predictions, labels),
+            true_negatives_name: metrics.streaming_true_negatives(predictions, labels),
             false_positives_name: metrics.streaming_false_positives(predictions, labels),
             false_negatives_name: metrics.streaming_false_negatives(predictions, labels)
         })
 
-        names_to_values['Sum_of_False_Positives_and_Negatives'] = tf.add(names_to_values[false_positives_name],
+        names_to_values['Total_Misclassifications'] = tf.add(names_to_values[false_positives_name],
                                                                          names_to_values[false_negatives_name])
 
         def safe_divide(numerator, denominator):
@@ -239,9 +243,11 @@ def main(_):
             # This ensures that we make a single pass over all of the data.
             num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
 
-        session_config = tf.ConfigProto(allow_soft_placement=True)
-
-        session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
+        if FLAGS.cpu_only:
+            session_config = None
+        else:
+            session_config = tf.ConfigProto(allow_soft_placement=True)
+            session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
         tf.logging.info('Periodically Evaluating %s' % FLAGS.checkpoint_path)
 
