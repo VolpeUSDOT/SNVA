@@ -112,6 +112,7 @@ def resnet_v2(inputs,
               blocks,
               num_classes=None,
               is_training=True,
+              dropout_keep_prob=0.8,
               global_pool=True,
               output_stride=None,
               include_root_block=True,
@@ -148,6 +149,7 @@ def resnet_v2(inputs,
       num_classes: Number of predicted classes for classification tasks. If None
         we return the features before the logit layer.
       is_training: whether is training or not.
+      dropout_keep_prob: float, the fraction to keep before final layer.
       global_pool: If True, we perform global average pooling before computing the
         logits. Set to True for image classification, False for dense prediction.
       output_stride: If None, then the output will be computed at the nominal
@@ -208,6 +210,7 @@ def resnet_v2(inputs,
                     # Global average pooling.
                     net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
                 if num_classes is not None:
+                    net = slim.dropout(net, dropout_keep_prob, scope='Dropout')
                     net = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
                                       normalizer_fn=None, scope='logits')
                     if spatial_squeeze:
@@ -253,6 +256,7 @@ resnet_v2.default_image_size = 224
 def resnet_v2_50(inputs,
                  num_classes=None,
                  is_training=True,
+                 dropout_keep_prob=0.8,
                  global_pool=True,
                  output_stride=None,
                  spatial_squeeze=True,
@@ -266,7 +270,7 @@ def resnet_v2_50(inputs,
         resnet_v2_block('block4', base_depth=512, num_units=3, stride=1),
     ]
     return resnet_v2(inputs, blocks, num_classes, is_training=is_training,
-                     global_pool=global_pool, output_stride=output_stride,
+                     dropout_keep_prob=dropout_keep_prob, global_pool=global_pool, output_stride=output_stride,
                      include_root_block=True, spatial_squeeze=spatial_squeeze,
                      reuse=reuse, scope=scope)
 
@@ -277,6 +281,7 @@ resnet_v2_50.default_image_size = resnet_v2.default_image_size
 def resnet_v2_101(inputs,
                   num_classes=None,
                   is_training=True,
+                  dropout_keep_prob=0.8,
                   global_pool=True,
                   output_stride=None,
                   spatial_squeeze=True,
@@ -290,7 +295,7 @@ def resnet_v2_101(inputs,
         resnet_v2_block('block4', base_depth=512, num_units=3, stride=1),
     ]
     return resnet_v2(inputs, blocks, num_classes, is_training=is_training,
-                     global_pool=global_pool, output_stride=output_stride,
+                     dropout_keep_prob=dropout_keep_prob, global_pool=global_pool, output_stride=output_stride,
                      include_root_block=True, spatial_squeeze=spatial_squeeze,
                      reuse=reuse, scope=scope)
 
@@ -301,6 +306,7 @@ resnet_v2_101.default_image_size = resnet_v2.default_image_size
 def resnet_v2_152(inputs,
                   num_classes=None,
                   is_training=True,
+                  dropout_keep_prob=0.8,
                   global_pool=True,
                   output_stride=None,
                   spatial_squeeze=True,
@@ -314,7 +320,7 @@ def resnet_v2_152(inputs,
         resnet_v2_block('block4', base_depth=512, num_units=3, stride=1),
     ]
     return resnet_v2(inputs, blocks, num_classes, is_training=is_training,
-                     global_pool=global_pool, output_stride=output_stride,
+                     dropout_keep_prob=dropout_keep_prob, global_pool=global_pool, output_stride=output_stride,
                      include_root_block=True, spatial_squeeze=spatial_squeeze,
                      reuse=reuse, scope=scope)
 
@@ -325,6 +331,7 @@ resnet_v2_152.default_image_size = resnet_v2.default_image_size
 def resnet_v2_200(inputs,
                   num_classes=None,
                   is_training=True,
+                  dropout_keep_prob=0.8,
                   global_pool=True,
                   output_stride=None,
                   spatial_squeeze=True,
@@ -338,7 +345,7 @@ def resnet_v2_200(inputs,
         resnet_v2_block('block4', base_depth=512, num_units=3, stride=1),
     ]
     return resnet_v2(inputs, blocks, num_classes, is_training=is_training,
-                     global_pool=global_pool, output_stride=output_stride,
+                     dropout_keep_prob=dropout_keep_prob, global_pool=global_pool, output_stride=output_stride,
                      include_root_block=True, spatial_squeeze=spatial_squeeze,
                      reuse=reuse, scope=scope)
 
