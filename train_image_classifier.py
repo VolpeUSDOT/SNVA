@@ -425,7 +425,8 @@ def main(_):
             replica_id=FLAGS.task,
             num_replicas=FLAGS.worker_replicas,
             num_ps_tasks=FLAGS.num_ps_tasks,
-            ps_job_name='localhost' if FLAGS.num_ps_tasks > 0 else None)
+            ps_job_name='localhost' if FLAGS.num_ps_tasks > 0 else None,
+            worker_job_name='localhost' if FLAGS.num_ps_tasks > 0 else None)
 
         # Create global_step
         with tf.device(deploy_config.variables_device()):
@@ -586,10 +587,11 @@ def main(_):
         summary_op = tf.summary.merge(list(summaries), name='summary_op')
 
         # Limit GPU memory utilization
-        session_config = tf.ConfigProto(allow_soft_placement=True)
-
-        session_config.gpu_options.per_process_gpu_memory_fraction = \
-            FLAGS.gpu_memory_fraction
+        if FLAGS.cpu_only:
+            session_config = None
+        else:
+            session_config = tf.ConfigProto(allow_soft_placement=True)
+            session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
         # Set limit on number of checkpoints to keep
         saver = tf_saver.Saver(max_to_keep=FLAGS.max_checkpoints_to_keep) \
