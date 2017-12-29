@@ -14,8 +14,10 @@ ckpt_dir = os.path.join(args.checkpoint_root_dir, args.dataset_name)
 if not os.path.exists(ckpt_dir):
     os.mkdir(ckpt_dir)
 
-archs = ['inception_resnet_v2', 'inception_v3', 'mobilenet_v1']
-# 'densenet_bc_12_100', 'densenet_bc_24_50', 'inception_v4',
+archs = ['densenet_bc_6_50', 'densenet_bc_12_50', 'densenet_bc_24_50', 'densenet_bc_18_75', 'densenet_bc_12_100',
+         'inception_v3', 'inception_resnet_v2', 'mobilenet_v1', 'mobilenet_v1_025', 'resnet_v2_50', 'resnet_v2_101',
+         'resnet_v2_152']
+#
 
 inits = ['random_init', 'transfer_init']
 
