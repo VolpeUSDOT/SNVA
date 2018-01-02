@@ -41,7 +41,7 @@ networks_map = {'alexnet_v2': alexnet.alexnet_v2,
                 'densenet_bc_12_100': densenet_bc.densenet_bc_12_100,
                 'densenet_bc_18_75': densenet_bc.densenet_bc_18_75,
                 'densenet_bc_24_50': densenet_bc.densenet_bc_24_50,
-                'densenet_bc_12_50': densenet_bc.densenet_bc_12_50,
+                'densenet_bc_12_40': densenet_bc.densenet_bc_12_40,
                 'densenet_bc_6_50': densenet_bc.densenet_bc_6_50,
                 'inception_v1': inception.inception_v1,
                 'inception_v2': inception.inception_v2,
@@ -57,8 +57,8 @@ networks_map = {'alexnet_v2': alexnet.alexnet_v2,
                 'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_050,
                 'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_025,
                 'nasnet_cifar': nasnet.build_nasnet_cifar,
-                'nasnet_mobile': nasnet.build_nasnet_mobile,
                 'nasnet_large': nasnet.build_nasnet_large,
+                'nasnet_mobile': nasnet.build_nasnet_mobile,
                 'resnet_v1_50': resnet_v1.resnet_v1_50,
                 'resnet_v1_101': resnet_v1.resnet_v1_101,
                 'resnet_v1_152': resnet_v1.resnet_v1_152,
@@ -78,7 +78,7 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   'densenet_bc_12_100': densenet_bc.densenet_arg_scope,
                   'densenet_bc_18_75': densenet_bc.densenet_arg_scope,
                   'densenet_bc_24_50': densenet_bc.densenet_arg_scope,
-                  'densenet_bc_12_50': densenet_bc.densenet_arg_scope,
+                  'densenet_bc_12_40': densenet_bc.densenet_arg_scope,
                   'densenet_bc_6_50': densenet_bc.densenet_arg_scope,
                   'inception_v1': inception.inception_v3_arg_scope,
                   'inception_v2': inception.inception_v3_arg_scope,
@@ -94,8 +94,8 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_arg_scope,
                   'nasnet_cifar': nasnet.nasnet_cifar_arg_scope,
-                  'nasnet_mobile': nasnet.nasnet_mobile_arg_scope,
                   'nasnet_large': nasnet.nasnet_large_arg_scope,
+                  'nasnet_mobile': nasnet.nasnet_mobile_arg_scope,
                   'overfeat': overfeat.overfeat_arg_scope,
                   'resnet_v1_50': resnet_v1.resnet_arg_scope,
                   'resnet_v1_101': resnet_v1.resnet_arg_scope,
@@ -141,9 +141,10 @@ def get_network_fn(name,
         arg_scope = arg_scopes_map[name](weight_decay=weight_decay)
 
         with slim.arg_scope(arg_scope):
-            return func(images, num_classes, is_training=is_training,
-                        dropout_keep_prob=None if dropout_rate is None else 1-dropout_rate)
-
+            if dropout_rate is not None:
+                return func(images, num_classes, is_training=is_training, dropout_keep_prob=1-dropout_rate)
+            else:
+                return func(images, num_classes, is_training=is_training)
     if hasattr(func, 'default_image_size'):
         network_fn.default_image_size = func.default_image_size
 
