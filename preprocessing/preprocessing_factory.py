@@ -67,6 +67,7 @@ def get_preprocessing(name, is_training=False):
         'mobilenet_v1_200': inception_preprocessing,
         'nasnet_cifar': cifarnet_preprocessing,
         'nasnet_large': inception_preprocessing,
+        'nasnet_medium': inception_preprocessing,
         'nasnet_mobile': inception_preprocessing,
         'resnet_v1_50': vgg_preprocessing,
         'resnet_v1_101': vgg_preprocessing,

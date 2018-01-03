@@ -83,6 +83,33 @@ def _large_imagenet_config(is_training=True):
 
 # Notes for training the mobile NASNet ImageNet model
 # -------------------------------------
+# batch size (per replica): 16
+# learning rate: 0.01 * 100
+# learning rate scaling factor: 0.97
+# num epochs per decay: 2.4
+# sync sgd with 50 replicas
+# auxiliary head weighting: 0.4
+# label smoothing: 0.1
+# clip global norm of all gradients by 10
+def _medium_imagenet_config(is_training=True):
+  drop_path_keep_prob = 1.0 if not is_training else 0.8
+  return tf.contrib.training.HParams(
+      stem_multiplier=3.0,
+      dense_dropout_keep_prob=0.5,
+      num_cells=12,
+      filter_scaling_rate=2.0,
+      num_conv_filters=128,
+      drop_path_keep_prob=drop_path_keep_prob,
+      use_aux_head=1,
+      num_reduction_layers=2,
+      data_format='NCHW',  # data_format='NHWC',
+      skip_reduction_layer_input=1,
+      total_training_steps=250000,
+  )
+
+
+# Notes for training the mobile NASNet ImageNet model
+# -------------------------------------
 # batch size (per replica): 32
 # learning rate: 0.04 * 50
 # learning rate scaling factor: 0.97
@@ -152,6 +179,40 @@ def nasnet_mobile_arg_scope(weight_decay=4e-5,
       in batch norm.
   Returns:
     An `arg_scope` to use for the NASNet Mobile Model.
+  """
+  batch_norm_params = {
+      # Decay for the moving averages.
+      'decay': batch_norm_decay,
+      # epsilon to prevent 0s in variance.
+      'epsilon': batch_norm_epsilon,
+      'scale': True,
+      'fused': True,
+  }
+  weights_regularizer = tf.contrib.layers.l2_regularizer(weight_decay)
+  weights_initializer = tf.contrib.layers.variance_scaling_initializer(
+      mode='FAN_OUT')
+  with arg_scope([slim.fully_connected, slim.conv2d, slim.separable_conv2d],
+                 weights_regularizer=weights_regularizer,
+                 weights_initializer=weights_initializer):
+    with arg_scope([slim.fully_connected],
+                   activation_fn=None, scope='FC'):
+      with arg_scope([slim.conv2d, slim.separable_conv2d],
+                     activation_fn=None, biases_initializer=None):
+        with arg_scope([slim.batch_norm], **batch_norm_params) as sc:
+          return sc
+
+
+def nasnet_medium_arg_scope(weight_decay=5e-5,
+                           batch_norm_decay=0.9997,
+                           batch_norm_epsilon=1e-3):
+  """Defines the default arg scope for the NASNet-A Medium ImageNet model.
+  Args:
+    weight_decay: The weight decay to use for regularizing the model.
+    batch_norm_decay: Decay for batch norm moving average.
+    batch_norm_epsilon: Small float added to variance to avoid dividing by zero
+      in batch norm.
+  Returns:
+    An `arg_scope` to use for the NASNet Large Model.
   """
   batch_norm_params = {
       # Decay for the moving averages.
@@ -362,6 +423,54 @@ def build_nasnet_mobile(images, num_classes,
                                 stem_type='imagenet',
                                 final_endpoint=final_endpoint)
 build_nasnet_mobile.default_image_size = 224
+
+
+def build_nasnet_medium(images, num_classes,
+                       is_training=True,
+                       final_endpoint=None):
+  """Build NASNet Large model for the ImageNet Dataset."""
+  hparams = _medium_imagenet_config(is_training=is_training)
+
+  if tf.test.is_gpu_available() and hparams.data_format == 'NHWC':
+    tf.logging.info('A GPU is available on the machine, consider using NCHW '
+                    'data format for increased speed on GPU.')
+
+  if hparams.data_format == 'NCHW':
+    images = tf.transpose(images, [0, 3, 1, 2])
+
+  # Calculate the total number of cells in the network
+  # Add 2 for the reduction cells
+  total_num_cells = hparams.num_cells + 2
+  # If ImageNet, then add an additional two for the stem cells
+  total_num_cells += 2
+
+  normal_cell = nasnet_utils.NasNetANormalCell(
+      hparams.num_conv_filters, hparams.drop_path_keep_prob,
+      total_num_cells, hparams.total_training_steps)
+  reduction_cell = nasnet_utils.NasNetAReductionCell(
+      hparams.num_conv_filters, hparams.drop_path_keep_prob,
+      total_num_cells, hparams.total_training_steps)
+  with arg_scope([slim.dropout, nasnet_utils.drop_path, slim.batch_norm],
+                 is_training=is_training):
+    with arg_scope([slim.avg_pool2d,
+                    slim.max_pool2d,
+                    slim.conv2d,
+                    slim.batch_norm,
+                    slim.separable_conv2d,
+                    nasnet_utils.factorized_reduction,
+                    nasnet_utils.global_avg_pool,
+                    nasnet_utils.get_channel_index,
+                    nasnet_utils.get_channel_dim],
+                   data_format=hparams.data_format):
+      return _build_nasnet_base(images,
+                                normal_cell=normal_cell,
+                                reduction_cell=reduction_cell,
+                                num_classes=num_classes,
+                                hparams=hparams,
+                                is_training=is_training,
+                                stem_type='imagenet',
+                                final_endpoint=final_endpoint)
+build_nasnet_medium.default_image_size = 299
 
 
 def build_nasnet_large(images, num_classes,
