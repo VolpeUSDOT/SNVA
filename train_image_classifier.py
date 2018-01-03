@@ -25,6 +25,9 @@ from datasets import dataset_factory
 from deployment import model_deploy
 from nets import nets_factory
 from preprocessing import preprocessing_factory
+import signal
+import sys
+import os
 
 slim = tf.contrib.slim
 
@@ -412,8 +415,24 @@ def main(_):
 
     if FLAGS.cpu_only:
         device_name = '/cpu:0'
+
+        tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+        os.putenv('CUDA_VISIBLE_DEVICES', '')
+
+        def interrupt_handler(signal_number, _):
+            tf.logging.info(
+                'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+            os.unsetenv('CUDA_VISIBLE_DEVICES')
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, interrupt_handler)
+
+        session_config = None
     else:
         device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+        gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
+        session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 
     with tf.Graph().as_default() if FLAGS.num_clones > 1 else tf.Graph().as_default(), tf.device(device_name):
         #######################
@@ -585,13 +604,6 @@ def main(_):
 
         # Merge all summaries together.
         summary_op = tf.summary.merge(list(summaries), name='summary_op')
-
-        # Limit GPU memory utilization
-        if FLAGS.cpu_only:
-            session_config = None
-        else:
-            session_config = tf.ConfigProto(allow_soft_placement=True)
-            session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
         # Set limit on number of checkpoints to keep
         saver = tf_saver.Saver(max_to_keep=FLAGS.max_checkpoints_to_keep) \

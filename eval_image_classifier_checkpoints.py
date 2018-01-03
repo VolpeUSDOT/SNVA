@@ -33,7 +33,11 @@ from tensorflow.python.ops import math_ops
 from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
-from os import path
+import signal
+import sys
+import os
+
+path = os.path
 
 tf.app.flags.DEFINE_integer(
     'batch_size', 100, 'The number of samples in each batch.')
@@ -121,8 +125,24 @@ def main(_):
 
     if FLAGS.cpu_only:
         device_name = '/cpu:0'
+
+        tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+        os.putenv('CUDA_VISIBLE_DEVICES', '')
+
+        def interrupt_handler(signal_number, _):
+            tf.logging.info(
+                'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+            os.unsetenv('CUDA_VISIBLE_DEVICES')
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, interrupt_handler)
+
+        session_config = None
     else:
         device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+        gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
+        session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 
     with tf.Graph().as_default(), tf.device(device_name):
         tf_global_step = slim.get_or_create_global_step()
@@ -188,6 +208,8 @@ def main(_):
         labels = tf.squeeze(labels)
 
         # Define the metrics:
+        true_positives_name = 'True_Positives'
+        true_negatives_name = 'True_Negatives'
         false_positives_name = 'False_Positives'
         false_negatives_name = 'False_Negatives'
         precision_name = 'Precision'
@@ -197,12 +219,14 @@ def main(_):
             'Accuracy': metrics.streaming_accuracy(predictions, labels),
             precision_name: metrics.streaming_precision(predictions, labels),
             recall_name: metrics.streaming_recall(predictions, labels),
+            true_positives_name: metrics.streaming_true_positives(predictions, labels),
+            true_negatives_name: metrics.streaming_true_negatives(predictions, labels),
             false_positives_name: metrics.streaming_false_positives(predictions, labels),
             false_negatives_name: metrics.streaming_false_negatives(predictions, labels)
         })
 
-        names_to_values['Sum_of_False_Positives_and_Negatives'] = tf.add(names_to_values[false_positives_name],
-                                                                         names_to_values[false_negatives_name])
+        names_to_values['Total_Misclassifications'] = tf.add(names_to_values[false_positives_name],
+                                                             names_to_values[false_negatives_name])
 
         def safe_divide(numerator, denominator):
             """Divides two values, returning 0 if the denominator is <= 0.
@@ -233,7 +257,6 @@ def main(_):
                     )
                 )
             )
-
             return f_value
 
         names_to_values['F1'] = f_beta_measure()
@@ -253,12 +276,6 @@ def main(_):
         else:
             # This ensures that we make a single pass over all of the data.
             num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
-
-        if FLAGS.cpu_only:
-            session_config = None
-        else:
-            session_config = tf.ConfigProto(allow_soft_placement=True)
-            session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
         for line in tf.gfile.Open(checkpoint_text_file_path):
             split = line.split(':')

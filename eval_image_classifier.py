@@ -27,6 +27,9 @@ from tensorflow.python.ops import math_ops
 from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
+import signal
+import sys
+import os
 
 tf.app.flags.DEFINE_integer(
     'batch_size', 100, 'The number of samples in each batch.')
@@ -106,8 +109,24 @@ def main(_):
 
     if FLAGS.cpu_only:
         device_name = '/cpu:0'
+
+        tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+        os.putenv('CUDA_VISIBLE_DEVICES', '')
+
+        def interrupt_handler(signal_number, _):
+            tf.logging.info(
+                'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+            os.unsetenv('CUDA_VISIBLE_DEVICES')
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, interrupt_handler)
+
+        session_config = None
     else:
         device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+        gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
+        session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
 
     with tf.Graph().as_default(), tf.device(device_name):
         tf_global_step = slim.get_or_create_global_step()
@@ -222,7 +241,6 @@ def main(_):
                     )
                 )
             )
-
             return f_value
 
         names_to_values['F1'] = f_beta_measure()
@@ -249,12 +267,6 @@ def main(_):
             checkpoint_path = FLAGS.checkpoint_path
 
         tf.logging.info('Evaluating %s' % checkpoint_path)
-
-        if FLAGS.cpu_only:
-            session_config = None
-        else:
-            session_config = tf.ConfigProto(allow_soft_placement=True)
-            session_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction
 
         slim.evaluation.evaluate_once(
             master=FLAGS.master,
