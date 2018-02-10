@@ -407,6 +407,13 @@ def _get_variables_to_train():
     return variables_to_train
 
 
+def interrupt_handler(signal_number, _):
+    tf.logging.info(
+        'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+    os.unsetenv('CUDA_VISIBLE_DEVICES')
+    sys.exit(0)
+
+
 def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory with --dataset_dir')
@@ -419,12 +426,6 @@ def main(_):
         tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
         os.putenv('CUDA_VISIBLE_DEVICES', '')
 
-        def interrupt_handler(signal_number, _):
-            tf.logging.info(
-                'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
-            os.unsetenv('CUDA_VISIBLE_DEVICES')
-            sys.exit(0)
-
         signal.signal(signal.SIGINT, interrupt_handler)
 
         session_config = None
@@ -433,6 +434,12 @@ def main(_):
 
         gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
         session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+
+        if FLAGS.num_clones == 1:
+            tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to %d.', FLAGS.gpu_device_num)
+            os.putenv('CUDA_VISIBLE_DEVICES', str(FLAGS.gpu_device_num))
+
+            signal.signal(signal.SIGINT, interrupt_handler)
 
     with tf.Graph().as_default() if FLAGS.num_clones > 1 else tf.Graph().as_default(), tf.device(device_name):
         #######################

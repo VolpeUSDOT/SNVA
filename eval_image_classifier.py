@@ -101,32 +101,39 @@ tf.app.flags.DEFINE_boolean(
 FLAGS = tf.app.flags.FLAGS
 
 
+def interrupt_handler(signal_number, _):
+    tf.logging.info(
+        'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+    os.unsetenv('CUDA_VISIBLE_DEVICES')
+    sys.exit(0)
+
+
 def main(_):
     if not FLAGS.dataset_dir:
-        raise ValueError('You must supply the dataset directory with --dataset_dir')
+        raise ValueError('You must supply the dataset directory using --dataset_dir')
+
+    if not tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+        raise ValueError('checkpoint_path must be a directory')
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
     if FLAGS.cpu_only:
         device_name = '/cpu:0'
 
+        session_config = None
+
         tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
         os.putenv('CUDA_VISIBLE_DEVICES', '')
-
-        def interrupt_handler(signal_number, _):
-            tf.logging.info(
-                'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
-            os.unsetenv('CUDA_VISIBLE_DEVICES')
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, interrupt_handler)
-
-        session_config = None
     else:
         device_name = '/gpu:' + str(FLAGS.gpu_device_num)
 
         gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
         session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+
+        tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to %d.', FLAGS.gpu_device_num)
+        os.putenv('CUDA_VISIBLE_DEVICES', str(FLAGS.gpu_device_num))
+
+    signal.signal(signal.SIGINT, interrupt_handler)
 
     with tf.Graph().as_default(), tf.device(device_name):
         tf_global_step = slim.get_or_create_global_step()
@@ -276,7 +283,6 @@ def main(_):
             eval_op=list(names_to_updates.values()),
             variables_to_restore=variables_to_restore,
             session_config=session_config)
-
 
 if __name__ == '__main__':
     tf.app.run()
