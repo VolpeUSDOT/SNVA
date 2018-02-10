@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import math
+import time
 import tensorflow as tf
 from tensorflow.contrib import slim
 from tensorflow.contrib import metrics
@@ -274,6 +275,7 @@ def main(_):
             checkpoint_path = FLAGS.checkpoint_path
 
         tf.logging.info('Evaluating %s' % checkpoint_path)
+        start_time = time.time()
 
         slim.evaluation.evaluate_once(
             master=FLAGS.master,
@@ -283,6 +285,9 @@ def main(_):
             eval_op=list(names_to_updates.values()),
             variables_to_restore=variables_to_restore,
             session_config=session_config)
+
+        end_time = time.time()
+        print('Evaluation elapsed ' + str(end_time - start_time) + ' seconds')
 
 if __name__ == '__main__':
     tf.app.run()
