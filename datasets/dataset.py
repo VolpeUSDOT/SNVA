@@ -230,6 +230,11 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
   if dataset_utils.has_descriptions(tfrecords_dir, descriptions_filename):
     items_to_descriptions = dataset_utils.read_description_file(tfrecords_dir, descriptions_filename)
 
+  statistics_filename = dataset_name + '_statistics.txt'
+  names_to_statistics = None
+  if dataset_utils.has_statistics(tfrecords_dir, statistics_filename):
+    names_to_statistics = dataset_utils.read_statistics_file(tfrecords_dir, statistics_filename)
+
   return slim.dataset.Dataset(
     data_sources=file_pattern,
     reader=reader,
@@ -237,10 +242,12 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
     num_samples=splits_to_sizes[split_name],
     items_to_descriptions=items_to_descriptions,
     num_classes=len(labels_to_names),
-    labels_to_names=labels_to_names)
+    labels_to_names=labels_to_names,
+    names_to_statistics=names_to_statistics)
 
 
-def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_seed):
+def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_seed,
+            compute_statistics):
   """Runs the download and conversion operation.
 
   Args:
@@ -292,6 +299,19 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
   else:
     tf.gfile.MakeDirs(tfrecords_dir)
 
+  # Write the statistics file:
+  if compute_statistics:
+    means, std_devs, mins, maxs = _compute_statistics(splits_to_filepaths['training'])
+    statistics_filename = dataset_name + '_statistics.txt'
+    names_to_statistics = {
+      'r_mean': means[0], 'g_mean': means[1], 'b_mean': means[2],
+      'r_std_dev': std_devs[0], 'g_std_dev': std_devs[1], 'b_std_dev': std_devs[2],
+      'r_min': mins[0], 'g_min': mins[1], 'b_min': mins[2],
+      'r_max': maxs[0], 'g_max': maxs[1], 'b_max': maxs[2]
+    }
+    dataset_utils.write_statistics_file(
+      names_to_statistics, tfrecords_dir, statistics_filename)
+
   class_name_enum = [class_name for class_name in enumerate(class_names)]
 
   class_names_to_ids = {class_name: ndx for (ndx, class_name) in class_name_enum}
@@ -318,6 +338,144 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
   dataset_utils.write_description_file(items_to_descriptions, tfrecords_dir, descriptions_filename)
 
   print('\nFinished converting the ' + dataset_name + ' dataset!')
+
+
+def _compute_statistics(source_file_paths, epsilon=1e-3):
+  tf.logging.info('Computing image subset statistics.')
+
+  with tf.Graph().as_default():
+    image_reader = ImageReader()
+
+    # track the number of samples processed so far
+    population_size = tf.Variable(
+      initial_value=0, trainable=False, name='population_size', dtype=tf.int32
+    )
+    # aggregate per-image mean values over the entire population
+    population_per_channel_mean = tf.Variable(
+      initial_value=[0.0, 0.0, 0.0], trainable=False,
+      name='population_per_channel_mean', dtype=tf.float32)
+
+    # aggregate per-image variance values over the entire population
+    population_per_channel_variance = tf.Variable(
+      initial_value=[0.0, 0.0, 0.0], trainable=False,
+      name='population_per_channel_variance', dtype=tf.float32)
+
+    image_placeholder = tf.placeholder(dtype=tf.uint8)
+
+    image = tf.image.convert_image_dtype(image_placeholder, dtype=tf.float32)
+
+    # compute per-channel means and variances for the given image
+    sample_per_channel_mean, sample_per_channel_variance = tf.nn.moments(
+      image, axes=[0, 1], name='moments')
+
+    population_size = population_size.assign_add(1)
+
+    delta = tf.subtract(sample_per_channel_mean, population_per_channel_mean)
+    delta_ratio = tf.divide(delta, tf.to_float(population_size))
+    population_per_channel_mean = population_per_channel_mean.assign_add(delta_ratio)
+
+    delta2 = tf.subtract(sample_per_channel_mean, population_per_channel_mean)
+    delta_product = tf.multiply(delta, delta2)
+    population_per_channel_variance = population_per_channel_variance.assign_add(
+      delta_product)
+
+    decoded_images = []
+    # track the per-channel maximum and minimum pixel values for use in rescaling
+    population_per_channel_min = tf.Variable(
+      initial_value=[0.0, 0.0, 0.0], trainable=False,
+      name='population_per_channel_min', dtype=tf.float32
+    )
+    population_per_channel_max = tf.Variable(
+      initial_value=[0.0, 0.0, 0.0], trainable=False,
+      name='population_per_channel_max', dtype=tf.float32
+    )
+    standardized_image_placeholder = tf.placeholder(dtype=tf.uint8)
+    per_channel_mean_placeholder = tf.placeholder(dtype=tf.float32)
+    per_channel_std_dev_placeholder = tf.placeholder(dtype=tf.float32)
+
+    standardized_image = tf.image.convert_image_dtype(
+      standardized_image_placeholder, dtype=tf.float32)
+
+    # normalize image
+    standardized_image = tf.divide(tf.subtract(
+      standardized_image, per_channel_mean_placeholder), per_channel_std_dev_placeholder)
+
+    sample_per_channel_max = tf.reduce_max(standardized_image, axis=[0, 1])
+
+    population_per_channel_max = population_per_channel_max.assign(
+      tf.maximum(population_per_channel_max, sample_per_channel_max)
+    )
+    sample_per_channel_min = tf.reduce_min(standardized_image, axis=[0, 1])
+
+    population_per_channel_min = population_per_channel_min.assign(
+      tf.minimum(population_per_channel_min, sample_per_channel_min)
+    )
+
+    with tf.Session() as sess:
+      sess.run(tf.global_variables_initializer())
+
+      for source_file_path in source_file_paths:
+        if os.path.isfile(source_file_path):
+          image_data = tf.gfile.FastGFile(source_file_path, 'rb').read()
+          image_data = image_reader.decode_jpeg(sess, image_data)
+
+          decoded_images.append(image_data)
+
+          statistics = sess.run([population_size,
+                                 population_per_channel_mean,
+                                 population_per_channel_variance],
+                                feed_dict={image_placeholder: image_data})
+
+      per_channel_mean = statistics[1]
+      per_channel_std_dev = sess.run(tf.maximum(tf.sqrt(tf.divide(
+        statistics[2], tf.subtract(statistics[0], 1))), epsilon))
+
+      for decoded_image in decoded_images:
+        statistics = sess.run([population_per_channel_min,
+                               population_per_channel_max],
+                              feed_dict={standardized_image_placeholder: decoded_image,
+                                         per_channel_mean_placeholder: per_channel_mean,
+                                         per_channel_std_dev_placeholder: per_channel_std_dev})
+
+      per_channel_min = statistics[0]
+      per_channel_max = statistics[1]
+
+    return per_channel_mean, per_channel_std_dev, per_channel_min, per_channel_max
+
+
+def compute_statistics(datasets_root_dir, dataset_name):
+  """Runs the download and conversion operation.
+
+  Args:
+    datasets_root_dir: The directory where all datasets are stored.
+    dataset_name: The the subfolder where the named dataset's TFRecords are stored.
+  """
+
+  dataset_dir = path.join(datasets_root_dir, dataset_name)
+
+  if not tf.gfile.Exists(dataset_dir):
+    raise ValueError('The dataset ' + dataset_name + ' either does not exist or is misnamed')
+
+  tfrecords_dir = path.join(dataset_dir, 'tfrecords')
+
+  if not tf.gfile.Exists(tfrecords_dir):
+    tf.gfile.MakeDirs(tfrecords_dir)
+
+  split_dir = path.join(dataset_dir, 'training')
+  training_image_filepaths = _get_filepaths(split_dir, 'training')
+
+  means, std_devs, mins, maxs = _compute_statistics(training_image_filepaths)
+  statistics_filename = dataset_name + '_statistics.txt'
+  names_to_statistics = {
+    'r_mean': means[0], 'g_mean': means[1], 'b_mean': means[2],
+    'r_std_dev': std_devs[0], 'g_std_dev': std_devs[1], 'b_std_dev': std_devs[2],
+    'r_min': mins[0], 'g_min': mins[1], 'b_min': mins[2],
+    'r_max': maxs[0], 'g_max': maxs[1], 'b_max': maxs[2]
+  }
+  dataset_utils.write_statistics_file(
+    names_to_statistics, tfrecords_dir, statistics_filename)
+
+  print('\nFinished computing ' + dataset_name + ' statistics!')
 
 
 def _create_data_set_paths(data_set_dir, class_dir_names, create_standard_subsets,

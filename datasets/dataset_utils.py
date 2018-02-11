@@ -27,6 +27,31 @@ import tensorflow as tf
 LABELS_FILENAME = 'labels.txt'
 SPLITS_FILENAME = 'splits.txt'
 DESCRIPTIONS_FILENAME = 'splits.txt'
+STATISTICS_FILENAME = 'statistics.txt'
+
+
+def bytes_feature(values):
+    """Returns a TF-Feature of bytes.
+
+    Args:
+      values: A string.
+
+    Returns:
+      a TF-Feature.
+    """
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[values]))
+
+
+def float_feature(values):
+    """Returns a TF-Feature of floats.
+
+    Args:
+      values: A scalar or list of values.
+
+    Returns:
+      a TF-Feature.
+    """
+    return tf.train.Feature(float_list=tf.train.FloatList(value=values))
 
 
 def int64_feature(values):
@@ -41,18 +66,6 @@ def int64_feature(values):
     if not isinstance(values, (tuple, list)):
         values = [values]
     return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
-
-
-def bytes_feature(values):
-    """Returns a TF-Feature of bytes.
-
-    Args:
-      values: A string.
-
-    Returns:
-      a TF-Feature.
-    """
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[values]))
 
 
 def image_to_tfexample(image_data, image_format, height, width, class_id):
@@ -86,8 +99,7 @@ def image_to_tfexample(image_data, image_format, height, width, class_id):
 #   tarfile.open(filepath, 'r:gz').extractall(dataset_dir)
 
 
-def write_label_file(labels_to_class_names, tfrecords_dir,
-                     filename=LABELS_FILENAME):
+def write_label_file(labels_to_class_names, tfrecords_dir, filename=LABELS_FILENAME):
     """Writes a file with the list of class names.
 
     Args:
@@ -238,3 +250,55 @@ def read_description_file(tfrecords_dir, filename=DESCRIPTIONS_FILENAME):
         index = line.index(':')
         items_to_descriptions[line[:index]] = line[index + 1:]
     return items_to_descriptions
+
+
+def write_statistics_file(names_to_statistics, tfrecords_dir, filename=STATISTICS_FILENAME):
+    """Writes a file with the list of image population statistics.
+
+        Args:
+          names_to_statistics: A map of statistic names to (float) statistic values.
+          tfrecords_dir: The directory in which the statistics file should be written.
+          filename: The filename where the statistics are written.
+        """
+    statistics_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(statistics_filename, 'w') as f:
+        for name in names_to_statistics:
+            statistic = names_to_statistics[name]
+            f.write('%s:%.17f\n' % (name, statistic))
+
+
+def has_statistics(tfrecords_dir, filename=STATISTICS_FILENAME):
+    """Specifies whether or not the dataset directory contains a statistics map file.
+
+    Args:
+      tfrecords_dir: The directory in which the statistics file is found.
+      filename: The filename where the dataset statistics are written.
+
+    Returns:
+      `True` if the statistics file exists and `False` otherwise.
+    """
+    return tf.gfile.Exists(os.path.join(tfrecords_dir, filename))
+
+
+def read_statistics_file(tfrecords_dir, filename=STATISTICS_FILENAME):
+    """Reads the statistics file and returns a mapping from statistic name to statistic.
+
+    Args:
+      dataset_dir: The directory in which the statistics file is found.
+      filename: The filename where the statistics are written.
+
+    Returns:
+      A map from a statistic name to (float) statistic.
+    """
+    statistics_filename = os.path.join(tfrecords_dir, filename)
+    with tf.gfile.Open(statistics_filename, 'rb') as f:
+        lines = f.read().decode()
+    lines = lines.split('\n')
+    lines = filter(None, lines)
+
+    names_to_statistics = {}
+    for line in lines:
+        index = line.index(':')
+        names_to_statistics[line[:index]] = float(line[index + 1:])
+    return names_to_statistics
+

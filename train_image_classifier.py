@@ -194,6 +194,14 @@ tf.app.flags.DEFINE_string(
     'preprocessing_name', None, 'The name of the preprocessing to use. If left '
                                 'as `None`, then the model_name flag is used.')
 
+tf.app.flags.DEFINE_string(
+    'standardization_dataset_name', None,
+    'The name of the dataset on which the model being evaluated was trained.')
+
+tf.app.flags.DEFINE_string(
+    'standardization_dataset_dir', None,
+    'The directory where the standardization dataset files are stored.')
+
 tf.app.flags.DEFINE_integer(
     'batch_size', 32, 'The number of samples in each batch.')
 
@@ -496,7 +504,18 @@ def main(_):
 
             train_image_size = FLAGS.train_image_size or network_fn.default_image_size
 
-            image = image_preprocessing_fn(image, train_image_size, train_image_size)
+            # TODO: ask the dataset if it has statistics or this block can break
+            if preprocessing_name == 'standardization':
+                if FLAGS.standardization_dataset_name and FLAGS.standardization_dataset_dir:
+                    standardization_dataset = dataset_factory.get_dataset(
+                        FLAGS.standardization_dataset_name, 'test',
+                        FLAGS.standardization_dataset_dir)
+                else:
+                    standardization_dataset = dataset
+                image = image_preprocessing_fn(image, train_image_size, train_image_size,
+                                               statistics=standardization_dataset.names_to_statistics)
+            else:
+                image = image_preprocessing_fn(image, train_image_size, train_image_size)
 
             images, labels = tf.train.batch(
                 [image, label],
