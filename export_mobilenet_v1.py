@@ -46,13 +46,14 @@ with tf.Graph().as_default():
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 
-    model_path = tf.train.latest_checkpoint(checkpoints_dir)
+    if tf.gfile.IsDirectory(checkpoints_dir):
+      model_path = tf.train.latest_checkpoint(checkpoints_dir)
+    else:
+      model_path = checkpoints_dir
 
     # Get the function that initializes the network structure (its variables) with
     # the trained values contained in the checkpoint
-    init_fn = slim.assign_from_checkpoint_fn(
-        model_path,
-        slim.get_model_variables())
+    init_fn = slim.assign_from_checkpoint_fn(model_path, slim.get_model_variables())
 
     with tf.Session() as sess:
         # Now call the initialization function within the session
@@ -68,6 +69,5 @@ with tf.Graph().as_default():
                                                           ["MobilenetV1/Predictions/Reshape_1"],
                                                           tf.string.as_datatype_enum)
         # Write the production ready graph to file.
-
         dir_name, base_name = os.path.split(OUTPUT_PB_FILEPATH)
         tf.train.write_graph(optimized_constant_graph, dir_name, base_name, as_text=False)
