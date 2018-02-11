@@ -322,7 +322,10 @@ def mobilenet_v1(inputs,
                                                 depth_multiplier=depth_multiplier,
                                                 conv_defs=conv_defs)
             with tf.variable_scope('Logits'):
-                kernel_size = _reduced_kernel_size_for_small_input(net, [7, 7])
+                if depth_multiplier >= 1.0:
+                    kernel_size = _increased_kernel_size_for_large_input(net, [7, 7])
+                else:
+                    kernel_size = _reduced_kernel_size_for_small_input(net, [7, 7])
                 net = slim.avg_pool2d(net, kernel_size, padding='VALID',
                                       scope='AvgPool_1a')
                 end_points['AvgPool_1a'] = net
@@ -350,8 +353,9 @@ def wrapped_partial(func, *args, **kwargs):
     return partial_func
 
 
-mobilenet_v1_200 = wrapped_partial(mobilenet_v1, depth_multiplier=2.00)
-mobilenet_v1_150 = wrapped_partial(mobilenet_v1, depth_multiplier=1.50)
+mobilenet_v1_175 = wrapped_partial(mobilenet_v1, depth_multiplier=1.0)
+mobilenet_v1_175.default_image_size = 320
+
 mobilenet_v1_075 = wrapped_partial(mobilenet_v1, depth_multiplier=0.75)
 mobilenet_v1_050 = wrapped_partial(mobilenet_v1, depth_multiplier=0.50)
 mobilenet_v1_025 = wrapped_partial(mobilenet_v1, depth_multiplier=0.25)
@@ -376,6 +380,28 @@ def _reduced_kernel_size_for_small_input(input_tensor, kernel_size):
     else:
         kernel_size_out = [min(shape[1], kernel_size[0]),
                            min(shape[2], kernel_size[1])]
+    return kernel_size_out
+
+
+def _increased_kernel_size_for_large_input(input_tensor, kernel_size):
+    """Define kernel size which is automatically reduced for small input.
+
+    If the shape of the input images is unknown at graph construction time this
+    function assumes that the input images are large enough.
+
+    Args:
+      input_tensor: input tensor of size [batch_size, height, width, channels].
+      kernel_size: desired kernel size of length 2: [kernel_height, kernel_width]
+
+    Returns:
+      a tensor with the kernel size.
+    """
+    shape = input_tensor.get_shape().as_list()
+    if shape[1] is None or shape[2] is None:
+        kernel_size_out = kernel_size
+    else:
+        kernel_size_out = [max(shape[1], kernel_size[0]),
+                           max(shape[2], kernel_size[1])]
     return kernel_size_out
 
 
