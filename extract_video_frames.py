@@ -23,6 +23,7 @@ parser.add_argument('--fps', '-f', action='store', default='1', help='Frames Per
 parser.add_argument('--videopath', '-v', action='store', required=True, help='Path to video file(s).')
 parser.add_argument('--allfiles', '-a', action='store_true', help='Process all video files in the directory path.')
 parser.add_argument('--deinterlace', '-di', action='store_true', help='Deinterlace video frames.')
+parser.add_argument('--deduplicate', '-dd', action='store_true', help='Relocate duplicate video frames.')
 
 args = parser.parse_args()
 
@@ -56,7 +57,8 @@ def decode_video(video_path):
 
     subprocess.call(command)
 
-    separate_duplicate_frames(image_dir)
+    if args.deduplicate:
+        separate_duplicate_frames(image_dir)
 
 
 def load_video_filenames(relevant_path):
