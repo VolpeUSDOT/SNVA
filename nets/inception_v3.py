@@ -420,7 +420,7 @@ def inception_v3(inputs,
                  num_classes=1000,
                  is_training=True,
                  dropout_keep_prob=0.8,
-                 min_depth=16,
+                 min_depth=8,
                  depth_multiplier=1.0,
                  prediction_fn=slim.softmax,
                  spatial_squeeze=True,
@@ -528,6 +528,30 @@ def inception_v3(inputs,
             end_points['Logits'] = logits
             end_points['Predictions'] = prediction_fn(logits, scope='Predictions')
     return logits, end_points
+
+
+def inception_v3_025(inputs,
+                     num_classes=1000,
+                     is_training=True,
+                     dropout_keep_prob=0.8,
+                     min_depth=8,
+                     depth_multiplier=0.25,
+                     prediction_fn=slim.softmax,
+                     spatial_squeeze=True,
+                     reuse=None,
+                     create_aux_logits=True,
+                     scope='InceptionV3'):
+    return inception_v3(inputs=inputs,
+                        num_classes=num_classes,
+                        is_training=is_training,
+                        dropout_keep_prob=dropout_keep_prob,
+                        min_depth=min_depth,
+                        depth_multiplier=depth_multiplier,
+                        prediction_fn=prediction_fn,
+                        spatial_squeeze=spatial_squeeze,
+                        reuse=reuse,
+                        create_aux_logits=create_aux_logits,
+                        scope=scope)
 
 
 inception_v3.default_image_size = 299
