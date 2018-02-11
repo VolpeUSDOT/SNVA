@@ -165,6 +165,48 @@ def densenet_bc_6_50(inputs,
 densenet_bc_6_50.default_image_size = 224
 
 
+def densenet_bc_12_40(inputs,
+                     num_classes=None,
+                     is_training=True,
+                     dropout_keep_prob=0.8,
+                     for_imagenet=True,
+                     reuse=None,
+                     scope='DensenetBC'):
+    return densenet_bc(inputs,
+                       num_classes,
+                       is_training=is_training,
+                       growth_rate=12,
+                       dropout_keep_prob=dropout_keep_prob,
+                       depth=40,
+                       for_imagenet=for_imagenet,
+                       reuse=reuse,
+                       scope=scope)
+
+
+densenet_bc_12_40.default_image_size = 224
+
+
+def densenet_bc_6_50(inputs,
+                      num_classes=None,
+                      is_training=True,
+                      dropout_keep_prob=0.8,
+                      for_imagenet=True,
+                      reuse=None,
+                      scope='DensenetBC'):
+    return densenet_bc(inputs,
+                       num_classes,
+                       is_training=is_training,
+                       growth_rate=6,
+                       dropout_keep_prob=dropout_keep_prob,
+                       depth=50,
+                       for_imagenet=for_imagenet,
+                       reuse=reuse,
+                       scope=scope)
+
+
+densenet_bc_6_50.default_image_size = 224
+
+
 def densenet_bc(inputs,
                 num_classes=None,
                 is_training=True,
