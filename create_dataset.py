@@ -35,11 +35,6 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
   'negative_class_name', None, ''
 )
-tf.app.flags.DEFINE_integer(
-  'random_seed', 1,
-  'The random seed used to instantiate the pseudo-random number generator '
-  'that shuffles the samples before creating TFRecord shards'
-)
 tf.app.flags.DEFINE_bool(
   'create_standard_subsets', True,
   'If True, create training, test and dev subsets.'
@@ -55,6 +50,19 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
   'dev_ratio', 0.2,
   'The per-class percentage of data to use in dev subset construction.'
+)
+tf.app.flags.DEFINE_integer(
+  'random_seed', 1,
+  'The random seed used to instantiate the pseudo-random number generator '
+  'that shuffles the samples before creating TFRecord shards, and that balances'
+  'class-wise unbalanced data sets via subsampling.'
+)
+tf.app.flags.DEFINE_bool(
+  'balance_subsets', False,
+  'If True, make sure that each class has an equal number of samples. Balancing is performed by '
+  'stratifying the sampling over the collection of data \'sub\' sources. In turn, the '
+  'over-representation of a class in one sub source will not be compensated for by the '
+  'over-representation another class in some other sub source.'
 )
 
 
@@ -77,9 +85,11 @@ def main(_):
                  create_eval_subset=FLAGS.create_eval_subset,
                  data_source_dir=FLAGS.data_source_dir,
                  data_set_dir=FLAGS.data_set_dir,
-                 random_seed=FLAGS.random_seed,
                  training_ratio=FLAGS.training_ratio,
-                 dev_ratio=FLAGS.dev_ratio)
+                 dev_ratio=FLAGS.dev_ratio,
+                 random_seed=FLAGS.random_seed,
+                 balance_subsets=FLAGS.balance_subsets
+                 )
 
 
 if __name__ == '__main__':

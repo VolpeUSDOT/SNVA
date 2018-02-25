@@ -511,8 +511,8 @@ def _create_data_set_paths(data_set_dir, class_dir_names, create_standard_subset
   return class_dir_paths
 
 
-def _populate_data_set_paths(class_dir_paths, class_dir_name, class_sub_dir_path,
-                             split_name, frame):
+def _populate_data_set_paths(
+    class_dir_paths, class_dir_name, class_sub_dir_path, split_name, frame):
   dest_video_frame_path = path.join(
     class_dir_paths[split_name + '_' + class_dir_name], frame)
   if not path.exists(dest_video_frame_path):
@@ -524,7 +524,7 @@ def _populate_data_set_paths(class_dir_paths, class_dir_name, class_sub_dir_path
 
 
 def create(class_dir_names, create_standard_subsets, create_eval_subset, data_source_dir,
-           data_set_dir, random_seed, training_ratio, dev_ratio):
+           data_set_dir, training_ratio, dev_ratio, random_seed, balance_subsets):
   '''Creates one destination folder for each class-subset pair (e.g. training_class_0_dir or
   dev_class_1_dir). For each subfolder (containing the frames of a single video) of the
   datasource_dir (containing many subfolders for many videos), randomly samples
@@ -544,11 +544,35 @@ def create(class_dir_names, create_standard_subsets, create_eval_subset, data_so
     video_frame_dir_path = path.join(data_source_dir, video_frame_dir)
 
     if path.isdir(video_frame_dir_path):
+      class_sub_dir_paths = {}
+      class_sub_dir_frame_lists = {}
+      class_sub_dir_frame_counts = []
+
       for class_dir_name in class_dir_names:
         class_sub_dir_path = path.join(video_frame_dir_path, class_dir_name)
+        class_sub_dir_paths[class_dir_name] = class_sub_dir_path
+
         # sort in case we want to reproduce results using a given random seed
-        frame_list = sorted(os.listdir(class_sub_dir_path))
+        class_sub_dir_frame_list = sorted(os.listdir(class_sub_dir_path))
+        class_sub_dir_frame_lists[class_dir_name] = class_sub_dir_frame_list
+
+        class_sub_dir_frame_counts.append(len(class_sub_dir_frame_list))
+
+      class_sub_dir_frame_counts.sort()
+
+      for (class_sub_dir_name, class_sub_dir_path) in class_sub_dir_paths:
+        frame_list = class_sub_dir_frame_lists[class_dir_name]
         n_frames = len(frame_list)
+
+        # For multi-class classification, we don't want all classes to have equal
+        # representation because the least populous class may be very small. Instead,
+        # we balance the dataset by making the two most populous classes equal in size.
+        # In practice, this means the 'background' class will be downsized, which is
+        # helpful because it is usually ~90% larger than the next largest class, and
+        # most samples are probably redundant in their information contribution
+        if balance_subsets and n_frames == class_sub_dir_frame_counts[-1]:
+          n_frames = class_sub_dir_frame_counts[-2]
+          frame_list = random.sample(frame_list, n_frames)
 
         if create_standard_subsets:
           n_training_frames = int(training_ratio * n_frames)
