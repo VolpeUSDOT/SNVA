@@ -54,18 +54,17 @@ class ImageReader(object):
     return image
 
 
-def _get_classes(data_subset_dir):
+def _get_classes(data_subset_dir_path):
   class_names = []
 
-  for filename in os.listdir(data_subset_dir):
-    if filename != 'tfrecords':
-      if path.isdir(path.join(data_subset_dir, filename)):
-        class_names.append(filename)
+  for file_name in os.listdir(data_subset_dir_path):
+    if path.isdir(path.join(data_subset_dir_path, file_name)):
+      class_names.append(file_name)
 
   return sorted(class_names)
 
 
-def _get_filepaths(data_subset_dir, split_name):
+def _get_filepaths(data_subset_dir_path, split_name):
   """Returns a list of filepaths and inferred class names.
 
   Args:
@@ -76,33 +75,38 @@ def _get_filepaths(data_subset_dir, split_name):
     A list of image file paths, relative to `dataset_dir` and the list of
     subdirectories, representing class names.
   """
-  image_filepaths = []
+  image_file_paths = []
 
   # if not eval split, sort before shuffling for repeatability given a random seed
   # if eval split, sort anyway to preserve original frame ordering.
-  filenames = sorted(os.listdir(data_subset_dir))
+  class_names = os.listdir(data_subset_dir_path)
 
-  if split_name != 'eval':
-    random.shuffle(filenames)
+  # although the os.listdir() returns a random permutation of the contents of
+  # data_subset_class_path, in the interest of reproduceability, sort the image
+  # paths and then randomly permute them using the given random seed
+  for class_name in class_names:
+    data_subset_class_dir_path = os.path.join(data_subset_dir_path, class_name)
+    if os.path.isdir(data_subset_class_dir_path):
+      for image_name in sorted(os.listdir(data_subset_class_dir_path)):
+        image_file_path = path.join(data_subset_class_dir_path, image_name)
+        image_file_paths.append(image_file_path)
 
-  for filename in filenames:
-    if filename != 'tfrecords':
-      filepath = os.path.join(data_subset_dir, filename)
-      if os.path.isdir(filepath):
-        for imagename in os.listdir(filepath):
-          image_filepath = path.join(filepath, imagename)
-          image_filepaths.append(image_filepath)
+  #TODO: Explain why we dont need to shuffle the frames here
+  # if creating an eval subset, leave the frames sorted so that predictions can
+  # be sequentially compared to images (that appear ordered in the file system)
+  # if split_name != 'eval':
+  #   random.shuffle(image_file_paths)
 
-  return image_filepaths
+  return image_file_paths
 
 
-def _get_dataset_filename(tfrecords_dir, dataset_name, split_name, shard_id, num_shards):
+def _get_dataset_filename(tfrecords_dir_path, dataset_name, split_name, shard_id, num_shards):
   output_filename = dataset_name + '_%s_%05d-of-%05d.tfrecord' % (
     split_name, shard_id, num_shards)
-  return path.join(tfrecords_dir, output_filename)
+  return path.join(tfrecords_dir_path, output_filename)
 
 
-def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tfrecords_dir,
+def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tfrecords_dir_path,
                      batch_size, num_shards):
   """Converts the given filepaths to a TFRecord dataset.
 
@@ -113,7 +117,7 @@ def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tf
       (integers).
     tfrecords_dir: The directory where the converted datasets are stored.
   """
-  if not path.exists(path.join(path.join(tfrecords_dir, '..'), split_name)):
+  if not path.exists(path.join(path.join(tfrecords_dir_path, '..'), split_name)):
     raise AssertionError()
 
   filepaths_len = len(filepaths)
@@ -124,7 +128,7 @@ def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tf
     with tf.Session('') as sess:
       for shard_id in range(num_shards):
         output_filename = _get_dataset_filename(
-          tfrecords_dir, dataset_name, split_name, shard_id, num_shards)
+          tfrecords_dir_path, dataset_name, split_name, shard_id, num_shards)
 
         with tf.python_io.TFRecordWriter(output_filename) as tfrecord_writer:
           start_ndx = shard_id * batch_size
@@ -148,7 +152,7 @@ def _convert_dataset(dataset_name, split_name, filepaths, class_names_to_ids, tf
   sys.stdout.flush()
 
 
-def _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
+def _dataset_exists(dataset_name, tfrecords_dir_path, splits_to_shards):
   """Returns false if a named file does not exist or if the number of
   shards to be written is not equal to the number of shards that exists.
 
@@ -160,14 +164,14 @@ def _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
   for split_name, num_shards in splits_to_shards.items():
     for shard_id in range(num_shards):
       output_filename = _get_dataset_filename(
-        tfrecords_dir, dataset_name, split_name, shard_id, num_shards)
+        tfrecords_dir_path, dataset_name, split_name, shard_id, num_shards)
 
       if not tf.gfile.Exists(output_filename):
         return False
   return True
 
 
-def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, reader=None):
+def get_split(dataset_name, split_name, datasets_root_dir_path, file_pattern=None, reader=None):
   """Gets a dataset tuple with instructions for reading construction.
 
   Args:
@@ -184,22 +188,22 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
   Raises:
     ValueError: if `split_name` is not a valid training/dev split.
   """
-  dataset_dir = path.join(datasets_root_dir, dataset_name)
-  tfrecords_dir = path.join(dataset_dir, 'tfrecords')
+  dataset_dir_path = path.join(datasets_root_dir_path, dataset_name)
+  tfrecords_dir_path = path.join(dataset_dir_path, 'tfrecords')
 
   splits_filename = dataset_name + '_splits.txt'
 
-  if dataset_utils.has_splits(tfrecords_dir, splits_filename):
-    splits_to_sizes = dataset_utils.read_split_file(tfrecords_dir, splits_filename)
+  if dataset_utils.has_splits(tfrecords_dir_path, splits_filename):
+    splits_to_sizes = dataset_utils.read_split_file(tfrecords_dir_path, splits_filename)
   else:
-    raise ValueError(path.join(tfrecords_dir, splits_filename) + ' does not exist')
+    raise ValueError(path.join(tfrecords_dir_path, splits_filename) + ' does not exist')
 
   if split_name not in splits_to_sizes:
     raise ValueError('split name %s was not recognized.' % split_name)
 
   if not file_pattern:
     file_pattern = dataset_name + '_%s_*.tfrecord'
-  file_pattern = path.join(tfrecords_dir, file_pattern % split_name)
+  file_pattern = path.join(tfrecords_dir_path, file_pattern % split_name)
 
   # Allowing None in the signature so that dataset_factory can use the default.
   if reader is None:
@@ -222,18 +226,18 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
 
   labels_filename = dataset_name + '_labels.txt'
   labels_to_names = None
-  if dataset_utils.has_labels(tfrecords_dir, labels_filename):
-    labels_to_names = dataset_utils.read_label_file(tfrecords_dir, labels_filename)
+  if dataset_utils.has_labels(tfrecords_dir_path, labels_filename):
+    labels_to_names = dataset_utils.read_label_file(tfrecords_dir_path, labels_filename)
 
   descriptions_filename = dataset_name + '_descriptions.txt'
   items_to_descriptions = None
-  if dataset_utils.has_descriptions(tfrecords_dir, descriptions_filename):
-    items_to_descriptions = dataset_utils.read_description_file(tfrecords_dir, descriptions_filename)
+  if dataset_utils.has_descriptions(tfrecords_dir_path, descriptions_filename):
+    items_to_descriptions = dataset_utils.read_description_file(tfrecords_dir_path, descriptions_filename)
 
   statistics_filename = dataset_name + '_statistics.txt'
   names_to_statistics = None
-  if dataset_utils.has_statistics(tfrecords_dir, statistics_filename):
-    names_to_statistics = dataset_utils.read_statistics_file(tfrecords_dir, statistics_filename)
+  if dataset_utils.has_statistics(tfrecords_dir_path, statistics_filename):
+    names_to_statistics = dataset_utils.read_statistics_file(tfrecords_dir_path, statistics_filename)
 
   return slim.dataset.Dataset(
     data_sources=file_pattern,
@@ -246,7 +250,7 @@ def get_split(dataset_name, split_name, datasets_root_dir, file_pattern=None, re
     names_to_statistics=names_to_statistics)
 
 
-def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_seed,
+def convert(datasets_root_dir_path, dataset_name, split_names, batch_size, random_seed,
             compute_statistics):
   """Runs the download and conversion operation.
 
@@ -260,9 +264,9 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
     and create TFRecords for the samples in that directory.
   """
 
-  dataset_dir = path.join(datasets_root_dir, dataset_name)
+  dataset_dir_path = path.join(datasets_root_dir_path, dataset_name)
 
-  if not tf.gfile.Exists(dataset_dir):
+  if not tf.gfile.Exists(dataset_dir_path):
     raise ValueError('The dataset ' + dataset_name + ' either does not exist or is misnamed')
 
   random.seed(random_seed)
@@ -271,7 +275,7 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
   splits_to_sizes = {}
   splits_to_shards = {}
 
-  class_path = path.join(dataset_dir, split_names[0])
+  class_path = path.join(dataset_dir_path, split_names[0])
 
   if not path.exists(class_path):
     os.mkdir(class_path)
@@ -279,25 +283,25 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
   class_names = _get_classes(class_path)
 
   for split_name in split_names:
-    split_dir = path.join(dataset_dir, split_name)
-    image_filepaths = _get_filepaths(split_dir, split_name)
+    split_dir_path = path.join(dataset_dir_path, split_name)
+    image_filepaths = _get_filepaths(split_dir_path, split_name)
     num_samples = len(image_filepaths)
 
     splits_to_filepaths[split_name] = image_filepaths
     splits_to_sizes[split_name] = num_samples
     splits_to_shards[split_name] = int(math.ceil(num_samples / batch_size))
 
-  tfrecords_dir = path.join(dataset_dir, 'tfrecords')
+  tfrecords_dir_path = path.join(dataset_dir_path, 'tfrecords')
 
-  if tf.gfile.Exists(tfrecords_dir):
-    if _dataset_exists(dataset_name, tfrecords_dir, splits_to_shards):
+  if tf.gfile.Exists(tfrecords_dir_path):
+    if _dataset_exists(dataset_name, tfrecords_dir_path, splits_to_shards):
       print('Dataset files already exist. Exiting without re-creating them.')
       return
     else:
-      for file in os.listdir(tfrecords_dir):
-        os.remove(path.join(tfrecords_dir, file))
+      for file in os.listdir(tfrecords_dir_path):
+        os.remove(path.join(tfrecords_dir_path, file))
   else:
-    tf.gfile.MakeDirs(tfrecords_dir)
+    tf.gfile.MakeDirs(tfrecords_dir_path)
 
   # Write the statistics file:
   if compute_statistics:
@@ -310,7 +314,7 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
       'r_max': maxs[0], 'g_max': maxs[1], 'b_max': maxs[2]
     }
     dataset_utils.write_statistics_file(
-      names_to_statistics, tfrecords_dir, statistics_filename)
+      names_to_statistics, tfrecords_dir_path, statistics_filename)
 
   class_name_enum = [class_name for class_name in enumerate(class_names)]
 
@@ -319,23 +323,23 @@ def convert(datasets_root_dir, dataset_name, split_names, batch_size, random_see
   # First, convert the data subsets.
   for split_name in split_names:
     _convert_dataset(dataset_name, split_name, splits_to_filepaths[split_name], class_names_to_ids,
-                     tfrecords_dir, batch_size, splits_to_shards[split_name])
+                     tfrecords_dir_path, batch_size, splits_to_shards[split_name])
 
   # Then, write the labels file:
   labels_filename = dataset_name + '_labels.txt'
   labels_to_class_names = {ndx: class_name for (ndx, class_name) in class_name_enum}
-  dataset_utils.write_label_file(labels_to_class_names, tfrecords_dir, labels_filename)
+  dataset_utils.write_label_file(labels_to_class_names, tfrecords_dir_path, labels_filename)
 
   # Then, write the splits file:
   splits_filename = dataset_name + '_splits.txt'
   # splits_to_sizes = {'training': num_traininging_samples, 'dev': num_dev_samples}
-  dataset_utils.write_split_file(splits_to_sizes, tfrecords_dir, splits_filename)
+  dataset_utils.write_split_file(splits_to_sizes, tfrecords_dir_path, splits_filename)
 
   # Finaly, write the descriptions file:
   descriptions_filename = dataset_name + '_descriptions.txt'
   items_to_descriptions = {'image': 'A color image of varying size.',
                            'label': 'A single integer between 0 and 1'}
-  dataset_utils.write_description_file(items_to_descriptions, tfrecords_dir, descriptions_filename)
+  dataset_utils.write_description_file(items_to_descriptions, tfrecords_dir_path, descriptions_filename)
 
   print('\nFinished converting the ' + dataset_name + ' dataset!')
 
@@ -443,7 +447,7 @@ def _compute_statistics(source_file_paths, epsilon=1e-3):
     return per_channel_mean, per_channel_std_dev, per_channel_min, per_channel_max
 
 
-def compute_statistics(datasets_root_dir, dataset_name):
+def compute_statistics(datasets_root_dir_path, dataset_name):
   """Runs the download and conversion operation.
 
   Args:
@@ -451,18 +455,18 @@ def compute_statistics(datasets_root_dir, dataset_name):
     dataset_name: The the subfolder where the named dataset's TFRecords are stored.
   """
 
-  dataset_dir = path.join(datasets_root_dir, dataset_name)
+  dataset_dir_path = path.join(datasets_root_dir_path, dataset_name)
 
-  if not tf.gfile.Exists(dataset_dir):
+  if not tf.gfile.Exists(dataset_dir_path):
     raise ValueError('The dataset ' + dataset_name + ' either does not exist or is misnamed')
 
-  tfrecords_dir = path.join(dataset_dir, 'tfrecords')
+  tfrecords_dir_path = path.join(dataset_dir_path, 'tfrecords')
 
-  if not tf.gfile.Exists(tfrecords_dir):
-    tf.gfile.MakeDirs(tfrecords_dir)
+  if not tf.gfile.Exists(tfrecords_dir_path):
+    tf.gfile.MakeDirs(tfrecords_dir_path)
 
-  split_dir = path.join(dataset_dir, 'training')
-  training_image_filepaths = _get_filepaths(split_dir, 'training')
+  split_dir_path = path.join(dataset_dir_path, 'training')
+  training_image_filepaths = _get_filepaths(split_dir_path, 'training')
 
   means, std_devs, mins, maxs = _compute_statistics(training_image_filepaths)
   statistics_filename = dataset_name + '_statistics.txt'
@@ -473,12 +477,12 @@ def compute_statistics(datasets_root_dir, dataset_name):
     'r_max': maxs[0], 'g_max': maxs[1], 'b_max': maxs[2]
   }
   dataset_utils.write_statistics_file(
-    names_to_statistics, tfrecords_dir, statistics_filename)
+    names_to_statistics, tfrecords_dir_path, statistics_filename)
 
   print('\nFinished computing ' + dataset_name + ' statistics!')
 
 
-def _create_data_set_paths(data_set_dir, class_dir_names, create_standard_subsets,
+def _create_data_set_paths(data_set_dir_path, class_dir_names, create_standard_subsets,
                            create_eval_subset):
   # create training, dev, and test sub-directories of dataset_dest_path
   # each will contain one sub-folder per class
@@ -491,11 +495,11 @@ def _create_data_set_paths(data_set_dir, class_dir_names, create_standard_subset
   if create_eval_subset:
     subset_dir_names.append('eval')
 
-  if not path.exists(data_set_dir):
-    os.mkdir(data_set_dir)
+  if not path.exists(data_set_dir_path):
+    os.mkdir(data_set_dir_path)
 
   for subset_dir_name in subset_dir_names:
-    subset_dir_path = path.join(data_set_dir, subset_dir_name)
+    subset_dir_path = path.join(data_set_dir_path, subset_dir_name)
 
     if not path.exists(subset_dir_path):
       os.mkdir(subset_dir_path)
@@ -523,11 +527,11 @@ def _populate_data_set_paths(class_dir_paths, class_dir_name, class_sub_dir_path
       os.symlink(source_video_frame_path, dest_video_frame_path)
 
 
-def create(class_dir_names, create_standard_subsets, create_eval_subset, data_source_dir,
-           data_set_dir, random_seed, training_ratio, dev_ratio):
-  '''Creates one destination folder for each class-subset pair (e.g. training_class_0_dir or
-  dev_class_1_dir). For each subfolder (containing the frames of a single video) of the
-  datasource_dir (containing many subfolders for many videos), randomly samples
+def create(class_dir_names, create_standard_subsets, create_eval_subset, data_source_dir_path,
+           data_set_dir_path, random_seed, training_ratio, dev_ratio):
+  '''Creates one destination folder for each class-subset pair (e.g. training_class_0_dir_path or
+  dev_class_1_dir_path). For each subfolder (containing the frames of a single video) of the
+  datasource_dir_path (containing many subfolders for many videos), randomly samples
   training_ratio %, dev_ratio % and test_percent % of subfolder contents and then moves
   all training, dev, and test sample frames into training, dev, and test folders,
   respectively. This method fits into the pipeline between frame extraction and tfrecord
@@ -535,13 +539,13 @@ def create(class_dir_names, create_standard_subsets, create_eval_subset, data_so
   tfrecord creation when implemented'''
 
   class_dir_paths = _create_data_set_paths(
-    data_set_dir, class_dir_names, create_standard_subsets, create_eval_subset)
+    data_set_dir_path, class_dir_names, create_standard_subsets, create_eval_subset)
 
   random.seed(random_seed)
 
   # for each folder of frames in the data dir
-  for video_frame_dir in os.listdir(data_source_dir):
-    video_frame_dir_path = path.join(data_source_dir, video_frame_dir)
+  for video_frame_dir_path in os.listdir(data_source_dir_path):
+    video_frame_dir_path = path.join(data_source_dir_path, video_frame_dir_path)
 
     if path.isdir(video_frame_dir_path):
       for class_dir_name in class_dir_names:
