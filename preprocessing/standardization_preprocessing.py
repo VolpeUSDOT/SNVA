@@ -43,12 +43,12 @@ def standardize(image, height, width, statistics, is_training=False, fast_mode=T
   population_per_channel_std_dev = tf.constant(
     [[[statistics['r_std_dev'], statistics['g_std_dev'], statistics['b_std_dev']]]],
     dtype=tf.float32, shape=(3,))
-  # population_per_channel_max = tf.constant(
-  #   [[[statistics['r_max'], statistics['g_max'], statistics['b_max']]]],
-  #   dtype=tf.float32, shape=(3,))
-  # population_per_channel_min = tf.constant(
-  #   [[[statistics['r_min'], statistics['g_min'], statistics['b_min']]]],
-  #   dtype=tf.float32, shape=(3,))
+  population_per_channel_max = tf.constant(
+    [[[statistics['r_max'], statistics['g_max'], statistics['b_max']]]],
+    dtype=tf.float32, shape=(3,))
+  population_per_channel_min = tf.constant(
+    [[[statistics['r_min'], statistics['g_min'], statistics['b_min']]]],
+    dtype=tf.float32, shape=(3,))
 
   image = tf.subtract(image, population_per_channel_mean)
   tf.summary.image('mean_subtracted_image', tf.expand_dims(image, 0))
@@ -66,21 +66,7 @@ def standardize(image, height, width, statistics, is_training=False, fast_mode=T
   # clipped_image = tf.clip_by_value(image, population_per_channel_min, population_per_channel_max)
   # tf.summary.image('clipped_image', tf.expand_dims(clipped_image, 0))
 
-  # # Option 2
-  # # First, rescale image to [0, 1]
-  # sample_per_channel_min = tf.reduce_min(image, axis=[0, 1])
-  # sample_per_channel_max = tf.reduce_max(image, axis=[0, 1])
-  #
-  # image = tf.divide(tf.subtract(image, sample_per_channel_min),
-  #                   tf.subtract(sample_per_channel_max, sample_per_channel_min))
-  # tf.summary.image('rescaled_to_zero_one_image', tf.expand_dims(image, 0))
-  #
-  # # Then, rescale image to [population_per_channel_min, population_per_channel_max]
-  # image = tf.add(tf.multiply(image, tf.subtract(
-  #   population_per_channel_max, population_per_channel_min)), population_per_channel_min)
-  # tf.summary.image('rescaled_to_min_max_image', tf.expand_dims(image, 0))
-
-  # Option 3
+  # Option 2
   # First, rescale image to [0, 1]
   sample_per_channel_min = tf.reduce_min(image, axis=[0, 1])
   sample_per_channel_max = tf.reduce_max(image, axis=[0, 1])
@@ -89,9 +75,23 @@ def standardize(image, height, width, statistics, is_training=False, fast_mode=T
                     tf.subtract(sample_per_channel_max, sample_per_channel_min))
   tf.summary.image('rescaled_to_zero_one_image', tf.expand_dims(image, 0))
 
-  # Then, rescale image to [-1, 1]
-  image = tf.multiply(tf.subtract(image, 0.5), 2.0)
-  tf.summary.image('rescaled_to_negative_one_positive_one_image', tf.expand_dims(image, 0))
+  # Then, rescale image to [population_per_channel_min, population_per_channel_max]
+  image = tf.add(tf.multiply(image, tf.subtract(
+    population_per_channel_max, population_per_channel_min)), population_per_channel_min)
+  tf.summary.image('rescaled_to_min_max_image', tf.expand_dims(image, 0))
+
+  # # Option 3
+  # # First, rescale image to [0, 1]
+  # sample_per_channel_min = tf.reduce_min(image, axis=[0, 1])
+  # sample_per_channel_max = tf.reduce_max(image, axis=[0, 1])
+  #
+  # image = tf.divide(tf.subtract(image, sample_per_channel_min),
+  #                   tf.subtract(sample_per_channel_max, sample_per_channel_min))
+  # tf.summary.image('rescaled_to_zero_one_image', tf.expand_dims(image, 0))
+  #
+  # # Then, rescale image to [-1, 1]
+  # image = tf.multiply(tf.subtract(image, 0.5), 2.0)
+  # tf.summary.image('rescaled_to_negative_one_positive_one_image', tf.expand_dims(image, 0))
 
   if height and width:
     # Resize the image to the specified height and width.
@@ -100,8 +100,8 @@ def standardize(image, height, width, statistics, is_training=False, fast_mode=T
     image = tf.squeeze(image, [0])
     tf.summary.image('resized_image', tf.expand_dims(image, 0))
 
-  image = tf.clip_by_value(image, -1.0, 1.0)
-  tf.summary.image('clipped_image', tf.expand_dims(image, 0))
+  # image = tf.clip_by_value(image, -1.0, 1.0)
+  # tf.summary.image('clipped_image', tf.expand_dims(image, 0))
 
   return image
 
