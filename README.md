@@ -1,5 +1,5 @@
-# TF-WRAPPER
-#### Using Tensorflow & Inception to Detect Features in Video
+# SHRP2 NDS Video Analytics (SNVA)
+#### Using the Tensorflow-Slim implementations of InceptionV3 and other convolutional neural networks to detect features in video data
 
 An automation "wrapper" based on TF-SLIM to make it easy to detect various features in video using Tensorflow, FFMPEG, and various versions of the Inception neural network.
 
