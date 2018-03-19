@@ -36,8 +36,10 @@ from __future__ import print_function
 
 import tensorflow as tf
 from datasets import dataset
-from os import path
-
+import signal
+import os
+import sys
+path = os.path
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string(
@@ -101,7 +103,29 @@ tf.app.flags.DEFINE_string(
   ' FLAGS.convert_eval_subset are both true.'
 )
 
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 0.9,
+    'The ratio of total memory across all available GPUs to use with this process. '
+    'Defaults to a suggested max of 0.9.')
+
+tf.app.flags.DEFINE_integer(
+    'gpu_device_num', 0,
+    'The device number of a single GPU to use for evaluation on a multi-GPU system. '
+    'Defaults to zero.')
+
+tf.app.flags.DEFINE_boolean(
+    'cpu_only', False,
+    'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
+    'Defaults to False.')
+
 DATASET_NAMES = ['cifar10', 'flowers', 'mnist']
+
+
+def interrupt_handler(signal_number, _):
+    tf.logging.info(
+        'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+    os.unsetenv('CUDA_VISIBLE_DEVICES')
+    sys.exit(0)
 
 
 def main(_):
@@ -109,6 +133,26 @@ def main(_):
     raise ValueError('You must specify the dataset name using --dataset_name')
   if FLAGS.dataset_dir is None:
     raise ValueError('You must specify the dataset directory using --dataset_dir')
+
+  tf.logging.set_verbosity(tf.logging.INFO)
+
+  if FLAGS.cpu_only:
+      device_name = '/cpu:0'
+
+      session_config = None
+
+      tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+      os.putenv('CUDA_VISIBLE_DEVICES', '')
+  else:
+      device_name = '/gpu:' + str(FLAGS.gpu_device_num)
+
+      gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=float(FLAGS.gpu_memory_fraction))
+      session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+
+      tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to %d.', FLAGS.gpu_device_num)
+      os.putenv('CUDA_VISIBLE_DEVICES', str(FLAGS.gpu_device_num))
+
+  signal.signal(signal.SIGINT, interrupt_handler)
 
   subset_names = []
 
@@ -125,7 +169,7 @@ def main(_):
     dataset_path = path.join(FLAGS.dataset_dir, FLAGS.dataset_name)
     if path.exists(dataset_path) or FLAGS.dataset_name in DATASET_NAMES:
       dataset.convert(FLAGS.dataset_dir, FLAGS.dataset_name, subset_names, FLAGS.batch_size,
-                      FLAGS.random_seed, FLAGS.compute_statistics)
+                      FLAGS.random_seed, FLAGS.compute_statistics, session_config, device_name)
     else:
       raise ValueError(
         'dataset_name [%s] was not recognized.' % FLAGS.dataset_name)
