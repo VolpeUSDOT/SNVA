@@ -40,6 +40,10 @@ tf.app.flags.DEFINE_string('gpu_device_num', None, 'The device number of a singl
 tf.app.flags.DEFINE_boolean('cpu_only', False, 'Explicitly assign all evaluation ops to the '
   'CPU on a GPU-enabled system. Defaults to False.')
 
+tf.app.flags.DEFINE_string('video_names_path', None, 'Path to a file containing a comma-separated '
+'list of names of videos to include when predicting frame labels. Use this flag when the raw_data_'
+'dir contains videos that should be ignored.')
+
 
 def load_model(model_path):
   with tf.gfile.GFile(model_path, 'rb') as model:
@@ -87,8 +91,10 @@ def add_example_to_label_predictions(
 
     if path.exists(label_predictions_example_file_path):
       os.remove(label_predictions_example_file_path)
-
-    os.symlink(raw_data_path, label_predictions_example_file_path)
+    try:
+      os.symlink(raw_data_path, label_predictions_example_file_path)
+    except OSError as e:
+      print(e)
 
 
 def output_label_predictions(
@@ -120,6 +126,7 @@ def interrupt_handler(signal_number, _):
         'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
     os.unsetenv('CUDA_VISIBLE_DEVICES')
     sys.exit(0)
+
 
 def draw_progress_bar(percent, bar_len=20):
   sys.stdout.write("\r")
@@ -254,6 +261,13 @@ def main():
       'image_size_placeholder': sess.graph.get_tensor_by_name(
         '{}/{}'.format(graph_name, io_tensor_map['image_size_tensor_name']))}
 
+    # iterate over every subdirectory of the raw_data_dir
+    if path.isfile(FLAGS.video_names_path):
+      with open(FLAGS.video_names_path, 'r') as video_names:
+        raw_data_subdirs = sorted(video_names.readline().rstrip().split(','))
+    else:
+      raw_data_subdirs = sorted(os.listdir(FLAGS.raw_data_dir))
+
     # identify and store the file names of examples already included in
     # the previously created data set named FLAGS.data_set_name
     print('Identifying previously incorporated examples in {}.'.format(FLAGS.data_set_dir))
@@ -261,9 +275,6 @@ def main():
     incorporated_example_file_name_set = get_previously_incorporated_example_file_name_set(
       FLAGS.data_set_dir)
     print_processing_duration(start, 'Elapsed time')
-
-    # iterate over every subdirectory of the raw_data_dir
-    raw_data_subdirs = sorted(os.listdir(FLAGS.raw_data_dir))
 
     for subdir in raw_data_subdirs:
       subdir_path = path.join(FLAGS.raw_data_dir, subdir)
