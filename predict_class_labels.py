@@ -79,22 +79,18 @@ def add_example_to_label_predictions(
     raw_data_path, label_predictions_dir_path, video_file_name, predicted_class_dir_name):
   label_predictions_subdir_path = path.join(label_predictions_dir_path, video_file_name)
   # for convenience, create paths at the per-video level and the per-round level
-  predicted_class_dir_paths = [path.join(label_predictions_subdir_path, predicted_class_dir_name),
-                               path.join(label_predictions_dir_path, predicted_class_dir_name)]
+  predicted_class_dir_path = path.join(label_predictions_subdir_path, predicted_class_dir_name)
 
-  for predicted_class_dir_path in predicted_class_dir_paths:
-    if not path.exists(predicted_class_dir_path):
-      os.makedirs(predicted_class_dir_path)
+  if not path.exists(predicted_class_dir_path):
+    os.makedirs(predicted_class_dir_path)
 
-    example_file_name = path.basename(raw_data_path)
-    label_predictions_example_file_path = path.join(predicted_class_dir_path, example_file_name)
+  example_file_name = path.basename(raw_data_path)
+  label_predictions_example_file_path = path.join(predicted_class_dir_path, example_file_name)
 
-    if path.exists(label_predictions_example_file_path):
-      os.remove(label_predictions_example_file_path)
-    try:
-      os.symlink(raw_data_path, label_predictions_example_file_path)
-    except OSError as e:
-      print(e)
+  if path.exists(label_predictions_example_file_path):
+    os.remove(label_predictions_example_file_path)
+
+  os.symlink(raw_data_path, label_predictions_example_file_path)
 
 
 def output_label_predictions(
