@@ -594,12 +594,12 @@ def create(class_names, create_standard_subsets, create_eval_subset, data_source
   class_dir_paths = _create_data_set_paths(
     data_set_dir_path, class_names, create_standard_subsets, create_eval_subset)
 
-  video_frame_dirs = sorted(set(os.listdir(data_source_dir_path)) -
+  video_frame_dir_names = sorted(set(os.listdir(data_source_dir_path)) -
                             {'training', 'dev', 'test', 'eval', 'tfrecords'})
 
   # for each folder of frames in the data dir
-  for video_frame_dir_path in video_frame_dirs:
-    video_frame_dir_path = path.join(data_source_dir_path, video_frame_dir_path)
+  for video_frame_dir_name in video_frame_dir_names:
+    video_frame_dir_path = path.join(data_source_dir_path, video_frame_dir_name)
 
     if path.isdir(video_frame_dir_path):
       class_sub_dir_paths = {}
