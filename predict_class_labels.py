@@ -23,7 +23,7 @@ tf.app.flags.DEFINE_string('model_path', None,
 tf.app.flags.DEFINE_string('labels_path', None,
   'A path to a text file containing a mapping from class ids to class names.')
 
-tf.app.flags.DEFINE_string('io_tensors_path', None,
+tf.app.flags.DEFINE_string('io_tensor_names_path', None,
   'A path to a text file containing the names of the model''s input and output tensors.')
 
 tf.app.flags.DEFINE_string('label_predictions_dir', None,
@@ -53,8 +53,8 @@ def load_model(model_path):
   return tf.import_graph_def(graph_def, name=tensor_id), tensor_id
 
 
-def load_tensor_names(io_tensors_path):
-  meta_map = read_meta_file(io_tensors_path)
+def load_tensor_names(io_tensor_names_path):
+  meta_map = read_meta_file(io_tensor_names_path)
   return {key: value + ':0' for key, value in meta_map.items()}
 
 
@@ -167,7 +167,8 @@ def decode_and_preprocess_for_eval(image):
     image, image_size, image_size, central_fraction=None)
 
 
-def predict_class_labels(image_list, num_labels, placeholder_map, image_size, batch_size, tf_session):
+def predict_class_labels(
+    image_list, num_labels, placeholder_map, image_size, batch_size, tf_session):
   num_frames = len(image_list)
   num_batches = int(np.ceil(np.divide(num_frames, batch_size)))
   
@@ -176,9 +177,9 @@ def predict_class_labels(image_list, num_labels, placeholder_map, image_size, ba
 
   image_list_placeholder = tf.placeholder(dtype=tf.string)
 
-  image_slices = tf.data.Dataset.from_tensor_slices(image_list_placeholder)
-  image_slices = image_slices.map(decode_and_preprocess_for_eval, batch_size)
-  image_batches = image_slices.batch(batch_size)
+  images = tf.data.Dataset.from_tensor_slices(image_list_placeholder)
+  images = images.map(decode_and_preprocess_for_eval, batch_size)
+  image_batches = images.batch(batch_size)
 
   batch_iterator = image_batches.make_initializable_iterator()
   next_batch = batch_iterator.get_next()
@@ -240,71 +241,75 @@ def main():
 
   model_graph, graph_name = load_model(FLAGS.model_path)
 
-  with tf.Session(graph=model_graph, config=session_config) as sess, tf.device(device_name):
-    labels_path = '{}/tfrecords/{}_labels.txt'.format(FLAGS.data_set_dir,
-                                                      path.basename(FLAGS.data_set_dir))
-    label_map = load_labels(labels_path)
-    num_labels = len(label_map)
+  labels_path = '{}/tfrecords/{}_labels.txt'.format(FLAGS.data_set_dir,
+                                                    path.basename(FLAGS.data_set_dir))
+  label_map = load_labels(labels_path)
+  num_labels = len(label_map)
 
-    io_tensors_path = '{}/io_tensors.txt'.format(path.dirname(FLAGS.model_path))
-    io_tensor_map = load_tensor_names(io_tensors_path)
+  io_tensor_names_path = FLAGS.io_tensor_names_path if FLAGS.io_tensor_names_path else '{}/io_tensor_names.txt'.format(
+    path.dirname(FLAGS.model_path))
+  io_tensor_name_map = load_tensor_names(io_tensor_names_path)
 
-    placeholder_map = {
-      'image_batch_placeholder': sess.graph.get_tensor_by_name(
-        '{}/{}'.format(graph_name, io_tensor_map['input_tensor_name'])),
-      'softmax_tensor': sess.graph.get_tensor_by_name(
-        '{}/{}'.format(graph_name, io_tensor_map['output_tensor_name'])),
-      'image_size_placeholder': sess.graph.get_tensor_by_name(
-        '{}/{}'.format(graph_name, io_tensor_map['image_size_tensor_name']))}
+  io_tensor_placeholder_map = {}
 
-    # iterate over every subdirectory of the raw_data_dir
-    if path.isfile(FLAGS.video_names_path):
-      with open(FLAGS.video_names_path, 'r') as video_names:
-        raw_data_subdirs = sorted(video_names.readline().rstrip().split(','))
-    else:
-      raw_data_subdirs = sorted(os.listdir(FLAGS.raw_data_dir))
+  with tf.Session(graph=model_graph) as sess:
+    io_tensor_placeholder_map['image_batch_placeholder'] = sess.graph.get_tensor_by_name(
+      '{}/{}'.format(graph_name, io_tensor_name_map['input_tensor_name']))
+    io_tensor_placeholder_map['softmax_tensor'] = sess.graph.get_tensor_by_name(
+      '{}/{}'.format(graph_name, io_tensor_name_map['output_tensor_name']))
+    io_tensor_placeholder_map['image_size_placeholder'] = sess.graph.get_tensor_by_name(
+      '{}/{}'.format(graph_name, io_tensor_name_map['image_size_tensor_name']))
 
-    # identify and store the file names of examples already included in
-    # the previously created data set named FLAGS.data_set_name
-    print('Identifying previously incorporated examples in {}.'.format(FLAGS.data_set_dir))
+  # iterate over every subdirectory of the raw_data_dir
+  if path.isfile(FLAGS.video_names_path):
+    with open(FLAGS.video_names_path, 'r') as video_names:
+      raw_data_subdirs = sorted(video_names.readline().rstrip().split(','))
+  else:
+    raw_data_subdirs = sorted(os.listdir(FLAGS.raw_data_dir))
+
+  # identify and store the file names of examples already included in
+  # the previously created data set named FLAGS.data_set_name
+  print('Identifying previously incorporated examples in {}.'.format(FLAGS.data_set_dir))
+  start = time.time()
+  incorporated_example_file_name_set = get_previously_incorporated_example_file_name_set(
+    FLAGS.data_set_dir)
+  print_processing_duration(start, 'Elapsed time')
+
+  for subdir in raw_data_subdirs:
+    subdir_path = path.join(FLAGS.raw_data_dir, subdir)
+
+    print('Identifying previously unincorporated examples in {}'.format(subdir))
     start = time.time()
-    incorporated_example_file_name_set = get_previously_incorporated_example_file_name_set(
-      FLAGS.data_set_dir)
+    unincorporated_example_file_path_list = [
+      path.join(subdir_path, name) for name in sorted(os.listdir(subdir_path))
+      if name not in incorporated_example_file_name_set]
     print_processing_duration(start, 'Elapsed time')
 
-    for subdir in raw_data_subdirs:
-      subdir_path = path.join(FLAGS.raw_data_dir, subdir)
+    if not all([path.isfile(file_path) and file_path[-4:] == '.jpg'
+                for file_path in unincorporated_example_file_path_list]):
+      raise ValueError('The directory {} is expected to only contain image files.'
+                       .format(subdir_path))
 
-      print('Identifying previously unincorporated examples in {}'.format(subdir))
-      start = time.time()
-      unincorporated_example_file_path_list = sorted(
-        [path.join(subdir_path, name) for name in os.listdir(subdir_path)
-         if name not in incorporated_example_file_name_set])
-      print_processing_duration(start, 'Elapsed time')
+    print('Loading previously unincorporated examples from {}'.format(subdir))
+    start = time.time()
+    image_list = np.array([tf.gfile.GFile(file_path, 'rb').read()
+                           for file_path in unincorporated_example_file_path_list
+                           if os.stat(file_path).st_size > 0])
+    print_processing_duration(start, 'Elapsed time')
 
-      if not all([path.isfile(file_path) and file_path[-4:] == '.jpg'
-                  for file_path in unincorporated_example_file_path_list]):
-        raise ValueError('The directory {} is expected to only contain image files.'
-                         .format(subdir_path))
-
-      print('Loading previously unincorporated examples from {}'.format(subdir))
-      start = time.time()
-      image_list = [tf.gfile.GFile(file_path, 'rb').read() 
-                    for file_path in unincorporated_example_file_path_list
-                    if os.stat(file_path).st_size > 0]
-      print_processing_duration(start, 'Elapsed time')
-
+    with tf.Session(graph=model_graph, config=session_config) as sess, tf.device(device_name):
       print('Processing {} examples from {}.'.format(len(image_list), subdir))
       start = time.time()
-      prediction_array = predict_class_labels(image_list, num_labels, placeholder_map,
+      prediction_array = predict_class_labels(image_list, num_labels, io_tensor_placeholder_map,
         inception.inception_v3.default_image_size, FLAGS.batch_size, sess)
       print_processing_duration(start, 'Elapsed time')
-  
+
       print('Writing class label predictions for {}.'.format(subdir))
       start = time.time()
       output_label_predictions(subdir, unincorporated_example_file_path_list,
                                prediction_array, label_map, FLAGS.label_predictions_dir)
       print_processing_duration(start, 'Elapsed time')
+
 
 # TODO: Make batch size a function of available system memory.
 if __name__ == '__main__':
