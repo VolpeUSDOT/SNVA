@@ -120,6 +120,9 @@ def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory using --dataset_dir')
 
+    if not tf.gfile.Exists(FLAGS.checkpoint_path):
+        tf.gfile.MakeDirs(FLAGS.checkpoint_path)
+
     if not tf.gfile.IsDirectory(FLAGS.checkpoint_path):
         raise ValueError('checkpoint_path must be a directory')
 
@@ -285,15 +288,13 @@ def main(_):
             num_batches = FLAGS.max_num_batches
         else:
             # This ensures that we make a single pass over all of the data.
-            num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
-
-        checkpoint_path = FLAGS.checkpoint_path
+            num_batches = int(math.ceil(dataset.num_samples / float(FLAGS.batch_size)))
 
         tf.logging.info('Periodically Evaluating %s' % FLAGS.checkpoint_path)
 
         slim.evaluation.evaluation_loop(
             master=FLAGS.master,
-            checkpoint_dir=checkpoint_path,
+            checkpoint_dir=FLAGS.checkpoint_path,
             logdir=FLAGS.eval_dir,
             num_evals=num_batches,
             eval_op=list(names_to_updates.values()),
