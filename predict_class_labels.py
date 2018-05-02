@@ -252,7 +252,7 @@ def main():
 
   io_tensor_placeholder_map = {}
 
-  with tf.Session(graph=model_graph) as sess:
+  with tf.Session(graph=model_graph) as sess, tf.device(device_name):
     io_tensor_placeholder_map['image_batch_placeholder'] = sess.graph.get_tensor_by_name(
       '{}/{}'.format(graph_name, io_tensor_name_map['input_tensor_name']))
     io_tensor_placeholder_map['softmax_tensor'] = sess.graph.get_tensor_by_name(
