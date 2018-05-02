@@ -36,8 +36,11 @@ from __future__ import print_function
 
 import tensorflow as tf
 from datasets import dataset
-from os import path
+import signal
+import os
+import sys
 
+path = os.path
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string(
@@ -50,17 +53,58 @@ tf.app.flags.DEFINE_string(
   None,
   'The directory where the output TFRecords and temporary files are saved.')
 
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 0.9,
+    'The ratio of total memory across all available GPUs to use with this process. '
+    'Defaults to a suggested max of 0.9.')
+
+tf.app.flags.DEFINE_string(
+    'gpu_device_num', '0',
+    'The device number of a single GPU to use for evaluation on a multi-GPU system. '
+    'Defaults to zero.')
+
+tf.app.flags.DEFINE_boolean(
+    'cpu_only', False,
+    'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
+    'Defaults to False.')
+
+
+def interrupt_handler(signal_number, _):
+    tf.logging.info(
+        'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+    os.unsetenv('CUDA_VISIBLE_DEVICES')
+    sys.exit(0)
+
 
 def main(_):
   if FLAGS.dataset_name is None:
     raise ValueError('You must specify the dataset name using --dataset_name')
   if FLAGS.dataset_dir is None:
     raise ValueError('You must specify the dataset directory using --dataset_dir')
-  dataset_path = path.join(FLAGS.dataset_dir, FLAGS.dataset_name)
-  if path.exists(dataset_path):
-    dataset.compute_statistics(FLAGS.dataset_dir, FLAGS.dataset_name)
+
+  tf.logging.set_verbosity(tf.logging.INFO)
+
+  if FLAGS.cpu_only:
+      device_name = '/cpu:0'
+
+      session_config = None
+
+      tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+      os.putenv('CUDA_VISIBLE_DEVICES', '')
   else:
-    raise ValueError('dataset_name [%s] was not recognized.' % FLAGS.dataset_name)
+      device_name = '/gpu:' + FLAGS.gpu_device_num
+
+      gpu_options = tf.GPUOptions(allow_growth=True,
+                                  per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+      session_config = tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options)
+
+      tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to {}.'.format(
+                      FLAGS.gpu_device_num))
+      os.putenv('CUDA_VISIBLE_DEVICES', FLAGS.gpu_device_num)
+
+  signal.signal(signal.SIGINT, interrupt_handler)
+
+  dataset.compute_statistics(FLAGS.dataset_dir, FLAGS.dataset_name, session_config, device_name)
 
 
 if __name__ == '__main__':
