@@ -3,7 +3,6 @@ import sys
 import os
 import subprocess
 import datetime
-import os.path as path
 import platform
 import argparse
 from glob import iglob
@@ -21,6 +20,7 @@ import numpy as np
 # TODO: Need to cycle through all detected labels and correctly output to report.
 # TODO: Add support for basic HTML report which includes processed data & visualizations.
 
+path = os.path
 # set logging level
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -43,8 +43,6 @@ parser.add_argument('--smoothing', '-sm', dest='smoothing', action='store', defa
 parser.add_argument('--fps', '-fps', dest='fps', action='store', default='1',
                     help='Frames Per Second used to sample input video. '
                          'The higher this number the slower analysis will go. Default is 1 FPS')
-parser.add_argument('--allfiles', '-a', dest='allfiles', action='store_true',
-                    help='Process all video files in the directory path.')
 parser.add_argument('--deinterlace', '-d', dest='deinterlace', action='store_true',
                     help='Apply de-interlacing to video frames during extraction.')
 parser.add_argument('--outputclips', '-o', dest='outputclips', action='store_true',
@@ -55,7 +53,7 @@ parser.add_argument('--outputpadding', '-op', dest='outputpadding', action='stor
                     help='Number of seconds added to the start and end of created video clips.')
 parser.add_argument('--keeptemp', '-k', dest='keeptemp', action='store_true',
                     help='Keep ALL temporary extracted video frames.')
-parser.add_argument('--videopath', '-v', dest='video_path', action='store', required=True, help='Path to video file(s).')
+parser.add_argument('--videopath', '-v', dest='videopath', action='store', required=True, help='Path to video file(s).')
 
 args = parser.parse_args()
 currentSrcVideo = ''
@@ -116,17 +114,17 @@ def save_training_frames(framenumber, label):
     copy_files(srcpath + '*' + str(framenumber) + '.jpg', dstpath)
 
 
-def decode_video(video_path):
+def decode_video(videopath):
     if args.deinterlace == True:
         deinterlace = 'yadif'
     else:
         deinterlace = ''
-    video_filename, video_file_extension = path.splitext(path.basename(video_path))
+    video_filename, video_file_extension = path.splitext(path.basename(videopath))
     print(' ')
     print('Decoding video file ' + video_filename)
     video_temp = os.path.join(video_tempDir, str(video_filename) + '_%04d.jpg')
     command = [
-        FFMPEG_PATH, '-i', video_path,
+        FFMPEG_PATH, '-i', videopath,
         '-vf', 'fps=' + args.fps, '-q:v', '1', '-vsync', 'vfr', video_temp, '-hide_banner', '-loglevel', '0',
         '-vf', deinterlace, '-vf', 'scale=640x480'
     ]
@@ -147,17 +145,17 @@ def convert2jpeg(raw_image):
     return temp_image.getvalue()
 
 
-def decode_video_pipe(video_path):
+def decode_video_pipe(videopath):
     images = []
     if args.deinterlace == True:
         deinterlace = 'yadif'
     else:
         deinterlace = ''
-    video_filename, video_file_extension = path.splitext(path.basename(video_path))
+    video_filename, video_file_extension = path.splitext(path.basename(videopath))
     print(' ')
     print('Reading video frames into memory from ' + video_filename)
     command = [
-        FFMPEG_PATH, '-i', video_path,
+        FFMPEG_PATH, '-i', videopath,
         '-vf', 'fps=' + args.fps, '-r', args.fps, '-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
         '-hide_banner', '-loglevel', '0', '-vf', deinterlace, '-f', 'image2pipe', '-vf', 'scale=640x480', '-'
     ]
@@ -176,7 +174,7 @@ def decode_video_pipe(video_path):
     return images
 
 
-def create_clip(video_path, event, totalframes, videoclipend):
+def create_clip(videopath, event, totalframes, videoclipend):
     # creates a video clip of the detected event
     if (event[0] - (int(args.outputpadding) * int(args.fps))) >= 1:
         start = event[0] - int(args.outputpadding) * int(args.fps)
@@ -194,7 +192,7 @@ def create_clip(video_path, event, totalframes, videoclipend):
         # print('Creating video clip from event which starts at ' + str(starttime) + ' and ends at ' + str(endtime) + '.')
 
         video_reportDir = os.path.join(args.reportpath, '')
-        video_filename, video_file_extension = path.splitext(path.basename(video_path))
+        video_filename, video_file_extension = path.splitext(path.basename(videopath))
         video_clip = video_reportDir + str(video_filename) + '_' + str(start) + '.mp4'
 
         command = [
@@ -370,14 +368,14 @@ def runGraph(image_data, input_tensor, output_tensor, labels, session, session_n
     image_data = []
     return results
 
-if args.allfiles:
-    video_files = load_video_filenames(args.video_path)
+if path.isdir(args.videopath):
+    video_files = load_video_filenames(args.videopath)
     for video_file in video_files:
         filename, file_extension = path.splitext(path.basename(video_file))
         n = 0
         flagfound = 0
         remove_video_frames()
-        clean_video_path = os.path.join(args.video_path, '')
+        clean_video_path = os.path.join(args.videopath, '')
         currentSrcVideo = clean_video_path + video_file
 
         if args.keeptemp or args.training:
@@ -400,11 +398,11 @@ if args.allfiles:
         write_reports(filename, output, int(args.smoothing))
 
 else:
-    filename, file_extension = path.splitext(path.basename(args.video_path))
+    filename, file_extension = path.splitext(path.basename(args.videopath))
     n = 0
     flagfound = 0
     remove_video_frames()
-    currentSrcVideo = args.video_path
+    currentSrcVideo = args.videopath
     if args.keeptemp or args.training:
         image_data = decode_video(currentSrcVideo)
     else:
