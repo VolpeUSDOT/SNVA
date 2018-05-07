@@ -9,7 +9,7 @@ import uuid
 
 class IOObject:
   @staticmethod
-  def get_gpu_nums():
+  def get_gpu_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
 
@@ -21,7 +21,7 @@ class IOObject:
 
   @staticmethod
   def load_labels(labels_path):
-    meta_map = IOObject.read_meta_file(labels_path)
+    meta_map = IOObject._read_meta_file(labels_path)
     return {int(key): value for key, value in meta_map.items()}
 
   @staticmethod
@@ -48,7 +48,7 @@ class IOObject:
 
   @staticmethod
   def load_tensor_names(io_tensor_names_path):
-    meta_map = IOObject.read_meta_file(io_tensor_names_path)
+    meta_map = IOObject._read_meta_file(io_tensor_names_path)
     return {key: value + ':0' for key, value in meta_map.items()}
 
   @staticmethod
@@ -65,7 +65,7 @@ class IOObject:
       msg, int(hours), int(minutes), int(seconds)))
 
   @staticmethod
-  def read_meta_file(file_path):
+  def _read_meta_file(file_path):
     meta_lines = [line.rstrip().split(':') for line in tf.gfile.GFile(file_path).readlines()]
     return {line[0]: line[1] for line in meta_lines}
 
@@ -85,24 +85,27 @@ class IOObject:
             'frame_count': int(json_map['streams'][0]['nb_frames'])}
 
   @staticmethod
-  def smooth_probs(probs, degree=2):
-    window = degree * 2 - 1
+  def _div_odd(n):
+    return n // 2, n // 2 + 1
+
+  @staticmethod
+  def _smooth_class_prob_sequence(probs, smoothing_factor):
+    window = smoothing_factor * 2 - 1
     weight = np.array([1.0] * window)
     gauss_weight = []
-    div_odd = lambda n: (n // 2, n // 2 + 1)
 
     for i in range(window):
-      i = i - degree + 1
+      i = i - smoothing_factor + 1
       frac = i / float(window)
       gauss = 1 / (np.exp((4 * (frac)) ** 2))
       gauss_weight.append(gauss)
 
     weight = np.array(gauss_weight) * weight
 
-    smoothed_probs = [float("{0:.4f}".format(sum(np.array(probs[i:i + window]) * weight) / sum(weight)))
+    smoothed_probs = [sum(np.array(probs[i:i + window]) * weight) / sum(weight)
                       for i in range(len(probs) - window)]
 
-    padfront, padback = div_odd(window)
+    padfront, padback = IOObject._div_odd(window)
     for i in range(0, padfront):
       smoothed_probs.insert(0, smoothed_probs[0])
     for i in range(0, padback):
@@ -111,16 +114,44 @@ class IOObject:
     return smoothed_probs
 
   @staticmethod
-  def write_report(video_file_name, report_path, class_probs, class_names, smoothing=0):
-    if smoothing > 0:
-      class_names = class_names + [class_name + '_smoothed' for class_name in class_names]
+  def _smooth_probs(class_probs, smoothing_factor):
+    smoothed_probs = [IOObject._smooth_class_prob_sequence(class_probs[:, i], int(smoothing_factor))
+                      for i in range(len(class_probs[0]))]
+    smoothed_probs = np.array(smoothed_probs)
+    smoothed_probs = np.transpose(smoothed_probs)
 
-      smoothed_probs = [IOObject.smooth_probs(class_probs[:, i], int(smoothing))
-                        for i in range(len(class_probs[0]))]
-      smoothed_probs = np.array(smoothed_probs)
-      smoothed_probs = np.transpose(smoothed_probs)
+    return smoothed_probs
 
+
+  @staticmethod
+  def _expand_class_names(class_names, appendage):
+    return class_names + [class_name + appendage for class_name in class_names]
+
+
+  @staticmethod
+  def _binarize_probs(class_probs):
+    # because numpy will round 0.5 down to 0.0, we need to identify occurrences of 0.5
+    # and replace them with 1.0. If a prob has two 0.5s, replace them both with 1.0
+    binarized_probs = class_probs.copy()
+    uncertain_probs = binarized_probs == 0.5
+    binarized_probs[uncertain_probs] = 1.0
+    binarized_probs = np.round(binarized_probs)
+
+    return binarized_probs
+
+
+  @staticmethod
+  def write_report(video_file_name, report_path, class_probs, class_names,
+                   smoothing_factor=0, binarize=False):
+    if smoothing_factor > 1:
+      class_names = IOObject._expand_class_names(class_names, '_smoothed')
+      smoothed_probs = IOObject._smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
+
+    if binarize:
+      class_names = IOObject._expand_class_names(class_names, '_binarized')
+      binarized_probs = IOObject._binarize_probs(class_probs)
+      class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
     report_file_path = os.path.join(report_path, video_file_name + '_results.csv')
 
