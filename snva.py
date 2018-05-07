@@ -73,8 +73,8 @@ class IOObject:
     pipe = subprocess.run(command, stdout=subprocess.PIPE, encoding='utf-8')
 
     line_list = pipe.stdout.rstrip().split('\n')
-    gpu_nums = [line.split(' ')[1] for line in line_list]
-    return [gpu_num.split(':')[0] for gpu_num in gpu_nums]
+    gpu_labels = [line.split(':')[0] for line in line_list]
+    return [gpu_label.split(' ')[1] for gpu_label in gpu_labels]
 
   @staticmethod
   def load_labels(labels_path):
