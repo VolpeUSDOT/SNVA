@@ -145,7 +145,7 @@ class IOObject:
   @staticmethod
   def write_report(video_file_name, report_path, time_stamps, class_probs,
                    class_names, smoothing_factor=0, binarize=False):
-    num_frames = len(class_probs)
+    class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
     if smoothing_factor > 1:
       class_names = IOObject._expand_class_names(class_names, '_smoothed')
@@ -157,13 +157,11 @@ class IOObject:
       binarized_probs = IOObject._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
-    class_names = ['{}_probability'.format(class_name) for class_name in class_names]
-
     header = ['video_file_name', 'video_frame_number', 'time_stamp'] + class_names
 
     rows = [['{:s}'.format(video_file_name), '{:07d}'.format(i+1), time_stamps[i]]
             + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
-            for i in range(num_frames)]
+            for i in range(len(class_probs))]
 
     if not path.exists(report_path):
       os.makedirs(report_path)
