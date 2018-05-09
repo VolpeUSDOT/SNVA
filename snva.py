@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 from multiprocessing import BoundedSemaphore, Process, Queue
+import threading
 import numpy as np
 import os
 import platform
@@ -12,6 +13,9 @@ import sys
 import tensorflow as tf
 import time
 import uuid
+import logging
+import logging.handlers
+from datetime import datetime as dt
 
 path = os.path
 
@@ -56,13 +60,34 @@ parser.add_argument('--scale', '-s', action='store_true', help='')
 parser.add_argument('--smoothing', '-sm', type=int, default=0,
                     help='Apply a smoothing factor to detection results.')
 parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
+parser.add_argument('--verbose', '-v', help='Print additional information in logs', action='store_true')
+parser.add_argument('--debug', '-d', help='Print debug information in logs', action='store_true')
 
 args = parser.parse_args()
 
+# Define our log level based on arguments
+loglevel = logging.WARNING
+if args.verbose:
+  loglevel = logging.INFO
+if args.debug:
+  loglevel = logging.DEBUG
 
-# get how much ram we have to work with
-# sysram = psutil.virtual_memory()
+# Configure a process to send its log messages to a queue
+def worker_log_config(queue):
+  qh = logging.handlers.QueueHandler(queue)
+  root = logging.getLogger()
+  root.setLevel(loglevel)
+  root.addHandler(qh)
 
+# Logger thread: listens for updates to our log queue and writes them as they come in
+# Terminates after we add None to the queue
+def logger_thread(q):
+    while True:
+        record = q.get()
+        if record is None:
+            break
+        logger = logging.getLogger(record.name)
+        logger.handle(record)
 
 class IOObject:
   @staticmethod
@@ -84,7 +109,6 @@ class IOObject:
   @staticmethod
   def load_model(model_path, gpu_memory_fraction):
     graph_def = tf.GraphDef()
-
     with tf.gfile.FastGFile(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
 
@@ -130,7 +154,6 @@ class IOObject:
   def read_video_metadata(video_file_path):
     command = ['ffprobe', '-show_streams', '-print_format',
                'json', '-loglevel', 'quiet', video_file_path]
-
     pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     json_string, err = pipe.communicate()
@@ -192,6 +215,7 @@ def interrupt_handler(signal_number, _):
   tf.logging.info(
     'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
   os.unsetenv('CUDA_VISIBLE_DEVICES')
+  logging.warning("Interrupt signal recieved: Exiting...")
   sys.exit(0)
 
 
@@ -244,13 +268,14 @@ def infer_class_names(
   command.extend(['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
                   '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', '-'])
 
-  # print the constructed command string
-  # command_string = command[0]
-  #
-  # for elem in command[1:]:
-  #   command_string += ' ' + elem
-  #
-  # print('command: {}'.format(command_string))
+  # log the constructed command string if debug
+  if (loglevel == logging.DEBUG):
+    command_string = command[0]
+  
+    for elem in command[1:]:
+      command_string += ' ' + elem
+  
+    logging.debug("FFMPEG Command: %s" % command_string)
 
   #####################################
   # prepare neural net input pipeline #
@@ -264,6 +289,7 @@ def infer_class_names(
     while True:
       image_string = image_pipe.stdout.read(image_string_len)
       if not image_string:
+        logging.debug("Closing image pipe")
         image_pipe.stdout.close()
         return
       # image_pipe.stdout.flush()  # what does flush even do, really?
@@ -292,7 +318,7 @@ def infer_class_names(
   #################
   # run inference #
   #################
-
+  logging.debug("Starting inference on video %s" % video_file_name)
   with tf.Session(graph=session_graph, config=session_config) as session:
     session.run(batch_iterator.initializer)
 
@@ -319,8 +345,13 @@ def infer_class_names(
 
 
 def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
-                        device_num_queue, io_object_queue, child_process_semaphore):
+                        device_num_queue, io_object_queue, child_process_semaphore, logqueue):
+  
+  # Configure logging for this process
+  worker_log_config(logqueue)
+  
   process_id = os.getpid()
+  logging.debug("Start of process %s for video %s" % process_id, video_file_name)
 
   tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -330,17 +361,17 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
   video_file_name, _ = path.splitext(video_file_name)
 
   io_object = io_object_queue.get()
-  print('io_object acquired by process {}'.format(process_id))
+  logging.info('io_object acquired by process {}'.format(process_id))
   video_meta_map = io_object.read_video_metadata(video_file_path)
 
   device_num = device_num_queue.get()
-  print('device_num {} acquired by child process {}'.format(device_num, process_id))
+  logging.info('device_num {} acquired by child process {}'.format(device_num, process_id))
 
   tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to {} in child process {}.'.
                   format(device_num, process_id))
   os.putenv('CUDA_VISIBLE_DEVICES', device_num)
 
-  print('io_object released by child process {}'.format(process_id))
+  logging.info('io_object released by child process {}'.format(process_id))
   io_object_queue.put(io_object)
 
   session_name = model_map['session_name']
@@ -361,11 +392,11 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
 
   end = time.time() - start
 
-  print('device_num {} released by child process {}'.format(device_num, process_id))
+  logging.info('device_num {} released by child process {}'.format(device_num, process_id))
   device_num_queue.put(device_num)
 
   io_object = io_object_queue.get()
-  print('io_object acquired by child process {}'.format(process_id))
+  logging.info('io_object acquired by child process {}'.format(process_id))
 
   io_object.print_processing_duration(
     end, 'Time elapsed processing {} video frames for {} by child process {}'.format(
@@ -382,20 +413,28 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
     end, 'Time elapsed generating report for {} by child process {}'.format(video_file_name,
                                                                             process_id))
 
-  print('child_process_semaphore released by child process {} back to parent process {}'.
+  logging.info('child_process_semaphore released by child process {} back to parent process {}'.
         format(process_id, os.getppid()))
   child_process_semaphore.release()
 
-  print('io_object released by child process {}'.format(process_id))
+  logging.info('io_object released by child process {}'.format(process_id))
   io_object_queue.put(io_object)
+  logging.info("End of process %s, video %s complete" % process_id, video_file_name)
 
 
 if __name__ == '__main__':
+  
   start = time.time()
 
   process_id = os.getpid()
 
   io_object = IOObject()
+
+  logqueue = Queue()
+  logging.basicConfig(filename=dt.now().strftime('snva_%d_%m_%Y.log'),level=loglevel,format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
+  lp = threading.Thread(target=logger_thread, args=(logqueue,))
+  lp.start()
+  logging.info("Entering main process")
 
   video_file_names = io_object.load_video_file_names(args.videopath) \
     if path.isdir(args.videopath) else [args.videopath]
@@ -407,6 +446,8 @@ if __name__ == '__main__':
     tensorpath = args.modelpath + '-meta.txt'
     labelpath = args.modelpath + '-labels.txt'
 
+  logging.debug("Tensorpath set: %s" % tensorpath)
+  logging.debug("Labelpath set: %s" % labelpath)
   label_map = io_object.load_labels(labelpath)
   tensor_name_map = io_object.load_tensor_names(tensorpath)
   model_map = io_object.load_model(args.modelpath, args.gpumemoryfraction)
@@ -438,43 +479,43 @@ if __name__ == '__main__':
     child_process_semaphore.acquire()  # block if three child processes are active
 
     io_object = io_object_queue.get()
-    print('io_object acquired by parent process {}'.format(process_id))
-    print('child_process_semaphore acquired by parent process {}'.format(process_id))
-    print('io_object released by parent process {}'.format(process_id))
+    logging.info('io_object acquired by parent process {}'.format(process_id))
+    logging.info('child_process_semaphore acquired by parent process {}'.format(process_id))
+    logging.info('io_object released by parent process {}'.format(process_id))
     io_object = io_object_queue.put(io_object)
 
     video_file_name = video_file_names.pop()
 
     try:
       io_object = io_object_queue.get()
-      print('io_object acquired by parent process {}'.format(process_id))
-      print('creating child process')
-      print('io_object released by parent process {}'.format(process_id))
+      logging.info('io_object acquired by parent process {}'.format(process_id))
+      logging.info('creating child process')
+      logging.info('io_object released by parent process {}'.format(process_id))
       io_object = io_object_queue.put(io_object)
 
-      child_process = Process(target=multi_process_video,
+      child_process = Process(target=multi_process_video, name='video %s process' % video_file_name,
                               args=(video_file_name, tensor_name_map, label_map, model_map,
-                                    device_num_queue, io_object_queue, child_process_semaphore))
+                                    device_num_queue, io_object_queue, child_process_semaphore, logqueue))
 
       io_object = io_object_queue.get()
-      print('io_object acquired by parent process {}'.format(process_id))
-      print('starting child process')
-      print('io_object released by parent process {}'.format(process_id))
+      logging.info('io_object acquired by parent process {}'.format(process_id))
+      logging.info('starting child process')
+      logging.info('io_object released by parent process {}'.format(process_id))
       io_object = io_object_queue.put(io_object)
 
       child_process.start()
 
       child_process_list.append(child_process)
     except Exception as e:
+      logging.exception("Error occured processing video %s", video_file_name)
       # If an error occurs, retry (infinitely for now) after processing other videos
-      print('An error has occured. Appending {} to the end of video_file_names to re-attemt processing later'.
+      logging.error('An error has occured. Appending {} to the end of video_file_names to re-attemt processing later'.
             format(video_file_name))
-      print(e)
       video_file_names.append(video_file_name)
 
   # io_object = io_object_queue.get()
   # print('io_object acquired by parent process {}'.format(process_id))
-  print('joining remaining active children')
+  logging.info('joining remaining active children')
   # print('io_object released by parent process {}'.format(process_id))
   # io_object = io_object_queue.put(io_object)
 
@@ -482,7 +523,7 @@ if __name__ == '__main__':
     if child_process.is_alive():
       # io_object = io_object_queue.get()
       # print('io_object acquired by parent process {}'.format(process_id))
-      print('joining child process {}'.format(child_process.pid))
+      logging.info('joining child process {}'.format(child_process.pid))
       # print('io_object released by parent process {}'.format(process_id))
       # io_object = io_object_queue.put(io_object)
       child_process.join()
@@ -490,7 +531,12 @@ if __name__ == '__main__':
   end = time.time() - start
 
   io_object = io_object_queue.get()
-  print('io_object acquired by parent process {}'.format(process_id))
+  logging.info('io_object acquired by parent process {}'.format(process_id))
   io_object.print_processing_duration(end, 'Parent process {} elapsed time'.format(process_id))
-  print('io_object released by parent process {}'.format(process_id))
+  logging.info('io_object released by parent process {}'.format(process_id))
   io_object = io_object_queue.put(io_object)
+
+  #Signal the logging thread to finish up
+  logging.info('Signaling log queue to stop')
+  logqueue.put(None)
+  lp.join()
