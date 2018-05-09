@@ -6,6 +6,8 @@ import subprocess
 import tensorflow as tf
 import uuid
 
+path = os.path
+
 
 class IOObject:
   @staticmethod
@@ -53,7 +55,7 @@ class IOObject:
 
   @staticmethod
   def load_video_file_names(video_file_dir_path):
-    included_extenstions = ['avi', 'mp4', 'asf', 'mkv']
+    included_extenstions = ['avi', 'mp4', 'asf', 'mkv', 'm4v', 'mpeg', 'mov']
     return sorted([fn for fn in os.listdir(video_file_dir_path)
                    if any(fn.lower().endswith(ext) for ext in included_extenstions)])
 
@@ -141,8 +143,10 @@ class IOObject:
 
 
   @staticmethod
-  def write_report(video_file_name, report_path, class_probs, class_names,
-                   smoothing_factor=0, binarize=False):
+  def write_report(video_file_name, report_path, time_stamps, class_probs,
+                   class_names, smoothing_factor=0, binarize=False):
+    num_frames = len(class_probs)
+
     if smoothing_factor > 1:
       class_names = IOObject._expand_class_names(class_names, '_smoothed')
       smoothed_probs = IOObject._smooth_probs(class_probs, smoothing_factor)
@@ -153,12 +157,22 @@ class IOObject:
       binarized_probs = IOObject._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
-    report_file_path = os.path.join(report_path, video_file_name + '_results.csv')
+    class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
-    with open(report_file_path, 'w', newline='') as logfile:
-      csv_writer = csv.writer(logfile)
-      csv_writer.writerow(class_names)
-      csv_writer.writerows([['{0:.4f}'.format(cls) for cls in class_prob]
-                            for class_prob in class_probs])
+    header = ['video_file_name', 'video_frame_number', 'time_stamp'] + class_names
+
+    rows = [['{:s}'.format(video_file_name), '{:07d}'.format(i+1), time_stamps[i]]
+            + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
+            for i in range(num_frames)]
+
+    if not path.exists(report_path):
+      os.makedirs(report_path)
+
+    report_file_path = path.join(report_path, video_file_name + '_results.csv')
+
+    with open(report_file_path, 'w', newline='') as report_file:
+      csv_writer = csv.writer(report_file)
+      csv_writer.writerow(header)
+      csv_writer.writerows(rows)
 
 
