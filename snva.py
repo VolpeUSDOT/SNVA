@@ -1,6 +1,4 @@
 import argparse
-import csv
-import json
 from multiprocessing import BoundedSemaphore, Process, Queue
 import threading
 import numpy as np
@@ -16,6 +14,8 @@ import uuid
 import logging
 import logging.handlers
 from datetime import datetime as dt
+from snva.timestamp_utils import numerize_timestamps
+from snva.io_utils import IOObject
 
 path = os.path
 
@@ -32,13 +32,14 @@ else:
 
 parser = argparse.ArgumentParser(description='Process some video files using Tensorflow!')
 
-parser.add_argument('--batchsize', '-b', type=int, default=1)
+parser.add_argument('--batchsize', '-bs', type=int, default=1)
+parser.add_argument('--binarizeprobs', '-b', action='store_true', help='')
 parser.add_argument('--crop', '-c', action='store_true',
                     help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
-parser.add_argument('--cropx', '-cx', type=int, help='x-component of top-left corner of crop.')
-parser.add_argument('--cropy', '-cy', type=int, help='y-component of top-left corner of crop.')
-parser.add_argument('--cropwidth', '-cw', type=int, help='x-component of bottom-right corner of crop.')
-parser.add_argument('--cropheight', '-ch', type=int, help='y-component of bottom-right corner of crop.')
+parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
+parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
+parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
+parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-component of bottom-right corner of crop.')
 parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                     help='Percentage of GPU memory to permit this process to consume.')
 parser.add_argument('--modelinputsize', '-mis', type=int, default=299)
@@ -57,8 +58,12 @@ parser.add_argument('--outputpadding', '-op', type=int, default=30,
 parser.add_argument('--reportpath', '-rp', default='./results',
                     help='Path to the directory where results are stored.')
 parser.add_argument('--scale', '-s', action='store_true', help='')
-parser.add_argument('--smoothing', '-sm', type=int, default=0,
+parser.add_argument('--smoothingfactor', '-sf', type=int, default=0,
                     help='Apply a smoothing factor to detection results.')
+parser.add_argument('--timestampx', '-tx', type=int, default=25, help='x-component of top-left corner of timestamp.')
+parser.add_argument('--timestampy', '-ty', type=int, default=340, help='y-component of top-left corner of timestamp.')
+parser.add_argument('--timestampwidth', '-tw', type=int, default=160, help='x-component of bottom-right corner of timestamp.')
+parser.add_argument('--timestampheight', '-th', type=int, default=16, help='y-component of bottom-right corner of timestamp.')
 parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
 parser.add_argument('--verbose', '-v', help='Print additional information in logs', action='store_true')
 parser.add_argument('--debug', '-d', help='Print debug information in logs', action='store_true')
@@ -89,128 +94,6 @@ def logger_thread(q):
         logger = logging.getLogger(record.name)
         logger.handle(record)
 
-class IOObject:
-  @staticmethod
-  def get_gpu_nums():
-    # TODO: Consider replacing a subprocess invocation with nvml bindings
-    command = ['nvidia-smi', '-L']
-
-    pipe = subprocess.run(command, stdout=subprocess.PIPE, encoding='utf-8')
-
-    line_list = pipe.stdout.rstrip().split('\n')
-    gpu_nums = [line.split(' ')[1] for line in line_list]
-    return [gpu_num.split(':')[0] for gpu_num in gpu_nums]
-
-  @staticmethod
-  def load_labels(labels_path):
-    meta_map = IOObject.read_meta_file(labels_path)
-    return {int(key): value for key, value in meta_map.items()}
-
-  @staticmethod
-  def load_model(model_path, gpu_memory_fraction):
-    graph_def = tf.GraphDef()
-    with tf.gfile.FastGFile(model_path, 'rb') as file:
-      graph_def.ParseFromString(file.read())
-
-    session_name = str(uuid.uuid4())
-
-    session_graph = tf.import_graph_def(graph_def, name=session_name)
-
-    gpu_options = tf.GPUOptions(allow_growth=True,
-                                per_process_gpu_memory_fraction=gpu_memory_fraction)
-
-    session_config = tf.ConfigProto(allow_soft_placement=True,
-                                    # log_device_placement=True,
-                                    gpu_options=gpu_options)
-
-    return {'session_name': session_name,
-            'session_graph': session_graph,
-            'session_config': session_config}
-
-  @staticmethod
-  def load_tensor_names(io_tensor_names_path):
-    meta_map = IOObject.read_meta_file(io_tensor_names_path)
-    return {key: value + ':0' for key, value in meta_map.items()}
-
-  @staticmethod
-  def load_video_file_names(video_file_dir_path):
-    included_extenstions = ['avi', 'mp4', 'asf', 'mkv']
-    return sorted([fn for fn in os.listdir(video_file_dir_path)
-                   if any(fn.lower().endswith(ext) for ext in included_extenstions)])
-
-  @staticmethod
-  def print_processing_duration(end_time, msg):
-    minutes, seconds = divmod(end_time, 60)
-    hours, minutes = divmod(minutes, 60)
-    print('{:s}: {:02d}:{:02d}:{:02d}\n'.format(
-      msg, int(hours), int(minutes), int(seconds)))
-
-  @staticmethod
-  def read_meta_file(file_path):
-    meta_lines = [line.rstrip().split(':') for line in tf.gfile.GFile(file_path).readlines()]
-    return {line[0]: line[1] for line in meta_lines}
-
-  @staticmethod
-  def read_video_metadata(video_file_path):
-    command = ['ffprobe', '-show_streams', '-print_format',
-               'json', '-loglevel', 'quiet', video_file_path]
-    pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
-    json_string, err = pipe.communicate()
-
-    json_map = json.loads(json_string)
-
-    return {'width': int(json_map['streams'][0]['width']),
-            'height': int(json_map['streams'][0]['height']),
-            'frame_count': int(json_map['streams'][0]['nb_frames'])}
-
-  @staticmethod
-  def smooth_probs(probs, degree=2):
-    window = degree * 2 - 1
-    weight = np.array([1.0] * window)
-    gauss_weight = []
-    div_odd = lambda n: (n // 2, n // 2 + 1)
-
-    for i in range(window):
-      i = i - degree + 1
-      frac = i / float(window)
-      gauss = 1 / (np.exp((4 * (frac)) ** 2))
-      gauss_weight.append(gauss)
-
-    weight = np.array(gauss_weight) * weight
-    
-    smoothed_probs = [float("{0:.4f}".format(sum(np.array(probs[i:i + window]) * weight) / sum(weight)))
-                      for i in range(len(probs) - window)]
-
-    padfront, padback = div_odd(window)
-    for i in range(0, padfront):
-      smoothed_probs.insert(0, smoothed_probs[0])
-    for i in range(0, padback):
-      smoothed_probs.append(smoothed_probs[-1])
-
-    return smoothed_probs
-
-  @staticmethod
-  def write_report(video_file_name, report_path, class_probs, class_names, smoothing=0):
-    if smoothing > 0:
-      class_names = class_names + [class_name + '_smoothed' for class_name in class_names]
-
-      smoothed_probs = [IOObject.smooth_probs(class_probs[:, i], int(smoothing))
-                        for i in range(len(class_probs[0]))]
-      smoothed_probs = np.array(smoothed_probs)
-      smoothed_probs = np.transpose(smoothed_probs)
-
-      class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
-
-    report_file_path = os.path.join(report_path, video_file_name + '_results.csv')
-
-    with open(report_file_path, 'w', newline='') as logfile:
-      csv_writer = csv.writer(logfile)
-      csv_writer.writerow(class_names)
-      csv_writer.writerows([['{0:.4f}'.format(cls) for cls in class_prob]
-                            for class_prob in class_probs])
-
-
 def interrupt_handler(signal_number, _):
   tf.logging.info(
     'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
@@ -219,12 +102,14 @@ def interrupt_handler(signal_number, _):
   sys.exit(0)
 
 
-def preprocess_for_inception(image, height, width):
+def preprocess_for_inception(image):
   if image.dtype != tf.float32:
     image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-  if image.shape[0] != height or image.shape[1] != width:
+  if image.shape[0] != args.modelinputsize \
+      or image.shape[1] != args.modelinputsize:
     image = tf.expand_dims(image, 0)
-    image = tf.image.resize_bilinear(image, [height, width], align_corners=False)
+    image = tf.image.resize_bilinear(
+      image, [args.modelinputsize, args.modelinputsize], align_corners=False)
     image = tf.squeeze(image, [0])
   image = tf.subtract(image, 0.5)
   image = tf.multiply(image, 2.0)
@@ -233,7 +118,8 @@ def preprocess_for_inception(image, height, width):
 
 def infer_class_names(
     video_file_path, output_width, output_height, num_frames, session_config, session_graph,
-    input_tensor_name, output_tensor_name, image_size_tensor_name, num_classes):
+    input_tensor_name, output_tensor_name, image_size_tensor_name, batch_size, num_classes):
+
   ############################
   # construct ffmpeg command #
   ############################
@@ -243,14 +129,14 @@ def infer_class_names(
   filter_args = []
 
   if args.crop and all([args.cropwidth > 0, args.cropheight > 0, args.cropx >= 0, args.cropy >= 0]):
-    filter_args.append('crop={}:{}:{}:{}'.format(
+    filter_args.append('crop=w={}:h={}:x={}:y={}'.format(
       args.cropwidth, args.cropheight, args.cropx, args.cropy))
 
     output_width = args.cropwidth
     output_height = args.cropheight
 
   if args.scale and all([args.outputwidth > 0, args.outputheight > 0]):
-    filter_args.append('scale={}:{}'.format(args.outputwidth, args.outputheight))
+    filter_args.append('scale=w={}:h={}'.format(args.outputwidth, args.outputheight))
 
     output_width = args.outputwidth
     output_height = args.outputheight
@@ -266,7 +152,7 @@ def infer_class_names(
     command.append(filter)
 
   command.extend(['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
-                  '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', '-'])
+                  '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
 
   # log the constructed command string if debug
   if (loglevel == logging.DEBUG):
@@ -285,32 +171,43 @@ def infer_class_names(
 
   image_string_len = output_width * output_height * args.numchannels
 
+  timestamp_array = np.ndarray((args.timestampheight * num_frames, args.timestampwidth, args.numchannels), dtype='uint8')
+
+  tx = args.timestampx - args.cropx
+  ty = args.timestampy - args.cropy
+  th = args.timestampheight
+  tw = args.timestampwidth
+
+  num_channels = args.numchannels
+  # feed the tf.data input pipeline one image at a time and, while we're at it,
+  # extract timestamp crops and add them to timestamp_array
   def image_array_generator():
+    i = 0
     while True:
       image_string = image_pipe.stdout.read(image_string_len)
       if not image_string:
         logging.debug("Closing image pipe")
         image_pipe.stdout.close()
         return
-      # image_pipe.stdout.flush()  # what does flush even do, really?
-      image_array = np.fromstring(image_string, dtype='uint8')
+      image_pipe.stdout.flush()
+      image_array = np.fromstring(image_string, dtype=np.uint8)
+      image_array = np.reshape(image_array, (output_height, output_width, num_channels))
+      timestamp_array[th * i:th * (i + 1)] = image_array[ty:ty+th, tx:tx+tw]
+      i += 1
+
       yield image_array
 
   image_dataset = tf.data.Dataset.from_generator(
-    image_array_generator, tf.uint8, tf.TensorShape([image_string_len]))
-
-  def reshape_and_preprocess_for_inception(image):
-    image = tf.reshape(image, (output_height, output_width, args.numchannels))
-    return preprocess_for_inception(image, args.modelinputsize, args.modelinputsize)
+    image_array_generator, tf.uint8, tf.TensorShape([output_height, output_width, args.numchannels]))
 
   num_physical_cpu_cores = int(len(os.sched_getaffinity(0)) / 2)
-  image_dataset = image_dataset.map(reshape_and_preprocess_for_inception,
+
+  image_dataset = image_dataset.map(preprocess_for_inception,
                                     num_parallel_calls=num_physical_cpu_cores)
 
-  image_dataset = image_dataset.batch(args.batchsize)
+  image_dataset = image_dataset.batch(batch_size)
 
-  # use an iterator that can be reinitialized inside the loop
-  batch_iterator = image_dataset.make_initializable_iterator()
+  next_batch = image_dataset.make_one_shot_iterator().get_next()
 
   # pre-allocate memory for prediction storage
   prob_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
@@ -320,8 +217,6 @@ def infer_class_names(
   #################
   logging.debug("Starting inference on video %s" % video_file_name)
   with tf.Session(graph=session_graph, config=session_config) as session:
-    session.run(batch_iterator.initializer)
-
     input_tensor = session.graph.get_tensor_by_name(input_tensor_name)
     output_tensor = session.graph.get_tensor_by_name(output_tensor_name)
     image_size_tensor = session.graph.get_tensor_by_name(image_size_tensor_name)
@@ -330,9 +225,9 @@ def infer_class_names(
 
     while True:
       try:
-        image_batch = session.run(batch_iterator.get_next())
-        probs = session.run(output_tensor,
-                            {input_tensor: image_batch, image_size_tensor: args.modelinputsize})
+        image_batch = session.run(next_batch)
+        probs = session.run(output_tensor, {input_tensor: image_batch,
+                                            image_size_tensor: args.modelinputsize})
         num_probs = probs.shape[0]
         prob_array[num_processed_frames:num_processed_frames + num_probs] = probs
         num_processed_frames += num_probs
@@ -341,7 +236,7 @@ def infer_class_names(
 
     assert num_processed_frames == num_frames
 
-  return prob_array
+  return prob_array, timestamp_array
 
 
 def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
@@ -376,50 +271,88 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
 
   session_name = model_map['session_name']
 
-  start = time.time()
+  batch_size = args.batchsize
 
-  class_name_probs = infer_class_names(
-    video_file_path=video_file_path, 
-    output_width=video_meta_map['width'], 
-    output_height=video_meta_map['height'], 
-    num_frames=video_meta_map['frame_count'], 
-    session_config=model_map['session_config'],
-    session_graph=model_map['session_graph'], 
-    input_tensor_name=session_name + '/' + tensor_name_map['input_tensor_name'], 
-    output_tensor_name=session_name + '/' + tensor_name_map['output_tensor_name'], 
-    image_size_tensor_name=session_name + '/' + tensor_name_map['image_size_tensor_name'], 
-    num_classes=len(label_map))
+  successful = False
+  attempts = 0
 
-  end = time.time() - start
+  while not successful and attempts < 3:
+    try:
+      start = time.time()
+
+      class_name_probs, timestamps = infer_class_names(
+        video_file_path=video_file_path,
+        output_width=video_meta_map['width'],
+        output_height=video_meta_map['height'],
+        num_frames=video_meta_map['frame_count'],
+        session_config=model_map['session_config'],
+        session_graph=model_map['session_graph'],
+        input_tensor_name=session_name + '/' + tensor_name_map['input_tensor_name'],
+        output_tensor_name=session_name + '/' + tensor_name_map['output_tensor_name'],
+        image_size_tensor_name=session_name + '/' + tensor_name_map['image_size_tensor_name'],
+        batch_size=batch_size,
+        num_classes=len(label_map))
+
+      end = time.time() - start
+
+      successful = True
+    # TODO: permanently update the batch size so as to not waste time on future batches.
+    # in the limit, we should only detect OOM once and update a shared batch size variable
+    # to benefit all future videos within the current app run.
+    except tf.errors.ResourceExhaustedError as ree:
+      batch_size = int(batch_size / 2)
+      # If an error occurs, retry up to two times
+      print(ree)
+      print('Resources reportedly exhausted, most likely due to beign out of memory. '
+            'Inference will be reattempted with a new batch size of {}'.format(batch_size))
+      attempts += 1
+    except tf.errors.InternalError as ie:
+      print(ie)
+      print('Internal error reported, most likely due to a failed session creation attempt.')
+      attempts += 1
+    except Exception as e:
+      print('Who could know what happened?')
+      print(e)
 
   logging.info('device_num {} released by child process {}'.format(device_num, process_id))
   device_num_queue.put(device_num)
 
-  io_object = io_object_queue.get()
-  logging.info('io_object acquired by child process {}'.format(process_id))
+  if successful:
+    io_object = io_object_queue.get()
+    logging.info('io_object acquired by child process {}'.format(process_id))
 
-  io_object.print_processing_duration(
-    end, 'Time elapsed processing {} video frames for {} by child process {}'.format(
-      len(class_name_probs), video_file_name, process_id))
+    io_object.print_processing_duration(
+      end, 'Time elapsed processing {} video frames for {} by child process {}'.format(
+        len(class_name_probs), video_file_name, process_id))
 
-  start = time.time()
+    start = time.time()
 
-  io_object.write_report(
-    video_file_name, args.reportpath, class_name_probs, list(label_map.values()), args.smoothing)
+    numeral_timestamps = numerize_timestamps(timestamps, args.timestampheight)
 
-  end = time.time() - start
+    end = time.time() - start
 
-  io_object.print_processing_duration(
-    end, 'Time elapsed generating report for {} by child process {}'.format(video_file_name,
-                                                                            process_id))
+    io_object.print_processing_duration(
+      end, 'Time elapsed converting timestamp images to timestamp numeral for {} by child process {}'.format(
+        video_file_name, process_id))
 
-  logging.info('child_process_semaphore released by child process {} back to parent process {}'.
-        format(process_id, os.getppid()))
-  child_process_semaphore.release()
+    start = time.time()
 
-  logging.info('io_object released by child process {}'.format(process_id))
-  io_object_queue.put(io_object)
-  logging.info("End of process %s, video %s complete" % process_id, video_file_name)
+    io_object.write_report(
+      video_file_name, args.reportpath, numeral_timestamps, class_name_probs,
+      list(label_map.values()), args.smoothingfactor, args.binarizeprobs)
+
+    end = time.time() - start
+
+    io_object.print_processing_duration(
+      end, 'Time elapsed generating report for {} by child process {}'.format(video_file_name,
+                                                                              process_id))
+
+    logging.info('child_process_semaphore released by child process {} back to parent process {}'.
+          format(process_id, os.getppid()))
+    child_process_semaphore.release()
+
+    logging.info('io_object released by child process {}'.format(process_id))
+    io_object_queue.put(io_object)
 
 
 if __name__ == '__main__':
@@ -452,7 +385,7 @@ if __name__ == '__main__':
   tensor_name_map = io_object.load_tensor_names(tensorpath)
   model_map = io_object.load_model(args.modelpath, args.gpumemoryfraction)
 
-  device_num_list = io_object.get_gpu_nums()
+  device_num_list = io_object.get_gpu_ids()
   device_num_list_len = len(device_num_list)
 
   # child processes will dequeue and enqueue gpu device names
