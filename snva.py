@@ -32,41 +32,54 @@ else:
 
 parser = argparse.ArgumentParser(description='Process some video files using Tensorflow!')
 
-parser.add_argument('--batchsize', '-bs', type=int, default=1)
-parser.add_argument('--binarizeprobs', '-b', action='store_true', help='')
+parser.add_argument('--batchsize', '-bs', type=int, default=32,
+                    help='')
+parser.add_argument('--binarizeprobs', '-b', action='store_true',
+                    help='')
 parser.add_argument('--crop', '-c', action='store_true',
                     help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
-parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
-parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
-parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
-parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-component of bottom-right corner of crop.')
+parser.add_argument('--cropheight', '-ch', type=int, default=356,
+                    help='y-component of bottom-right corner of crop.')
+parser.add_argument('--cropwidth', '-cw', type=int, default=474,
+                    help='x-component of bottom-right corner of crop.')
+parser.add_argument('--cropx', '-cx', type=int, default=2,
+                    help='x-component of top-left corner of crop.')
+parser.add_argument('--cropy', '-cy', type=int, default=0,
+                    help='y-component of top-left corner of crop.')
 parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                     help='Percentage of GPU memory to permit this process to consume.')
-parser.add_argument('--modelinputsize', '-mis', type=int, default=299)
+parser.add_argument('--modelinputsize', '-mis', type=int, default=299,
+                    help='')
+parser.add_argument('--logpath', '-l', default='./logs',
+                    help='Path to the directory where log files are stored.')
 parser.add_argument('--numchannels', '-nc', type=int, default=3,
                     help='The fourth dimension of image batches.')
 parser.add_argument('--modelpath', '-mp', required=True,
                     help='Path to the tensorflow protobuf model file.')
-parser.add_argument('--outputclips', '-o', dest='outputclips', action='store_true',
-                    help='Output results as video clips containing searched for labelname.')
 parser.add_argument('--outputheight', '-oh', type=int, default=299,
                     help='Height of the image frame for processing. ')
 parser.add_argument('--outputwidth', '-ow', type=int, default=299,
                     help='Width of the image frame for processing. ')
-parser.add_argument('--outputpadding', '-op', type=int, default=30,
-                    help='Number of seconds added to the start and end of created video clips.')
 parser.add_argument('--reportpath', '-rp', default='./results',
                     help='Path to the directory where results are stored.')
-parser.add_argument('--scale', '-s', action='store_true', help='')
+parser.add_argument('--scale', '-s', action='store_true',
+                    help='')
 parser.add_argument('--smoothingfactor', '-sf', type=int, default=0,
                     help='Apply a smoothing factor to detection results.')
-parser.add_argument('--timestampx', '-tx', type=int, default=25, help='x-component of top-left corner of timestamp.')
-parser.add_argument('--timestampy', '-ty', type=int, default=340, help='y-component of top-left corner of timestamp.')
-parser.add_argument('--timestampwidth', '-tw', type=int, default=160, help='x-component of bottom-right corner of timestamp.')
-parser.add_argument('--timestampheight', '-th', type=int, default=16, help='y-component of bottom-right corner of timestamp.')
-parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
-parser.add_argument('--verbose', '-vb', help='Print additional information in logs', action='store_true')
-parser.add_argument('--debug', '-d', help='Print debug information in logs', action='store_true')
+parser.add_argument('--timestampheight', '-th', type=int, default=16,
+                    help='y-component of bottom-right corner of timestamp.')
+parser.add_argument('--timestampwidth', '-tw', type=int, default=160,
+                    help='x-component of bottom-right corner of timestamp.')
+parser.add_argument('--timestampx', '-tx', type=int, default=25,
+                    help='x-component of top-left corner of timestamp.')
+parser.add_argument('--timestampy', '-ty', type=int, default=340,
+                    help='y-component of top-left corner of timestamp.')
+parser.add_argument('--videopath', '-v', required=True,
+                    help='Path to video file(s).')
+parser.add_argument('--verbose', '-vb', action='store_true',
+                    help='Print additional information in logs')
+parser.add_argument('--debug', '-d', action='store_true',
+                    help='Print debug information in logs')
 
 args = parser.parse_args()
 
@@ -123,7 +136,8 @@ def infer_class_names(
 
   filter_args = []
 
-  if args.crop and all([args.cropwidth > 0, args.cropheight > 0, args.cropx >= 0, args.cropy >= 0]):
+  if args.crop and all([output_width >= args.cropwidth > 0, output_height >= args.cropheight > 0,
+                        output_width > args.cropx >= 0, output_height > args.cropy >= 0]):
     filter_args.append('crop=w={}:h={}:x={}:y={}'.format(
       args.cropwidth, args.cropheight, args.cropx, args.cropy))
 
