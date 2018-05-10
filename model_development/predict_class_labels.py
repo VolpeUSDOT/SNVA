@@ -1,12 +1,14 @@
-import tensorflow as tf
-import sys
 import os
 import signal
+import sys
 import time
 import uuid
+
 import numpy as np
-from preprocessing import inception_preprocessing
+import tensorflow as tf
+
 from nets import inception
+from preprocessing import inception_preprocessing
 
 path = os.path
 FLAGS = tf.app.flags.FLAGS
@@ -301,7 +303,7 @@ def main():
       print('Processing {} examples from {}.'.format(len(image_list), subdir))
       start = time.time()
       prediction_array = predict_class_labels(image_list, num_labels, io_tensor_placeholder_map,
-        inception.inception_v3.default_image_size, FLAGS.batch_size, sess)
+                                              inception.inception_v3.default_image_size, FLAGS.batch_size, sess)
       print_processing_duration(start, 'Elapsed time')
 
       print('Writing class label predictions for {}.'.format(subdir))

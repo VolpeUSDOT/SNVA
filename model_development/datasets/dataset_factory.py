@@ -18,8 +18,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from datasets import dataset
 import os
+
+from datasets import dataset
 
 
 def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader=None):

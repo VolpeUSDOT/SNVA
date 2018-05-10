@@ -1,14 +1,16 @@
-import tensorflow as tf
+import os
 import sys
-from tensorflow.contrib import slim
 
-from nets import inception
+import tensorflow as tf
+from tensorflow.contrib import slim
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
+
+from nets import inception
 from preprocessing import inception_preprocessing
 
 checkpoints_dir = sys.argv[1]
-OUTPUT_PB_FILENAME = sys.argv[2]
+OUTPUT_PB_FILEPATH = sys.argv[2]
 NUM_CLASSES = 2
 
 # We need default size of image for a particular network.
@@ -45,7 +47,10 @@ with tf.Graph().as_default():
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 
-    model_path = tf.train.latest_checkpoint(checkpoints_dir)
+    if tf.gfile.IsDirectory(checkpoints_dir):
+      model_path = tf.train.latest_checkpoint(checkpoints_dir)
+    else:
+      model_path = checkpoints_dir
 
     # Get the function that initializes the network structure (its variables) with
     # the trained values contained in the checkpoint
@@ -67,4 +72,5 @@ with tf.Graph().as_default():
                                                           ["InceptionResnetV2/Logits/Predictions"],
                                                           tf.string.as_datatype_enum)
         # Write the production ready graph to file.
-        tf.train.write_graph(optimized_constant_graph, '.', OUTPUT_PB_FILENAME, as_text=False)
+        dir_name, base_name = os.path.split(OUTPUT_PB_FILEPATH)
+        tf.train.write_graph(optimized_constant_graph, dir_name, base_name, as_text=False)

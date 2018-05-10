@@ -1,11 +1,12 @@
-import tensorflow as tf
-import sys
 import os
-from tensorflow.contrib import slim
+import sys
 
-from nets import inception
+import tensorflow as tf
+from tensorflow.contrib import slim
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
+
+from nets import mobilenet_v1
 from preprocessing import inception_preprocessing
 
 checkpoints_dir = sys.argv[1]
@@ -15,7 +16,7 @@ NUM_CLASSES = 2
 # We need default size of image for a particular network.
 # The network was trained on images of that size -- so we
 # resize input image later in the code.
-image_size = inception.inception_resnet_v2.default_image_size
+image_size = 224
 
 with tf.Graph().as_default():
     # Inject placeholder into the graph
@@ -38,11 +39,11 @@ with tf.Graph().as_default():
     # In our case the batch size is one.
     processed_images = tf.expand_dims(processed_image, 0)
 
-    # Load the inception network structure
-    with slim.arg_scope(inception.inception_resnet_v2_arg_scope()):
-        logits, _ = inception.inception_resnet_v2(processed_images,
-                                                  num_classes=NUM_CLASSES,
-                                                  is_training=False)
+    # Load the mobilenet network structure
+    with slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope()):
+        logits, _ = mobilenet_v1.mobilenet_v1(processed_images,
+                                              num_classes=NUM_CLASSES,
+                                              is_training=False)
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 
@@ -53,9 +54,7 @@ with tf.Graph().as_default():
 
     # Get the function that initializes the network structure (its variables) with
     # the trained values contained in the checkpoint
-    init_fn = slim.assign_from_checkpoint_fn(
-        model_path,
-        slim.get_model_variables())
+    init_fn = slim.assign_from_checkpoint_fn(model_path, slim.get_model_variables())
 
     with tf.Session() as sess:
         # Now call the initialization function within the session
@@ -64,11 +63,11 @@ with tf.Graph().as_default():
         # Convert variables to constants and make sure the placeholder input_image is included
         # in the graph as well as the other neccesary tensors.
         constant_graph = convert_variables_to_constants(sess, sess.graph_def, ["input_image", "DecodeJpeg",
-                                                                               "InceptionResnetV2/Logits/Predictions"])
+                                                                               "MobilenetV1/Predictions/Reshape_1"])
 
         # Define the input and output layer properly
         optimized_constant_graph = optimize_for_inference(constant_graph, ["input_image"],
-                                                          ["InceptionResnetV2/Logits/Predictions"],
+                                                          ["MobilenetV1/Predictions/Reshape_1"],
                                                           tf.string.as_datatype_enum)
         # Write the production ready graph to file.
         dir_name, base_name = os.path.split(OUTPUT_PB_FILEPATH)

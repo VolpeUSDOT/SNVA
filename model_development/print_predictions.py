@@ -1,7 +1,9 @@
-import sys
 import os
+import sys
+
 import tensorflow as tf
 from tensorflow.contrib import slim
+
 from nets import inception
 from preprocessing import inception_preprocessing
 

@@ -18,6 +18,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
+import signal
+import sys
+
 import tensorflow as tf
 from tensorflow.python.training import saver as tf_saver
 
@@ -25,9 +29,6 @@ from datasets import dataset_factory
 from deployment import model_deploy
 from nets import nets_factory
 from preprocessing import preprocessing_factory
-import signal
-import sys
-import os
 
 slim = tf.contrib.slim
 

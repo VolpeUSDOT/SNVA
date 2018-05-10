@@ -1,11 +1,12 @@
-import numpy as np
 import operator
 import os
 import signal
 import sys
-import tensorflow as tf
 import timeit
 import uuid
+
+import numpy as np
+import tensorflow as tf
 
 from preprocessing import inception_preprocessing
 

@@ -19,17 +19,20 @@ from __future__ import division
 from __future__ import print_function
 
 import math
+import os
+import signal
+import sys
+import time
+
 import tensorflow as tf
-from tensorflow.contrib import slim
 from tensorflow.contrib import metrics
+from tensorflow.contrib import slim
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
+
 from datasets import dataset_factory
 from nets import nets_factory
 from preprocessing import preprocessing_factory
-import signal
-import sys
-import os
 
 tf.app.flags.DEFINE_integer(
     'batch_size', 32, 'The number of samples in each batch.')
@@ -119,12 +122,6 @@ def interrupt_handler(signal_number, _):
 def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory using --dataset_dir')
-
-    if not tf.gfile.Exists(FLAGS.checkpoint_path):
-        tf.gfile.MakeDirs(FLAGS.checkpoint_path)
-
-    if not tf.gfile.IsDirectory(FLAGS.checkpoint_path):
-        raise ValueError('checkpoint_path must be a directory')
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -288,19 +285,27 @@ def main(_):
             num_batches = FLAGS.max_num_batches
         else:
             # This ensures that we make a single pass over all of the data.
-            num_batches = int(math.ceil(dataset.num_samples / float(FLAGS.batch_size)))
+            num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
 
-        tf.logging.info('Periodically Evaluating %s' % FLAGS.checkpoint_path)
+        if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+            checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
+        else:
+            checkpoint_path = FLAGS.checkpoint_path
 
-        slim.evaluation.evaluation_loop(
+        tf.logging.info('Evaluating %s' % checkpoint_path)
+        start_time = time.time()
+
+        slim.evaluation.evaluate_once(
             master=FLAGS.master,
-            checkpoint_dir=FLAGS.checkpoint_path,
+            checkpoint_path=checkpoint_path,
             logdir=FLAGS.eval_dir,
             num_evals=num_batches,
             eval_op=list(names_to_updates.values()),
             variables_to_restore=variables_to_restore,
             session_config=session_config)
 
+        end_time = time.time()
+        print('Evaluation elapsed ' + str(end_time - start_time) + ' seconds')
 
 if __name__ == '__main__':
     tf.app.run()

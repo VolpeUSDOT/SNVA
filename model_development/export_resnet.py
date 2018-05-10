@@ -1,21 +1,21 @@
-import tensorflow as tf
 import sys
-import os
-from tensorflow.contrib import slim
 
-from nets import densenet_bc
+import tensorflow as tf
+from tensorflow.contrib import slim
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
+
+from nets import inception
 from preprocessing import inception_preprocessing
 
 checkpoints_dir = sys.argv[1]
-OUTPUT_PB_FILEPATH = sys.argv[2]
+OUTPUT_PB_FILENAME = sys.argv[2]
 NUM_CLASSES = 2
 
 # We need default size of image for a particular network.
 # The network was trained on images of that size -- so we
 # resize input image later in the code.
-image_size = 224
+image_size = inception.inception_resnet_v2.default_image_size
 
 with tf.Graph().as_default():
     # Inject placeholder into the graph
@@ -39,10 +39,10 @@ with tf.Graph().as_default():
     processed_images = tf.expand_dims(processed_image, 0)
 
     # Load the inception network structure
-    with slim.arg_scope(densenet_bc.densenet_arg_scope()):
-        logits, _ = densenet_bc.densenet_bc(processed_images,
-                                            num_classes=NUM_CLASSES,
-                                            is_training=False)
+    with slim.arg_scope(inception.inception_resnet_v2_arg_scope()):
+        logits, _ = inception.inception_resnet_v2(processed_images,
+                                                  num_classes=NUM_CLASSES,
+                                                  is_training=False)
     # Apply softmax function to the logits (output of the last layer of the network)
     probabilities = tf.nn.softmax(logits)
 
@@ -61,13 +61,11 @@ with tf.Graph().as_default():
         # Convert variables to constants and make sure the placeholder input_image is included
         # in the graph as well as the other neccesary tensors.
         constant_graph = convert_variables_to_constants(sess, sess.graph_def, ["input_image", "DecodeJpeg",
-                                                                               "DensenetBC/Predictions/Reshape_1"])
+                                                                               "InceptionResnetV2/Logits/Predictions"])
 
         # Define the input and output layer properly
         optimized_constant_graph = optimize_for_inference(constant_graph, ["input_image"],
-                                                          ["DensenetBC/Predictions/Reshape_1"],
+                                                          ["InceptionResnetV2/Logits/Predictions"],
                                                           tf.string.as_datatype_enum)
         # Write the production ready graph to file.
-
-        dir_name, base_name = os.path.split(OUTPUT_PB_FILEPATH)
-        tf.train.write_graph(optimized_constant_graph, dir_name, base_name, as_text=False)
+        tf.train.write_graph(optimized_constant_graph, '.', OUTPUT_PB_FILENAME, as_text=False)

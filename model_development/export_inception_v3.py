@@ -1,12 +1,14 @@
 import os
 import signal
 import sys
-import tensorflow as tf
 import time
-from nets import inception
+
+import tensorflow as tf
 from tensorflow.contrib import slim
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
+
+from nets import inception
 
 tf.app.flags.DEFINE_string(
     'checkpoint_path', None,
