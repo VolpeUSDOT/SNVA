@@ -1,5 +1,8 @@
+import logging
+import logging.handlers
 import argparse
 from multiprocessing import BoundedSemaphore, Process, Queue
+import threading
 import numpy as np
 import os
 import platform
@@ -9,6 +12,8 @@ import subprocess
 import sys
 import tensorflow as tf
 import time
+import uuid
+from datetime import datetime as dt
 from snva.timestamp_utils import numerize_timestamps
 from snva.io_utils import IOObject
 
@@ -60,22 +65,39 @@ parser.add_argument('--timestampy', '-ty', type=int, default=340, help='y-compon
 parser.add_argument('--timestampwidth', '-tw', type=int, default=160, help='x-component of bottom-right corner of timestamp.')
 parser.add_argument('--timestampheight', '-th', type=int, default=16, help='y-component of bottom-right corner of timestamp.')
 parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
+parser.add_argument('--verbose', '-vb', help='Print additional information in logs', action='store_true')
+parser.add_argument('--debug', '-d', help='Print debug information in logs', action='store_true')
 
 args = parser.parse_args()
 
+# Define our log level based on arguments
+loglevel = logging.WARNING
+if args.verbose:
+  loglevel = logging.INFO
+if args.debug:
+  loglevel = logging.DEBUG
 
-# get how much ram we have to work with
-# sysram = psutil.virtual_memory()
-
+# Logger thread: listens for updates to our log queue and writes them as they come in
+# Terminates after we add None to the queue
+def logger_thread(q):
+    while True:
+        record = q.get()
+        if record is None:
+            logging.debug("Terminating log thread")
+            break
+        logger = logging.getLogger(record.name)
+        logger.handle(record)
 
 def interrupt_handler(signal_number, _):
   tf.logging.info(
     'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
   os.unsetenv('CUDA_VISIBLE_DEVICES')
+  logging.warning("Interrupt signal recieved: Exiting...")
   sys.exit(0)
 
 
 def preprocess_for_inception(image):
+  logging.debug("Preprocessing image...")
   if image.dtype != tf.float32:
     image = tf.image.convert_image_dtype(image, dtype=tf.float32)
   if image.shape[0] != args.modelinputsize \
@@ -96,7 +118,7 @@ def infer_class_names(
   ############################
   # construct ffmpeg command #
   ############################
-
+  logging.debug("Constructing ffmpeg command")
   command = [FFMPEG_PATH, '-i', video_file_path]
 
   filter_args = []
@@ -127,18 +149,19 @@ def infer_class_names(
   command.extend(['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
                   '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
 
-  # print the constructed command string
-  command_string = command[0]
-
-  for elem in command[1:]:
-    command_string += ' ' + elem
-
-  print('command: {}'.format(command_string))
+  # log the constructed command string if debug
+  if (loglevel == logging.DEBUG):
+    command_string = command[0]
+  
+    for elem in command[1:]:
+      command_string += ' ' + elem
+  
+    logging.debug("FFMPEG Command: {}".format(command_string))
 
   #####################################
   # prepare neural net input pipeline #
   #####################################
-
+  logging.info("Opening image pipe")
   image_pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=4 * 1024 * 1024)
 
   image_string_len = output_width * output_height * args.numchannels
@@ -158,6 +181,7 @@ def infer_class_names(
     while True:
       image_string = image_pipe.stdout.read(image_string_len)
       if not image_string:
+        logging.info("Closing image pipe")
         image_pipe.stdout.close()
         return
       image_pipe.stdout.flush()
@@ -168,6 +192,7 @@ def infer_class_names(
 
       yield image_array
 
+  logging.debug("Constructing image dataset")
   image_dataset = tf.data.Dataset.from_generator(
     image_array_generator, tf.uint8, tf.TensorShape([output_height, output_width, args.numchannels]))
 
@@ -186,7 +211,7 @@ def infer_class_names(
   #################
   # run inference #
   #################
-
+  logging.debug("Starting inference on video {}".format(video_file_name))
   with tf.Session(graph=session_graph, config=session_config) as session:
     input_tensor = session.graph.get_tensor_by_name(input_tensor_name)
     output_tensor = session.graph.get_tensor_by_name(output_tensor_name)
@@ -203,6 +228,7 @@ def infer_class_names(
         prob_array[num_processed_frames:num_processed_frames + num_probs] = probs
         num_processed_frames += num_probs
       except tf.errors.OutOfRangeError:
+        logging.debug("Inference complete")
         break
 
     assert num_processed_frames == num_frames
@@ -211,9 +237,21 @@ def infer_class_names(
 
 
 def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
-                        device_num_queue, io_object_queue, child_process_semaphore):
+                        device_num_queue, io_object_queue, child_process_semaphore, logqueue):
+  
+  # Configure logging for this process
+  qh = logging.handlers.QueueHandler(logqueue)
+  root = logging.getLogger()
+  # Clear any handlers to avoid duplicate entries
+  if (root.hasHandlers()):
+    root.handlers.clear()
+  root.setLevel(loglevel)
+  root.addHandler(qh)
+  
   process_id = os.getpid()
+  logging.info("Start of process {} for video {}".format(process_id, video_file_name))
 
+  # Should this be set to match our command line arg, or should we always output this level of detail?
   tf.logging.set_verbosity(tf.logging.INFO)
 
   signal.signal(signal.SIGINT, interrupt_handler)
@@ -222,17 +260,17 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
   video_file_name, _ = path.splitext(video_file_name)
 
   io_object = io_object_queue.get()
-  print('io_object acquired by process {}'.format(process_id))
+  logging.debug('io_object acquired by process {}'.format(process_id))
   video_meta_map = io_object.read_video_metadata(video_file_path)
 
   device_num = device_num_queue.get()
-  print('device_num {} acquired by child process {}'.format(device_num, process_id))
+  logging.debug('device_num {} acquired by child process {}'.format(device_num, process_id))
 
   tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to {} in child process {}.'.
                   format(device_num, process_id))
   os.putenv('CUDA_VISIBLE_DEVICES', device_num)
 
-  print('io_object released by child process {}'.format(process_id))
+  logging.debug('io_object released by child process {}'.format(process_id))
   io_object_queue.put(io_object)
 
   session_name = model_map['session_name']
@@ -268,24 +306,24 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
     except tf.errors.ResourceExhaustedError as ree:
       batch_size = int(batch_size / 2)
       # If an error occurs, retry up to two times
-      print(ree)
-      print('Resources reportedly exhausted, most likely due to beign out of memory. '
+      logging.warning(ree)
+      logging.warning('Resources reportedly exhausted, most likely due to beign out of memory. '
             'Inference will be reattempted with a new batch size of {}'.format(batch_size))
       attempts += 1
     except tf.errors.InternalError as ie:
-      print(ie)
-      print('Internal error reported, most likely due to a failed session creation attempt.')
+      logging.error(ie)
+      logging.error('Internal error reported, most likely due to a failed session creation attempt.')
       attempts += 1
     except Exception as e:
-      print('Who could know what happened?')
-      print(e)
+      logging.error("An unexpected error occured")
+      logging.error(e)
 
-  print('device_num {} released by child process {}'.format(device_num, process_id))
+  logging.debug('device_num {} released by child process {}'.format(device_num, process_id))
   device_num_queue.put(device_num)
 
   if successful:
     io_object = io_object_queue.get()
-    print('io_object acquired by child process {}'.format(process_id))
+    logging.debug('io_object acquired by child process {}'.format(process_id))
 
     io_object.print_processing_duration(
       end, 'Time elapsed processing {} video frames for {} by child process {}'.format(
@@ -313,15 +351,25 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
       end, 'Time elapsed generating report for {} by child process {}'.format(video_file_name,
                                                                               process_id))
 
-    print('child_process_semaphore released by child process {} back to parent process {}'.
+    logging.debug('child_process_semaphore released by child process {} back to parent process {}'.
           format(process_id, os.getppid()))
     child_process_semaphore.release()
 
-    print('io_object released by child process {}'.format(process_id))
+    logging.debug('io_object released by child process {}'.format(process_id))
     io_object_queue.put(io_object)
 
 
 if __name__ == '__main__':
+  
+  # Create a queue to handle log requests from multiple processes
+  logqueue = Queue()
+  # Configure our log in the main process to write to a file
+  logging.basicConfig(filename=dt.now().strftime('snva_%m_%d_%Y.log'),level=loglevel,format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
+  # Start our listener thread
+  lp = threading.Thread(target=logger_thread, args=(logqueue,))
+  lp.start()
+  logging.info("Entering main process")
+
   start = time.time()
 
   process_id = os.getpid()
@@ -338,13 +386,15 @@ if __name__ == '__main__':
     tensorpath = args.modelpath + '-meta.txt'
     labelpath = args.modelpath + '-labels.txt'
 
+  logging.debug("Tensorpath set: {}".format(tensorpath))
+  logging.debug("Labelpath set: {}".format(labelpath))
   label_map = io_object.load_labels(labelpath)
   tensor_name_map = io_object.load_tensor_names(tensorpath)
   model_map = io_object.load_model(args.modelpath, args.gpumemoryfraction)
 
   device_num_list = io_object.get_gpu_ids()
   device_num_list_len = len(device_num_list)
-
+  logging.info('{} gpu devices available'.format(device_num_list_len))
   # child processes will dequeue and enqueue gpu device names
   device_num_queue = Queue(device_num_list_len)
   for device_name in device_num_list:
@@ -359,7 +409,7 @@ if __name__ == '__main__':
   child_process_semaphore = BoundedSemaphore(device_num_list_len + 1)
 
   child_process_list = []
-
+  logging.info("Processing {} videos in specified directory".format(len(video_file_names)))
   while len(video_file_names) > 0:
     # Before popping the next video off of the list and creating a process to scan it,
     # check to see if fewer than device_num_list_len + 1 processes are active. If not,
@@ -369,43 +419,43 @@ if __name__ == '__main__':
     child_process_semaphore.acquire()  # block if three child processes are active
 
     io_object = io_object_queue.get()
-    print('io_object acquired by parent process {}'.format(process_id))
-    print('child_process_semaphore acquired by parent process {}'.format(process_id))
-    print('io_object released by parent process {}'.format(process_id))
+    logging.debug('io_object acquired by parent process {}'.format(process_id))
+    logging.debug('child_process_semaphore acquired by parent process {}'.format(process_id))
+    logging.debug('io_object released by parent process {}'.format(process_id))
     io_object = io_object_queue.put(io_object)
 
     video_file_name = video_file_names.pop()
 
     try:
       io_object = io_object_queue.get()
-      print('io_object acquired by parent process {}'.format(process_id))
-      print('creating child process')
-      print('io_object released by parent process {}'.format(process_id))
+      logging.debug('io_object acquired by parent process {}'.format(process_id))
+      logging.debug('creating child process')
+      logging.debug('io_object released by parent process {}'.format(process_id))
       io_object = io_object_queue.put(io_object)
 
-      child_process = Process(target=multi_process_video,
+      child_process = Process(target=multi_process_video, name='video %s process' % video_file_name,
                               args=(video_file_name, tensor_name_map, label_map, model_map,
-                                    device_num_queue, io_object_queue, child_process_semaphore))
+                                    device_num_queue, io_object_queue, child_process_semaphore, logqueue))
 
       io_object = io_object_queue.get()
-      print('io_object acquired by parent process {}'.format(process_id))
-      print('starting child process')
-      print('io_object released by parent process {}'.format(process_id))
+      logging.debug('io_object acquired by parent process {}'.format(process_id))
+      logging.debug('starting child process')
+      logging.debug('io_object released by parent process {}'.format(process_id))
       io_object = io_object_queue.put(io_object)
 
       child_process.start()
 
       child_process_list.append(child_process)
     except Exception as e:
+      logging.exception("Error occured processing video {}".format(video_file_name))
       # If an error occurs, retry (infinitely for now) after processing other videos
-      print('An error has occured. Appending {} to the end of video_file_names to re-attemt processing later'.
+      logging.error('An error has occured. Appending {} to the end of video_file_names to re-attemt processing later'.
             format(video_file_name))
-      print(e)
       video_file_names.append(video_file_name)
 
   # io_object = io_object_queue.get()
   # print('io_object acquired by parent process {}'.format(process_id))
-  print('joining remaining active children')
+  logging.info('joining remaining active children...')
   # print('io_object released by parent process {}'.format(process_id))
   # io_object = io_object_queue.put(io_object)
 
@@ -413,7 +463,7 @@ if __name__ == '__main__':
     if child_process.is_alive():
       # io_object = io_object_queue.get()
       # print('io_object acquired by parent process {}'.format(process_id))
-      print('joining child process {}'.format(child_process.pid))
+      logging.debug('joining child process {}'.format(child_process.pid))
       # print('io_object released by parent process {}'.format(process_id))
       # io_object = io_object_queue.put(io_object)
       child_process.join()
@@ -421,7 +471,12 @@ if __name__ == '__main__':
   end = time.time() - start
 
   io_object = io_object_queue.get()
-  print('io_object acquired by parent process {}'.format(process_id))
+  logging.debug('io_object acquired by parent process {}'.format(process_id))
   io_object.print_processing_duration(end, 'Parent process {} elapsed time'.format(process_id))
-  print('io_object released by parent process {}'.format(process_id))
+  logging.debug('io_object released by parent process {}'.format(process_id))
   io_object = io_object_queue.put(io_object)
+
+  #Signal the logging thread to finish up
+  logging.debug('Signaling log queue to stop')
+  logqueue.put(None)
+  lp.join()
