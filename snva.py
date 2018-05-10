@@ -13,8 +13,8 @@ import subprocess
 import tensorflow as tf
 import time
 
-from snva.timestamp_utils import numerize_timestamps
-from snva.io_utils import IOObject, interrupt_handler
+from snva_utils.timestamp import numerize_timestamps
+from snva_utils.io import IOObject, interrupt_handler
 
 path = os.path
 
