@@ -336,7 +336,7 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
 
     io_object.write_report(
       video_file_name, args.reportpath, numeral_timestamps, class_name_probs,
-      list(label_map.values()), args.binarizeprobs, args.smoothprobs, args.smoothingfactor)
+      list(label_map.values()), args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
 
     end = time.time() - start
 
