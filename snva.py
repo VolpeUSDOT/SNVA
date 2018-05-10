@@ -130,31 +130,13 @@ def infer_class_names(
   logging.debug("Constructing ffmpeg command")
   command = [FFMPEG_PATH, '-i', video_file_path]
 
-  filter_args = []
-
   if args.crop and all([output_width >= args.cropwidth > 0, output_height >= args.cropheight > 0,
                         output_width > args.cropx >= 0, output_height > args.cropy >= 0]):
-    filter_args.append('crop=w={}:h={}:x={}:y={}'.format(
-      args.cropwidth, args.cropheight, args.cropx, args.cropy))
+    command.extend(['-vf', 'crop=w={}:h={}:x={}:y={}'.format(
+      args.cropwidth, args.cropheight, args.cropx, args.cropy)])
 
     output_width = args.cropwidth
     output_height = args.cropheight
-
-  if args.scale and all([args.scalewidth > 0, args.scaleheight > 0]):
-    filter_args.append('scale=w={}:h={}'.format(args.scalewidth, args.scaleheight))
-
-    output_width = args.scalewidth
-    output_height = args.scaleheight
-
-  filter_args_len = len(filter_args)
-
-  if filter_args_len > 0:
-    command.append('-vf')
-    filter = ''
-    for i in range(filter_args_len - 1):
-      filter += filter_args[i] + ','
-    filter += filter_args[filter_args_len - 1]
-    command.append(filter)
 
   command.extend(['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
                   '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
