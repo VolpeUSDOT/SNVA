@@ -1,7 +1,7 @@
 
 # five ~90MB ~15,000 frame videos (takes ~3:05 minutes to process on Bilbo Baggins)
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/bsumner --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 64 --smoothingfactor 16 --binarizeprobs
+python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/bsumner --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs
 
 
 # six ~20MB ~3,000 frame videos (takes ~0:50 minutes to process on Bilbo Baggins)
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2 --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/bsumner --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 64 --smoothingfactor 16 --binarizeprobs
+python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2 --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/bsumner --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs
