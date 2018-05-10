@@ -1,20 +1,20 @@
 import logging
 import logging.handlers
-import argparse
+from threading import Thread
 from multiprocessing import BoundedSemaphore, Process, Queue
-import threading
+import argparse
+from datetime import datetime as dt
 import numpy as np
 import os
 import platform
 # import psutil
 import signal
 import subprocess
-import sys
 import tensorflow as tf
 import time
-from datetime import datetime as dt
+
 from snva.timestamp_utils import numerize_timestamps
-from snva.io_utils import IOObject
+from snva.io_utils import IOObject, interrupt_handler
 
 path = os.path
 
@@ -29,14 +29,15 @@ else:
   FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') \
     else '/usr/bin/ffprobe'
 
-parser = argparse.ArgumentParser(description='Process some video files using Tensorflow!')
+parser = argparse.ArgumentParser(description='Predict scene contents in videos using Tensorflow!')
 
 parser.add_argument('--batchsize', '-bs', type=int, default=32,
                     help='')
 parser.add_argument('--binarizeprobs', '-b', action='store_true',
                     help='')
 parser.add_argument('--crop', '-c', action='store_true',
-                    help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
+                    help='Crop video frames to [offsetheight, offsetwidth, targetheight, '
+                         'targetwidth]')
 parser.add_argument('--cropheight', '-ch', type=int, default=356,
                     help='y-component of bottom-right corner of crop.')
 parser.add_argument('--cropwidth', '-cw', type=int, default=474,
@@ -91,6 +92,7 @@ if args.verbose:
 if args.debug:
   loglevel = logging.DEBUG
 
+
 # Logger thread: listens for updates to our log queue and writes them as they come in
 # Terminates after we add None to the queue
 def logger_thread(q):
@@ -101,13 +103,6 @@ def logger_thread(q):
             break
         logger = logging.getLogger(record.name)
         logger.handle(record)
-
-def interrupt_handler(signal_number, _):
-  tf.logging.info(
-    'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
-  os.unsetenv('CUDA_VISIBLE_DEVICES')
-  logging.warning("Interrupt signal recieved: Exiting...")
-  sys.exit(0)
 
 
 def preprocess_for_inception(image):
@@ -189,6 +184,7 @@ def infer_class_names(
   tw = args.timestampwidth
 
   num_channels = args.numchannels
+
   # feed the tf.data input pipeline one image at a time and, while we're at it,
   # extract timestamp crops and add them to timestamp_array
   def image_array_generator():
@@ -381,7 +377,7 @@ if __name__ == '__main__':
   # Configure our log in the main process to write to a file
   logging.basicConfig(filename=dt.now().strftime('snva_%m_%d_%Y.log'),level=loglevel,format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
   # Start our listener thread
-  lp = threading.Thread(target=logger_thread, args=(logqueue,))
+  lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
   logging.info("Entering main process")
 

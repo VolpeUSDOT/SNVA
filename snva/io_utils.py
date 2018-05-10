@@ -1,13 +1,22 @@
 import csv
 import json
+import logging
 import numpy as np
 import os
 import subprocess
+import sys
 import tensorflow as tf
 import uuid
-import logging
 
 path = os.path
+
+
+def interrupt_handler(signal_number, _):
+  tf.logging.info(
+    'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+  os.unsetenv('CUDA_VISIBLE_DEVICES')
+  logging.warning("Interrupt signal recieved: Exiting...")
+  sys.exit(0)
 
 
 class IOObject:
@@ -137,7 +146,7 @@ class IOObject:
 
   @staticmethod
   def write_report(video_file_name, report_path, time_stamps, class_probs, class_names,
-                   binarize_probs=False, smooth_probs=False, smoothing_factor=16):
+                   smooth_probs, smoothing_factor, binarize_probs):
     class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
     if smooth_probs and smoothing_factor > 1:
