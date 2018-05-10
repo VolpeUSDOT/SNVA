@@ -224,18 +224,15 @@ def _binarize_timestamps(timestamp_array):
 
 
 def _stringify_timestamp(timestamp_image, timestamp_image_height):  # (16, 160)
-
   timestamp_image = np.reshape(
     timestamp_image, (-1, timestamp_image_height, timestamp_image_height))  # (10, 16, 16)
 
   _equal = np.equal(timestamp_image, numeral_mask_array)  # (10, 10, 16, 16)
-
   _all = np.all(_equal, axis=(2, 3))  # (10, 10)
 
   # TODO confirm that the lengths match and that no gaps exist between digits
   try:
     digits, positions = np.nonzero(_all)  #((10,), (10,))
-
     sorted_positions = np.argsort(positions)
     sorted_digits = digits[sorted_positions]
     sorted_digits = sorted_digits.astype(np.unicode_)
