@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tensorflow as tf
 import time
-import uuid
 from datetime import datetime as dt
 from snva.timestamp_utils import numerize_timestamps
 from snva.io_utils import IOObject
@@ -56,16 +55,18 @@ parser.add_argument('--numchannels', '-nc', type=int, default=3,
                     help='The fourth dimension of image batches.')
 parser.add_argument('--modelpath', '-mp', required=True,
                     help='Path to the tensorflow protobuf model file.')
-parser.add_argument('--outputheight', '-oh', type=int, default=299,
-                    help='Height of the image frame for processing. ')
-parser.add_argument('--outputwidth', '-ow', type=int, default=299,
-                    help='Width of the image frame for processing. ')
 parser.add_argument('--reportpath', '-rp', default='./results',
                     help='Path to the directory where results are stored.')
 parser.add_argument('--scale', '-s', action='store_true',
                     help='')
-parser.add_argument('--smoothingfactor', '-sf', type=int, default=0,
+parser.add_argument('--scaleheight', '-oh', type=int, default=299,
+                    help='Height of the image frame for processing. ')
+parser.add_argument('--scalewidth', '-ow', type=int, default=299,
+                    help='Width of the image frame for processing. ')
+parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
                     help='Apply a smoothing factor to detection results.')
+parser.add_argument('--smoothprobs', '-sm', action='store_true',
+                    help='')
 parser.add_argument('--timestampheight', '-th', type=int, default=16,
                     help='y-component of bottom-right corner of timestamp.')
 parser.add_argument('--timestampwidth', '-tw', type=int, default=160,
@@ -144,11 +145,11 @@ def infer_class_names(
     output_width = args.cropwidth
     output_height = args.cropheight
 
-  if args.scale and all([args.outputwidth > 0, args.outputheight > 0]):
-    filter_args.append('scale=w={}:h={}'.format(args.outputwidth, args.outputheight))
+  if args.scale and all([args.scalewidth > 0, args.scaleheight > 0]):
+    filter_args.append('scale=w={}:h={}'.format(args.scalewidth, args.scaleheight))
 
-    output_width = args.outputwidth
-    output_height = args.outputheight
+    output_width = args.scalewidth
+    output_height = args.scaleheight
 
   filter_args_len = len(filter_args)
 
@@ -357,7 +358,7 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
 
     io_object.write_report(
       video_file_name, args.reportpath, numeral_timestamps, class_name_probs,
-      list(label_map.values()), args.smoothingfactor, args.binarizeprobs)
+      list(label_map.values()), args.binarizeprobs, args.smoothprobs, args.smoothingfactor)
 
     end = time.time() - start
 

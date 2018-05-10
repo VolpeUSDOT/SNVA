@@ -136,11 +136,11 @@ class IOObject:
 
 
   @staticmethod
-  def write_report(video_file_name, report_path, time_stamps, class_probs,
-                   class_names, smoothing_factor=0, binarize_probs=False):
+  def write_report(video_file_name, report_path, time_stamps, class_probs, class_names,
+                   binarize_probs=False, smooth_probs=False, smoothing_factor=16):
     class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
-    if smoothing_factor > 1:
+    if smooth_probs and smoothing_factor > 1:
       class_names = IOObject._expand_class_names(class_names, '_smoothed')
       smoothed_probs = IOObject._smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
