@@ -5,6 +5,7 @@ import os
 import subprocess
 import tensorflow as tf
 import uuid
+import logging
 
 path = os.path
 
@@ -28,6 +29,7 @@ class IOObject:
 
   @staticmethod
   def load_model(model_path, gpu_memory_fraction):
+    logging.debug("Loading model")
     graph_def = tf.GraphDef()
 
     with tf.gfile.FastGFile(model_path, 'rb') as file:
@@ -76,11 +78,14 @@ class IOObject:
     command = ['ffprobe', '-show_streams', '-print_format',
                'json', '-loglevel', 'quiet', video_file_path]
 
+    logging.debug("ffprobe command: {}".format(command))
     pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
     json_string, err = pipe.communicate()
 
     json_map = json.loads(json_string)
+    logging.debug("ffprobe response {}".format(json.dumps(json_map)))
+    if not json_map:
+      logging.error("ffprobe returned no response. This is possibly a permissions issue")
 
     return {'width': int(json_map['streams'][0]['width']),
             'height': int(json_map['streams'][0]['height']),
