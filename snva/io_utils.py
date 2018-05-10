@@ -14,9 +14,7 @@ class IOObject:
   def get_gpu_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
-
     pipe = subprocess.run(command, stdout=subprocess.PIPE, encoding='utf-8')
-
     line_list = pipe.stdout.rstrip().split('\n')
     gpu_labels = [line.split(':')[0] for line in line_list]
     return [gpu_label.split(' ')[1] for gpu_label in gpu_labels]
@@ -29,21 +27,15 @@ class IOObject:
   @staticmethod
   def load_model(model_path, gpu_memory_fraction):
     graph_def = tf.GraphDef()
-
     with tf.gfile.FastGFile(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
-
     session_name = str(uuid.uuid4())
-
     session_graph = tf.import_graph_def(graph_def, name=session_name)
-
     gpu_options = tf.GPUOptions(allow_growth=True,
                                 per_process_gpu_memory_fraction=gpu_memory_fraction)
-
     session_config = tf.ConfigProto(allow_soft_placement=True,
                                     # log_device_placement=True,
                                     gpu_options=gpu_options)
-
     return {'session_name': session_name,
             'session_graph': session_graph,
             'session_config': session_config}
@@ -75,13 +67,9 @@ class IOObject:
   def read_video_metadata(video_file_path):
     command = ['ffprobe', '-show_streams', '-print_format',
                'json', '-loglevel', 'quiet', video_file_path]
-
     pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
     json_string, err = pipe.communicate()
-
     json_map = json.loads(json_string)
-
     return {'width': int(json_map['streams'][0]['width']),
             'height': int(json_map['streams'][0]['height']),
             'frame_count': int(json_map['streams'][0]['nb_frames'])}
@@ -121,9 +109,7 @@ class IOObject:
                       for i in range(len(class_probs[0]))]
     smoothed_probs = np.array(smoothed_probs)
     smoothed_probs = np.transpose(smoothed_probs)
-
     return smoothed_probs
-
 
   @staticmethod
   def _expand_class_names(class_names, appendage):
@@ -138,13 +124,12 @@ class IOObject:
     uncertain_probs = binarized_probs == 0.5
     binarized_probs[uncertain_probs] = 1.0
     binarized_probs = np.round(binarized_probs)
-
     return binarized_probs
 
 
   @staticmethod
   def write_report(video_file_name, report_path, time_stamps, class_probs,
-                   class_names, smoothing_factor=0, binarize=False):
+                   class_names, smoothing_factor=0, binarize_probs=False):
     class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
     if smoothing_factor > 1:
@@ -152,14 +137,14 @@ class IOObject:
       smoothed_probs = IOObject._smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
 
-    if binarize:
+    if binarize_probs:
       class_names = IOObject._expand_class_names(class_names, '_binarized')
       binarized_probs = IOObject._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
-    header = ['video_file_name', 'video_frame_number', 'time_stamp'] + class_names
+    header = ['file_name', 'frame_number', 'time_stamp'] + class_names
 
-    rows = [['{:s}'.format(video_file_name), '{:07d}'.format(i+1), time_stamps[i]]
+    rows = [['{}'.format(video_file_name), '{:07d}'.format(i+1), time_stamps[i]]
             + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
             for i in range(len(class_probs))]
 
