@@ -29,15 +29,17 @@ else:
   FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') \
     else '/usr/bin/ffprobe'
 
-parser = argparse.ArgumentParser(description='SHRP2 NDS Video Analytics built on TensorFlow')
+parser = argparse.ArgumentParser(
+  description='SHRP2 NDS Video Analytics built on TensorFlow')
 
 parser.add_argument('--batchsize', '-bs', type=int, default=32,
-                    help='')
+                    help='The number of images fed into the neural net at a time')
 parser.add_argument('--binarizeprobs', '-b', action='store_true',
-                    help='')
+                    help='Round probabilities to zero or one. For distributions'
+                         'with two 0.5 values, both will be rounded up to 1.0')
 parser.add_argument('--crop', '-c', action='store_true',
-                    help='Crop video frames to [offsetheight, offsetwidth, targetheight, '
-                         'targetwidth]')
+                    help='Crop video frames to [offsetheight, '
+                         'offsetwidth, targetheight, targetwidth]')
 parser.add_argument('--cropheight', '-ch', type=int, default=356,
                     help='y-component of bottom-right corner of crop.')
 parser.add_argument('--cropwidth', '-cw', type=int, default=474,
@@ -47,9 +49,9 @@ parser.add_argument('--cropx', '-cx', type=int, default=2,
 parser.add_argument('--cropy', '-cy', type=int, default=0,
                     help='y-component of top-left corner of crop.')
 parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
-                    help='Percentage of GPU memory to permit this process to consume.')
+                    help='% of GPU memory available to this process.')
 parser.add_argument('--modelinputsize', '-mis', type=int, default=299,
-                    help='')
+                    help='The square input dimensions of the neural net.')
 parser.add_argument('--logpath', '-l', default='./logs',
                     help='Path to the directory where log files are stored.')
 parser.add_argument('--numchannels', '-nc', type=int, default=3,
@@ -58,24 +60,19 @@ parser.add_argument('--modelpath', '-mp', required=True,
                     help='Path to the tensorflow protobuf model file.')
 parser.add_argument('--reportpath', '-rp', default='./results',
                     help='Path to the directory where results are stored.')
-parser.add_argument('--scale', '-s', action='store_true',
-                    help='')
-parser.add_argument('--scaleheight', '-oh', type=int, default=299,
-                    help='Height of the image frame for processing. ')
-parser.add_argument('--scalewidth', '-ow', type=int, default=299,
-                    help='Width of the image frame for processing. ')
 parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
-                    help='Apply a smoothing factor to detection results.')
+                    help='The class-wise probability smoothing factor.')
 parser.add_argument('--smoothprobs', '-sm', action='store_true',
-                    help='')
+                    help='Apply class-wise smoothing across video frame class'
+                         'probability distributions.')
 parser.add_argument('--timestampheight', '-th', type=int, default=16,
-                    help='y-component of bottom-right corner of timestamp.')
+                    help='The length of the y-dimension of the timestamp overlay.')
 parser.add_argument('--timestampwidth', '-tw', type=int, default=160,
-                    help='x-component of bottom-right corner of timestamp.')
+                    help='The length of the x-dimension of the timestamp overlay.')
 parser.add_argument('--timestampx', '-tx', type=int, default=25,
-                    help='x-component of top-left corner of timestamp.')
+                    help='x-component of top-left corner of timestamp (before cropping).')
 parser.add_argument('--timestampy', '-ty', type=int, default=340,
-                    help='y-component of top-left corner of timestamp.')
+                    help='y-component of top-left corner of timestamp (before cropping).')
 parser.add_argument('--videopath', '-v', required=True,
                     help='Path to video file(s).')
 parser.add_argument('--verbose', '-vb', action='store_true',
