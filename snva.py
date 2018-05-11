@@ -29,7 +29,7 @@ else:
   FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') \
     else '/usr/bin/ffprobe'
 
-parser = argparse.ArgumentParser(description='Predict scene contents in videos using Tensorflow!')
+parser = argparse.ArgumentParser(description='SHRP2 NDS Video Analytics built on TensorFlow')
 
 parser.add_argument('--batchsize', '-bs', type=int, default=32,
                     help='')
