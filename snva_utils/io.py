@@ -144,6 +144,7 @@ class IOObject:
     return binarized_probs
 
 
+# TODO: confirm that the csv can be opened after writing
   @staticmethod
   def write_report(video_file_name, report_path, time_stamps, class_probs, class_names,
                    smooth_probs, smoothing_factor, binarize_probs):

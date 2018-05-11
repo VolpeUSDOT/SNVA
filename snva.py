@@ -1,20 +1,19 @@
-import logging
-import logging.handlers
-from threading import Thread
-from multiprocessing import BoundedSemaphore, Process, Queue
 import argparse
 from datetime import datetime as dt
+import logging
+import logging.handlers
+from multiprocessing import BoundedSemaphore, Process, Queue
 import numpy as np
 import os
 import platform
 # import psutil
 import signal
+from snva_utils.timestamp import Timestamp
+from snva_utils.io import IOObject, interrupt_handler
 import subprocess
 import tensorflow as tf
+from threading import Thread
 import time
-
-from snva_utils.timestamp import numerize_timestamps
-from snva_utils.io import IOObject, interrupt_handler
 
 path = os.path
 
@@ -67,7 +66,7 @@ parser.add_argument('--smoothprobs', '-sm', action='store_true',
                          'probability distributions.')
 parser.add_argument('--timestampheight', '-th', type=int, default=16,
                     help='The length of the y-dimension of the timestamp overlay.')
-parser.add_argument('--timestampwidth', '-tw', type=int, default=160,
+parser.add_argument('--timestampmaxwidth', '-tw', type=int, default=160,
                     help='The length of the x-dimension of the timestamp overlay.')
 parser.add_argument('--timestampx', '-tx', type=int, default=25,
                     help='x-component of top-left corner of timestamp (before cropping).')
@@ -119,7 +118,7 @@ def preprocess_for_inception(image):
 
 def infer_class_names(
     video_file_path, output_width, output_height, num_frames, session_config, session_graph,
-    input_tensor_name, output_tensor_name, image_size_tensor_name, batch_size, num_classes):
+    input_tensor_name, output_tensor_name, image_size_tensor_name, batch_size, num_classes, num_gpus):
 
   ############################
   # construct ffmpeg command #
@@ -155,17 +154,17 @@ def infer_class_names(
 
   image_string_len = output_width * output_height * args.numchannels
 
-  timestamp_array = np.ndarray((args.timestampheight * num_frames, args.timestampwidth, args.numchannels), dtype='uint8')
+  timestamp_array = np.ndarray((args.timestampheight * num_frames, args.timestampmaxwidth, args.numchannels), dtype='uint8')
 
   tx = args.timestampx - args.cropx
   ty = args.timestampy - args.cropy
   th = args.timestampheight
-  tw = args.timestampwidth
+  tw = args.timestampmaxwidth
 
   num_channels = args.numchannels
 
   # feed the tf.data input pipeline one image at a time and, while we're at it,
-  # extract timestamp crops and add them to timestamp_array
+  # extract timestamp overlay crops for later mapping to strings.
   def image_array_generator():
     i = 0
     while True:
@@ -179,14 +178,13 @@ def infer_class_names(
       image_array = np.reshape(image_array, (output_height, output_width, num_channels))
       timestamp_array[th * i:th * (i + 1)] = image_array[ty:ty+th, tx:tx+tw]
       i += 1
-
       yield image_array
 
   logging.debug("Constructing image dataset")
   image_dataset = tf.data.Dataset.from_generator(
     image_array_generator, tf.uint8, tf.TensorShape([output_height, output_width, args.numchannels]))
 
-  num_physical_cpu_cores = int(len(os.sched_getaffinity(0)) / 2)
+  num_physical_cpu_cores = int(len(os.sched_getaffinity(0)) / num_gpus)
 
   image_dataset = image_dataset.map(preprocess_for_inception,
                                     num_parallel_calls=num_physical_cpu_cores)
@@ -226,8 +224,9 @@ def infer_class_names(
   return prob_array, timestamp_array
 
 
-def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
-                        device_num_queue, io_object_queue, child_process_semaphore, logqueue):
+def multi_process_video(
+    video_file_name, tensor_name_map, class_names, model_map, device_num_queue,
+    io_object_queue, child_process_semaphore, logqueue):
   
   # Configure logging for this process
   qh = logging.handlers.QueueHandler(logqueue)
@@ -285,7 +284,8 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
         output_tensor_name=session_name + '/' + tensor_name_map['output_tensor_name'],
         image_size_tensor_name=session_name + '/' + tensor_name_map['image_size_tensor_name'],
         batch_size=batch_size,
-        num_classes=len(label_map))
+        num_classes=len(class_names),
+        num_gpus=device_num_list_len)
 
       end = time.time() - start
 
@@ -308,7 +308,8 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
       logging.error("An unexpected error occured")
       logging.error(e)
 
-  logging.debug('device_num {} released by child process {}'.format(device_num, process_id))
+  logging.debug('device_num {} released by child process {}'.format(
+    device_num, process_id))
   device_num_queue.put(device_num)
 
   if successful:
@@ -321,7 +322,8 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
 
     start = time.time()
 
-    numeral_timestamps = numerize_timestamps(timestamps, args.timestampheight)
+    timestamp_object = Timestamp(args.timestampheight, args.timestampmaxwidth)
+    timestamp_strings = timestamp_object.stringify_timestamps(timestamps)
 
     end = time.time() - start
 
@@ -332,8 +334,8 @@ def multi_process_video(video_file_name, tensor_name_map, label_map, model_map,
     start = time.time()
 
     io_object.write_report(
-      video_file_name, args.reportpath, numeral_timestamps, class_name_probs,
-      list(label_map.values()), args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
+      video_file_name, args.reportpath, timestamp_strings, class_name_probs,
+      class_names, args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
 
     end = time.time() - start
 
@@ -379,6 +381,7 @@ if __name__ == '__main__':
   logging.debug("Tensorpath set: {}".format(tensorpath))
   logging.debug("Labelpath set: {}".format(labelpath))
   label_map = io_object.load_labels(labelpath)
+  class_name_list = list(label_map.values())
   tensor_name_map = io_object.load_tensor_names(tensorpath)
   model_map = io_object.load_model(args.modelpath, args.gpumemoryfraction)
 
@@ -423,9 +426,11 @@ if __name__ == '__main__':
       logging.debug('io_object released by parent process {}'.format(process_id))
       io_object = io_object_queue.put(io_object)
 
-      child_process = Process(target=multi_process_video, name='video %s process' % video_file_name,
-                              args=(video_file_name, tensor_name_map, label_map, model_map,
-                                    device_num_queue, io_object_queue, child_process_semaphore, logqueue))
+      child_process = Process(target=multi_process_video,
+                              name='video %s process' % video_file_name,
+                              args=(video_file_name, tensor_name_map, class_name_list,
+                                    model_map, device_num_queue, io_object_queue,
+                                    child_process_semaphore, logqueue))
 
       io_object = io_object_queue.get()
       logging.debug('io_object acquired by parent process {}'.format(process_id))
