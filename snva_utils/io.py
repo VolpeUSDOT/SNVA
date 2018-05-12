@@ -66,8 +66,8 @@ class IOObject:
   def print_processing_duration(end_time, msg):
     minutes, seconds = divmod(end_time, 60)
     hours, minutes = divmod(minutes, 60)
-    print('{:s}: {:02d}:{:02d}:{:02d}\n'.format(
-      msg, int(hours), int(minutes), int(seconds)))
+    print('{:s}: {:02d}:{:02d}:{:02d} ({} ms)\n'.format(
+      msg, int(hours), int(minutes), int(seconds), int(end_time * 1000)))
 
   @staticmethod
   def _read_meta_file(file_path):
@@ -126,6 +126,7 @@ class IOObject:
                       for i in range(len(class_probs[0]))]
     smoothed_probs = np.array(smoothed_probs)
     smoothed_probs = np.transpose(smoothed_probs)
+
     return smoothed_probs
 
   @staticmethod
