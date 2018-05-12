@@ -109,6 +109,11 @@ tf.app.flags.DEFINE_boolean(
     'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
     'Defaults to False.')
 
+tf.app.flags.DEFINE_string(
+    'mode', None,
+    'mode=periodic to evaluate during training. '
+    'Defaults to None.')
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -122,6 +127,20 @@ def interrupt_handler(signal_number, _):
 def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory using --dataset_dir')
+
+    if FLAGS.mode == 'periodic':
+        if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+            checkpoint_path = FLAGS.checkpoint_path
+        else:
+            raise ValueError('checkpoint_path must be a directory if --periodic or --exhaustive are specified')
+    else:
+        if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+            checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
+        else:
+            checkpoint_path = FLAGS.checkpoint_path
+
+    if not tf.gfile.Exists(FLAGS.eval_dir):
+        tf.gfile.MakeDirs(FLAGS.eval_dir)
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -285,26 +304,33 @@ def main(_):
             num_batches = FLAGS.max_num_batches
         else:
             # This ensures that we make a single pass over all of the data.
-            num_batches = math.ceil(dataset.num_samples / float(FLAGS.batch_size))
-
-        if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
-            checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
-        else:
-            checkpoint_path = FLAGS.checkpoint_path
+            num_batches = int(math.ceil(dataset.num_samples / float(FLAGS.batch_size)))
 
         tf.logging.info('Evaluating %s' % checkpoint_path)
+
         start_time = time.time()
 
-        slim.evaluation.evaluate_once(
-            master=FLAGS.master,
-            checkpoint_path=checkpoint_path,
-            logdir=FLAGS.eval_dir,
-            num_evals=num_batches,
-            eval_op=list(names_to_updates.values()),
-            variables_to_restore=variables_to_restore,
-            session_config=session_config)
+        if FLAGS.mode == 'periodic':
+            slim.evaluation.evaluation_loop(
+                master=FLAGS.master,
+                checkpoint_dir=checkpoint_path,
+                logdir=FLAGS.eval_dir,
+                num_evals=num_batches,
+                eval_op=list(names_to_updates.values()),
+                variables_to_restore=variables_to_restore,
+                session_config=session_config)
+        else:
+            slim.evaluation.evaluate_once(
+                master=FLAGS.master,
+                checkpoint_path=checkpoint_path,
+                logdir=FLAGS.eval_dir,
+                num_evals=num_batches,
+                eval_op=list(names_to_updates.values()),
+                variables_to_restore=variables_to_restore,
+                session_config=session_config)
 
         end_time = time.time()
+
         print('Evaluation elapsed ' + str(end_time - start_time) + ' seconds')
 
 if __name__ == '__main__':
