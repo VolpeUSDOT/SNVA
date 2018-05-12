@@ -225,7 +225,7 @@ def infer_class_names(
 
 
 def multi_process_video(
-    video_file_name, tensor_name_map, class_names, model_map, device_num_queue,
+    video_file_path, tensor_name_map, class_names, model_map, device_num_queue,
     io_object_queue, child_process_semaphore, logqueue):
   
   # Configure logging for this process
@@ -236,17 +236,18 @@ def multi_process_video(
     root.handlers.clear()
   root.setLevel(loglevel)
   root.addHandler(qh)
-  
+
   process_id = os.getpid()
+
+  video_file_name = path.basename(video_file_path)
+  video_file_name, _ = path.splitext(video_file_name)
+
   logging.info("Start of process {} for video {}".format(process_id, video_file_name))
 
   # Should this be set to match our command line arg, or should we always output this level of detail?
   tf.logging.set_verbosity(tf.logging.INFO)
 
   signal.signal(signal.SIGINT, interrupt_handler)
-
-  video_file_path = os.path.join(args.videopath, video_file_name)
-  video_file_name, _ = path.splitext(video_file_name)
 
   io_object = io_object_queue.get()
   logging.debug('io_object acquired by process {}'.format(process_id))
@@ -356,7 +357,8 @@ if __name__ == '__main__':
   # Create a queue to handle log requests from multiple processes
   logqueue = Queue()
   # Configure our log in the main process to write to a file
-  logging.basicConfig(filename=dt.now().strftime('snva_%m_%d_%Y.log'),level=loglevel,format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
+  logging.basicConfig(filename=dt.now().strftime('snva_%m_%d_%Y.log'), level=loglevel,
+                      format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
   # Start our listener thread
   lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
@@ -368,8 +370,12 @@ if __name__ == '__main__':
 
   io_object = IOObject()
 
-  video_file_names = io_object.load_video_file_names(args.videopath) \
-    if path.isdir(args.videopath) else [args.videopath]
+  if path.isdir(args.videopath):
+    video_dir_path = args.videopath
+    video_file_names = io_object.load_video_file_names(video_dir_path)
+  else:
+    video_dir_path, video_file_name = path.split(args.videopath)
+    video_file_names = [video_file_name]
 
   if args.modelpath.endswith('.pb'):
     tensorpath = args.modelpath[:-3] + '-meta.txt'
@@ -418,6 +424,7 @@ if __name__ == '__main__':
     io_object = io_object_queue.put(io_object)
 
     video_file_name = video_file_names.pop()
+    video_file_path = path.join(video_dir_path, video_file_name)
 
     try:
       io_object = io_object_queue.get()
@@ -428,7 +435,7 @@ if __name__ == '__main__':
 
       child_process = Process(target=multi_process_video,
                               name='video %s process' % video_file_name,
-                              args=(video_file_name, tensor_name_map, class_name_list,
+                              args=(video_file_path, tensor_name_map, class_name_list,
                                     model_map, device_num_queue, io_object_queue,
                                     child_process_semaphore, logqueue))
 
