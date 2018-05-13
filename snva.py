@@ -191,6 +191,8 @@ def infer_class_names(
 
   image_dataset = image_dataset.batch(batch_size)
 
+  image_dataset = image_dataset.prefetch(2 * batch_size)
+
   next_batch = image_dataset.make_one_shot_iterator().get_next()
 
   # pre-allocate memory for prediction storage
@@ -329,7 +331,7 @@ def multi_process_video(
     end = time.time() - start
 
     io_object.print_processing_duration(
-      end, 'Time elapsed converting timestamp images to timestamp numeral for {} by child process {}'.format(
+      end, 'Time elapsed converting timestamp images strings for {} by child process {}'.format(
         video_file_name, process_id))
 
     start = time.time()
