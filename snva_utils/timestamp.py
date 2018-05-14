@@ -1,6 +1,6 @@
-import logging
 import numpy as np
 import os
+import tensorflow as tf
 # from PIL import Image
 
 path = os.path
@@ -191,7 +191,8 @@ class Timestamp:
   # alternative per-frame implementation in case the per-video implementation
   # fails, e.g. due to unreadable digit in between readable digits
   def _stringify_timestamps_per_frame(self, timestamp_image_array, num_timestamps):
-    logging.debug('Entering timestamp._stringify_timestamps_per_frame')
+    process_id = os.getpid()
+    tf.logging.debug('Process {} is entering timestamp._stringify_timestamps_per_frame'.format(process_id))
     timestamp_image_array = self._binarize_timestamps(timestamp_image_array)  # (16 * nt, 16 * nd)
     timestamp_image_array = np.transpose(timestamp_image_array)  # (16 * nd, 16 * nt)
     
@@ -212,18 +213,19 @@ class Timestamp:
         timestamp_string_array[i] = ''.join(sorted_digits)
       except Exception as e:
         # TODO log error message when a timestamp image cannot be interpreted
-        logging.debug(e)
+        tf.logging.debug(e)
         timestamp_string_array[i] = 0
 
     timestamp_errors = timestamp_string_array == 0
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
     timestamp_string_array[timestamp_errors] = ''
-    logging.debug('Exiting timestamp._stringify_timestamps_per_frame')
+    tf.logging.debug('Process {} is exiting timestamp._stringify_timestamps_per_frame'.format(process_id))
 
     return timestamp_string_array
 
   def _stringify_timestamps(self, timestamp_image_array, num_timestamps):  # (16 * nt, 16 * nd, nc)
-    logging.debug('Entering timestamp._stringify_timestamps')
+    process_id = os.getpid()
+    tf.logging.debug('Process {} is entering timestamp._stringify_timestamps'.format(process_id))
     timestamp_image_array = self._binarize_timestamps(
       timestamp_image_array)  # (16 * nt, 16 * nd)
     timestamp_image_array = np.reshape(
@@ -280,23 +282,23 @@ class Timestamp:
         timestamp_string_array[j] = ''.join(
           count_length_timestamp_digits[j - unique_count_index])
 
-    logging.debug('Exiting timestamp._stringify_timestamps')
+    tf.logging.debug('Process {} is exiting timestamp._stringify_timestamps'.format(process_id))
     return timestamp_string_array
 
   def stringify_timestamps(self, timestamp_image_array):
-    logging.debug('Entering timestamp.stringify_timestamps')
+    process_id = os.getpid()
+    tf.logging.debug('Process {} is entering timestamp.stringify_timestamps'.format(process_id))
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
     try:
-      timestamp_string_array = self._stringify_timestamps(timestamp_image_array,
-                                                          num_timestamps)
-      logging.debug('Exiting timestamp.stringify_timestamps')
+      timestamp_string_array = self._stringify_timestamps(timestamp_image_array, num_timestamps)
+      tf.logging.debug('Process {} is exiting timestamp.stringify_timestamps')
       return timestamp_string_array
     # slower, but will isolate and gracefully handle failures to read timestamp digits
     except Exception as e:
-      logging.debug(e)
+      tf.logging.debug(e)
       timestamp_string_array = self._stringify_timestamps_per_frame(timestamp_image_array,
                                                                     num_timestamps)
-      logging.debug('Exiting timestamp.stringify_timestamps')
+      tf.logging.debug('Process {} is exiting timestamp.stringify_timestamps'.format(process_id))
       return timestamp_string_array
 
 # for debugging
