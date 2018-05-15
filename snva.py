@@ -377,12 +377,19 @@ if __name__ == '__main__':
   # Create a queue to handle log requests from multiple processes
   logqueue = Queue()
   # Configure our log in the main process to write to a file
-  logging.basicConfig(filename=dt.now().strftime('snva_%m_%d_%Y.log'), level=loglevel,
+  logdir = args.logpath
+  logdir.strip("/")
+  if (not os.path.exists(logdir)):
+    print("Creating log directory {}".format(logdir))
+    os.makedirs(logdir)
+  logging.basicConfig(filename=logdir + '/' + dt.now().strftime('snva_%m_%d_%Y.log'), level=loglevel,
                       format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
   # Start our listener thread
   lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
   tf.logging.info('Entering main process')
+  tf.logging.debug('FFMPEG Path: {}'.format(FFMPEG_PATH))
+  tf.logging.debug('FFPROBE Path: {}'.format(FFPROBE_PATH))
 
   if path.isdir(args.videopath):
     video_dir_path = args.videopath
