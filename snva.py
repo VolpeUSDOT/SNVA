@@ -270,7 +270,7 @@ def multi_process_video(
   tf.logging.info('Child process {} is setting CUDA_VISIBLE_DEVICES environment variable to {}.'.
                   format(process_id, gpu_id))
 
-  os.putenv('CUDA_VISIBLE_DEVICES', gpu_id)
+  os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
 
   session_name = model_map['session_name']
 
@@ -370,7 +370,11 @@ if __name__ == '__main__':
   def interrupt_handler(signal_number, _):
     tf.logging.info(
       'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
-    os.unsetenv('CUDA_VISIBLE_DEVICES')
+    try:
+      os.environ.pop('CUDA_VISIBLE_DEVICES')
+    except KeyError as ke:
+      tf.logging.error(ke)
+
     tf.logging.warning('Interrupt signal recieved: Exiting...')
     logqueue.put(None)
     sys.exit(0)
