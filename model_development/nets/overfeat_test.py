@@ -19,7 +19,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from nets import overfeat
+from model_development.nets import overfeat
 
 slim = tf.contrib.slim
 

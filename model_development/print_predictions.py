@@ -4,18 +4,49 @@ import sys
 import tensorflow as tf
 from tensorflow.contrib import slim
 
-from nets import inception
+from model_development.nets import inception
 from preprocessing import inception_preprocessing
+
+tf.app.flags.DEFINE_string(
+    'checkpoint_path', None, 'An absolute path to a protobuf model file.')
+
+tf.app.flags.DEFINE_string(
+    'image_dir', None, 'An absolute path to a protobuf model file.')
+
+tf.app.flags.DEFINE_integer(
+    'num_classes', 4, 'The number of images analyzed concurrently.')
+
+tf.app.flags.DEFINE_integer(
+    'batch_size', 32, 'The number of images analyzed concurrently.')
+
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 0.9,
+    'The ratio of total memory across all available GPUs to use with this process. '
+    'Defaults to a suggested max of 0.9.')
+
+tf.app.flags.DEFINE_integer(
+    'gpu_device_num', 0,
+    'The device number of a single GPU to use for evaluation on a multi-GPU system. '
+    'Defaults to zero.')
+
+tf.app.flags.DEFINE_boolean(
+    'cpu_only', False,
+    'Explicitly assign all evaluation ops to the CPU on a GPU-enabled system. '
+    'Defaults to False.')
+
+FLAGS = tf.app.flags.FLAGS
+
+tf.logging.set_verbosity(tf.logging.INFO)
 
 path = os.path
 
-model_path = sys.argv[1]
-image_dir = sys.argv[2]
-gpu_memory_fraction = float(sys.argv[3])
-num_classes = int(sys.argv[4])
+# checkpoint_path = sys.argv[1]
+# image_dir = sys.argv[2]
+# gpu_memory_fraction = float(sys.argv[3])
+# num_classes = int(sys.argv[4])
 
-if tf.gfile.IsDirectory(model_path):
-  model_path = tf.train.latest_checkpoint(model_path)
+if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+  checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
 
 image_names = sorted(os.listdir(image_dir))
 image_paths = [path.join(image_dir, image_name) for image_name in image_names]
@@ -53,7 +84,7 @@ with tf.Graph().as_default():
 
   # Get the function that initializes the network structure (its variables) with
   # the trained values contained in the checkpoint
-  init_fn = slim.assign_from_checkpoint_fn(model_path, slim.get_model_variables())
+  init_fn = slim.assign_from_checkpoint_fn(checkpoint_path, slim.get_model_variables())
 
   gpu_options = tf.GPUOptions(allow_growth=True,
                               per_process_gpu_memory_fraction=gpu_memory_fraction)

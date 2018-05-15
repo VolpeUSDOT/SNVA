@@ -6,7 +6,7 @@ from tensorflow.contrib import slim
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
 
-from nets import mobilenet_v1
+from model_development.nets import mobilenet_v1
 from preprocessing import inception_preprocessing
 
 checkpoints_dir = sys.argv[1]
