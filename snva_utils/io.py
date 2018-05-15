@@ -11,13 +11,13 @@ path = os.path
 
 class IO:
   @staticmethod
-  def get_gpu_ids():
+  def get_device_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
     pipe = subprocess.run(command, stdout=subprocess.PIPE, encoding='utf-8')
     line_list = pipe.stdout.rstrip().split('\n')
-    gpu_labels = [line.split(':')[0] for line in line_list]
-    return [gpu_label.split(' ')[1] for gpu_label in gpu_labels]
+    device_labels = [line.split(':')[0] for line in line_list]
+    return [device_label.split(' ')[1] for device_label in device_labels]
 
   @staticmethod
   def read_class_names(class_names_path):
@@ -25,19 +25,26 @@ class IO:
     return {int(key): value for key, value in meta_map.items()}
 
   @staticmethod
-  def load_model(model_path, gpu_memory_fraction):
+  def load_model(model_path, device_type, gpu_memory_fraction):
     tf.logging.debug('Process {} is loading model at path: {}'.format(
       os.getpid(), model_path))
+
     graph_def = tf.GraphDef()
+
     with tf.gfile.FastGFile(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
+
     session_name = str(uuid.uuid4())
     session_graph = tf.import_graph_def(graph_def, name=session_name)
-    gpu_options = tf.GPUOptions(allow_growth=True,
-                                per_process_gpu_memory_fraction=gpu_memory_fraction)
-    session_config = tf.ConfigProto(allow_soft_placement=True,
-                                    # log_device_placement=True,
-                                    gpu_options=gpu_options)
+
+    if device_type == 'gpu':
+      gpu_options = tf.GPUOptions(allow_growth=True,
+                                  per_process_gpu_memory_fraction=gpu_memory_fraction)
+      session_config = tf.ConfigProto(allow_soft_placement=True,
+                                      # log_device_placement=True,
+                                      gpu_options=gpu_options)
+    else:
+      session_config = None
     return {'session_name': session_name,
             'session_graph': session_graph,
             'session_config': session_config}
