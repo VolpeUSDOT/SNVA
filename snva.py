@@ -250,6 +250,18 @@ def multi_process_video(
   root.setLevel(loglevel)
   root.addHandler(qh)
 
+  def interrupt_handler(signal_number, _):
+    tf.logging.info(
+      'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
+    try:
+      os.environ.pop('CUDA_VISIBLE_DEVICES')
+    except KeyError as ke:
+      tf.logging.error(ke)
+
+    tf.logging.warning('Interrupt signal recieved: Exiting...')
+    logqueue.put(None)
+    sys.exit(0)
+
   process_id = os.getpid()
 
   video_file_name = path.basename(video_file_path)
@@ -366,18 +378,6 @@ if __name__ == '__main__':
   lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
   tf.logging.info('Entering main process')
-
-  def interrupt_handler(signal_number, _):
-    tf.logging.info(
-      'Received interrupt signal (%d). Unsetting CUDA_VISIBLE_DEVICES environment variable.', signal_number)
-    try:
-      os.environ.pop('CUDA_VISIBLE_DEVICES')
-    except KeyError as ke:
-      tf.logging.error(ke)
-
-    tf.logging.warning('Interrupt signal recieved: Exiting...')
-    logqueue.put(None)
-    sys.exit(0)
 
   if path.isdir(args.videopath):
     video_dir_path = args.videopath
