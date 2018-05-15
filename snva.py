@@ -433,6 +433,8 @@ if __name__ == '__main__':
   tf.logging.info('Processing {} videos in directory: {}'.format(len(video_file_names),
                   video_dir_path))
 
+  unprocessed_video_file_names = []
+
   while len(video_file_names) > 0:
     # Before popping the next video off of the list and creating a process to scan it,
     # check to see if fewer than gpu_id_list_len + 1 processes are active. If not,
@@ -463,7 +465,7 @@ if __name__ == '__main__':
     except Exception as e:
       tf.logging.error('An unknown error has occured. Appending {} to the end of '
                        'video_file_names to re-attemt processing later'.format(video_file_name))
-      video_file_names.append(video_file_name)
+      unprocessed_video_file_names.append(video_file_name)
 
   tf.logging.info('Joining remaining active child processes.')
 
@@ -471,6 +473,44 @@ if __name__ == '__main__':
     if child_process.is_alive():
       tf.logging.debug('Joining child process {}'.format(child_process.pid))
       child_process.join()
+
+  if len(unprocessed_video_file_names) > 0:
+    tf.logging.info('Re-attempting to process any video that did not succeed on the first attempt')
+
+    child_process_list.clear()
+
+    while len(unprocessed_video_file_names) > 0:
+      child_process_semaphore.acquire()  # block if three child processes are active
+
+      tf.logging.debug('Main process {} acquired child_process_semaphore'.format(os.getpid()))
+
+      video_file_name = unprocessed_video_file_names.pop()
+      video_file_path = path.join(video_dir_path, video_file_name)
+      try:
+        tf.logging.debug('Creating new child process.')
+
+        child_process = Process(target=multi_process_video,
+                                name='Child process for video {}'.format(video_file_name),
+                                args=(video_file_path, tensor_name_map, class_name_list,
+                                      model_map, gpu_id_queue,
+                                      child_process_semaphore, logqueue))
+
+        tf.logging.debug('Starting starting child process.')
+
+        child_process.start()
+
+        child_process_list.append(child_process)
+      except Exception as e:
+        tf.logging.error('An unknown error has occured during the second attempt to process {}. No further attempts '
+                         'will be made'.format(video_file_name))
+        tf.logging.error(e)
+
+    tf.logging.info('Joining remaining active child processes.')
+
+    for child_process in child_process_list:
+      if child_process.is_alive():
+        tf.logging.debug('Joining child process {}'.format(child_process.pid))
+        child_process.join()
 
   end = time.time() - start
 
