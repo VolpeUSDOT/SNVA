@@ -101,14 +101,14 @@ def logger_thread(q):
     while True:
         record = q.get()
         if record is None:
-            tf.logging.debug('Terminating log thread')
+            logging.debug('Terminating log thread')
             break
         logger = logging.getLogger(record.name)
         logger.handle(record)
 
 
 def preprocess_for_inception(image):
-  tf.logging.debug('Preprocessing image...')
+  logging.debug('Preprocessing image...')
   if image.dtype != tf.float32:
     image = tf.image.convert_image_dtype(image, dtype=tf.float32)
   if image.shape[0] != args.modelinputsize \
@@ -123,13 +123,13 @@ def preprocess_for_inception(image):
 
 
 def infer_class_names(
-    video_file_path, output_width, output_height, num_frames, session_config, session_graph,
-    input_tensor_name, output_tensor_name, image_size_tensor_name, batch_size, num_classes, device_count):
+    video_file_path, video_file_name, output_width, output_height, num_frames, session_config, session_graph,
+    input_tensor_name, output_tensor_name, image_size_tensor_name, batch_size, num_classes, device_type, device_count):
   process_id = os.getpid()
   ############################
   # construct ffmpeg command #
   ############################
-  tf.logging.debug('Constructing ffmpeg command')
+  logging.debug('Constructing ffmpeg command')
   command = [FFMPEG_PATH, '-i', video_file_path]
 
   if args.crop and all([output_width >= args.cropwidth > 0, output_height >= args.cropheight > 0,
@@ -150,12 +150,12 @@ def infer_class_names(
     for elem in command[1:]:
       command_string += ' ' + elem
 
-    tf.logging.debug('FFMPEG Command: {}'.format(command_string))
+    logging.debug('FFMPEG Command: {}'.format(command_string))
 
   #####################################
   # prepare neural net input pipeline #
   #####################################
-  tf.logging.info('Child process {} is opening image pipe for {}'.format(process_id, video_file_name))
+  logging.info('Child process {} is opening image pipe for {}'.format(process_id, video_file_name))
   image_string_len = output_width * output_height * args.numchannels
 
   # TODO: set buffsize equal to the smallest multiple of a power of two >= batch_size * image_size_in_bytes
@@ -179,7 +179,7 @@ def infer_class_names(
     while True:
       image_string = image_pipe.stdout.read(image_string_len)
       if not image_string:
-        tf.logging.info('Child process {} is closing image pipe for {}'.format(process_id, video_file_name))
+        logging.info('Child process {} is closing image pipe for {}'.format(process_id, video_file_name))
         image_pipe.stdout.close()
         return
 
@@ -189,7 +189,7 @@ def infer_class_names(
       i += 1
       yield image_array
 
-  tf.logging.debug('Child process {} is constructing image dataset pipeline'.format(process_id))
+  logging.debug('Child process {} is constructing image dataset pipeline'.format(process_id))
   image_dataset = tf.data.Dataset.from_generator(
     image_array_generator, tf.uint8, tf.TensorShape([output_height, output_width, args.numchannels]))
 
@@ -210,8 +210,12 @@ def infer_class_names(
   #################
   # run inference #
   #################
-  tf.logging.debug('Child process {} is starting inference on video {}'.format(
-    process_id, video_file_name))
+  logging.debug('Child process {} is starting inference on video {} at path {}'.format(
+    process_id, video_file_name, video_file_path))
+  if loglevel == logging.INFO or loglevel == logging.DEBUG:
+    print('Child process {} is starting inference on video {} at path {}'.format(
+      process_id, video_file_name, video_file_path))
+
   with tf.device('/cpu:0') if device_type == 'cpu' else tf.device(None):
     with tf.Session(graph=session_graph, config=session_config) as session:
       input_tensor = session.graph.get_tensor_by_name(input_tensor_name)
@@ -229,8 +233,12 @@ def infer_class_names(
           prob_array[num_processed_frames:num_processed_frames + num_probs] = probs
           num_processed_frames += num_probs
         except tf.errors.OutOfRangeError:
-          tf.logging.debug('Child process {} has completed inference on {}'.format(
-            process_id, video_file_name))
+          logging.debug('Child process {} has completed inference on video {} at path {}'.format(
+            process_id, video_file_name, video_file_path))
+
+          if loglevel == logging.INFO or loglevel == logging.DEBUG:
+            print('Child process {} has completed inference on video {} at path {}'.format(
+              process_id, video_file_name, video_file_path))
           break
 
       assert num_processed_frames == num_frames
@@ -240,7 +248,7 @@ def infer_class_names(
 
 def multi_process_video(
     video_file_path, tensor_name_map, class_names, model_map, device_id_queue,
-    child_process_semaphore, logqueue, device_type):
+    child_process_semaphore, logqueue, device_type, device_count):
   
   # Configure logging for this process
   qh = logging.handlers.QueueHandler(logqueue)
@@ -256,13 +264,13 @@ def multi_process_video(
   tf.logging.set_verbosity(tf.logging.INFO)
 
   def interrupt_handler(signal_number, _):
-    tf.logging.warning('Received interrupt signal (%d).', signal_number)
+    logging.warning('Received interrupt signal (%d).', signal_number)
     try:
-      tf.logging.info('Unsetting CUDA_VISIBLE_DEVICES environment variable.')
+      logging.info('Unsetting CUDA_VISIBLE_DEVICES environment variable.')
       os.environ.pop('CUDA_VISIBLE_DEVICES')
     except KeyError as ke:
       tf.logging.error(ke)
-    tf.logging.warning('Signaling logger to terminate.')
+    logging.warning('Signaling logger to terminate.')
     logqueue.put(None)
     sys.exit(0)
 
@@ -273,35 +281,35 @@ def multi_process_video(
   video_file_name = path.basename(video_file_path)
   video_file_name, _ = path.splitext(video_file_name)
 
-  tf.logging.info('Child process {} is preparing to process {}'.format(process_id, video_file_name))
+  logging.info('Child process {} is preparing to process {}'.format(process_id, video_file_name))
 
-  video_meta_map = IO.read_video_metadata(video_file_path)
+  video_meta_map = IO.read_video_metadata(video_file_path, FFPROBE_PATH)
 
   device_id = device_id_queue.get()
-  tf.logging.debug('Child process {} acquired {} device_id {}'.format(
+  logging.debug('Child process {} acquired {} device_id {}'.format(
     process_id, device_type, device_id))
 
   if device_type == 'gpu':
-    tf.logging.info('Child process {} is setting CUDA_VISIBLE_DEVICES environment variable to {}.'.
+    logging.info('Child process {} is setting CUDA_VISIBLE_DEVICES environment variable to {}.'.
                     format(process_id, device_id))
     os.environ['CUDA_VISIBLE_DEVICES'] = device_id
   else:
-    tf.logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
+    logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
   session_name = model_map['session_name']
 
   batch_size = args.batchsize
 
-  successful = False
   attempts = 0
 
-  while not successful and attempts < 3:
+  while attempts < 3:
     try:
       start = time.time()
 
       class_name_probs, timestamps = infer_class_names(
         video_file_path=video_file_path,
+        video_file_name=video_file_name,
         output_width=video_meta_map['width'],
         output_height=video_meta_map['height'],
         num_frames=video_meta_map['frame_count'],
@@ -312,37 +320,66 @@ def multi_process_video(
         image_size_tensor_name=session_name + '/' + tensor_name_map['image_size_tensor_name'],
         batch_size=batch_size,
         num_classes=len(class_names),
-        device_count=device_id_list_len)
+        device_type=device_type,
+        device_count=device_count)
 
       end = time.time() - start
 
-      successful = True
+      logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
+      device_id_queue.put(device_id)
+
+      IO.print_processing_duration(
+        end, 'Child process {} processed {} video frames for {} in'.format(
+          process_id, len(class_name_probs), video_file_name), loglevel)
+
+      break
     # TODO: permanently update the batch size so as to not waste time on future batches.
     # in the limit, we should only detect OOM once and update a shared batch size variable
     # to benefit all future videos within the current app run.
     except tf.errors.ResourceExhaustedError as ree:
       batch_size = int(batch_size / 2)
       # If an error occurs, retry up to two times
-      tf.logging.warning(ree)
-      tf.logging.warning('Resources reportedly exhausted, most likely due to beign out of memory. '
-            'Inference will be reattempted with a new batch size of {}'.format(batch_size))
+      logging.warning(ree)
+      logging.warning('Resources reportedly exhausted, most likely due to being out of memory. '
+                         'Inference will be reattempted with a new batch size of {}'.format(
+                          batch_size))
       attempts += 1
+
+      if attempts < 3:
+        tf.logging.error('Re-attempting inference for {}'.format(video_file_name))
+      else:
+        tf.logging.error('Throwing exception to main process')
+
+        logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
+        device_id_queue.put(device_id)
+
+        raise ree
     except tf.errors.InternalError as ie:
       tf.logging.error(ie)
-      tf.logging.error('Internal error reported, most likely due to a failed session creation attempt.')
+      tf.logging.error('Internal error reported, most likely due to a failed session creation '
+                       'attempt.')
       attempts += 1
+
+      if attempts < 3:
+        tf.logging.error('Re-attempting inference for {}'.format(video_file_name))
+      else:
+        tf.logging.error('Throwing exception to main process')
+
+        logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
+        device_id_queue.put(device_id)
+
+        raise ie
     except Exception as e:
-      tf.logging.error('An unexpected error occured')
-      tf.logging.error(e)
+      tf.logging.error('An unexpected error occured while running inference on {}'.format(
+        video_file_name))
+      tf.logging.error('Throwing exception to main process')
 
-  tf.logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
-  device_id_queue.put(device_id)
+      logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
+      device_id_queue.put(device_id)
 
-  if successful:
-    IO.print_processing_duration(
-      end, 'Child process {} processed {} video frames for {} in '.format(
-        process_id, len(class_name_probs), video_file_name))
+      raise e
 
+  try:
     start = time.time()
 
     timestamp_object = Timestamp(args.timestampheight, args.timestampmaxwidth)
@@ -351,9 +388,16 @@ def multi_process_video(
     end = time.time() - start
 
     IO.print_processing_duration(
-      end, 'Child process {} converted timestamp images to strings for {} in '.format(
-        process_id, video_file_name))
+      end, 'Child process {} converted timestamp images to strings for {} in'.format(
+        process_id, video_file_name), loglevel)
+  except Exception as e:
+    tf.logging.error(
+      'An unexpected error occured while converting timestamp images to strings for {}'.
+      format(video_file_name))
+    tf.logging.error('Throwing exception to main process')
+    raise e
 
+  try:
     start = time.time()
 
     IO.write_report(
@@ -363,33 +407,44 @@ def multi_process_video(
     end = time.time() - start
 
     IO.print_processing_duration(
-      end, 'Child process {} generated report for {} in '.format(
-        process_id, video_file_name))
+      end, 'Child process {} generated report for {} in'.format(
+        process_id, video_file_name), loglevel)
+  except Exception as e:
+    tf.logging.error('An unexpected error occured while generating report on {}'.
+      format(video_file_name))
+    tf.logging.error('Throwing exception to main process')
+    raise e
 
-    tf.logging.debug('Child process {} released child_process_semaphore back to parent process {}'.
-          format(process_id, os.getppid()))
-    child_process_semaphore.release()
+  logging.debug('Child process {} released child_process_semaphore back to parent process {}'.
+        format(process_id, os.getppid()))
+  child_process_semaphore.release()
 
 
-if __name__ == '__main__':
+def main():
   start = time.time()
-  
+
   # Create a queue to handle log requests from multiple processes
   logqueue = Queue()
   # Configure our log in the main process to write to a file
-  logdir = args.logpath
-  logdir.strip("/")
-  if (not os.path.exists(logdir)):
-    print("Creating log directory {}".format(logdir))
-    os.makedirs(logdir)
-  logging.basicConfig(filename=logdir + '/' + dt.now().strftime('snva_%m_%d_%Y.log'), level=loglevel,
+  if path.exists(args.logpath):
+    if path.isfile(args.logpath):
+      raise ValueError('The specified logpath {} is expected to be a directory, not a file.'.format(args.logpath))
+  else:
+    logging.info("Creating log directory {}".format(args.logpath))
+
+    if loglevel == logging.INFO or loglevel == logging.DEBUG:
+      print("Creating log directory {}".format(args.logpath))
+
+    os.makedirs(args.logpath)
+
+  logging.basicConfig(filename=path.join(args.logpath, dt.now().strftime('snva_%m_%d_%Y.log')), level=loglevel,
                       format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
   # Start our listener thread
   lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
-  tf.logging.info('Entering main process')
-  tf.logging.debug('FFMPEG Path: {}'.format(FFMPEG_PATH))
-  tf.logging.debug('FFPROBE Path: {}'.format(FFPROBE_PATH))
+  logging.info('Entering main process')
+  logging.debug('FFMPEG Path: {}'.format(FFMPEG_PATH))
+  logging.debug('FFPROBE Path: {}'.format(FFPROBE_PATH))
 
   if path.isdir(args.videopath):
     video_dir_path = args.videopath
@@ -411,14 +466,14 @@ if __name__ == '__main__':
     io_tensor_names_path = path.join(model_dir_path, 'io_tensor_names.txt')
   else:
     io_tensor_names_path = args.iotensornamespath
-  tf.logging.debug('io tensors path set to: {}'.format(io_tensor_names_path))
+  logging.debug('io tensors path set to: {}'.format(io_tensor_names_path))
 
   if args.classnamespath is None or not path.isfile(args.classnamespath):
     model_dir_path, _ = path.split(args.modelpath)
     class_names_path = path.join(model_dir_path, 'class_names.txt')
   else:
     class_names_path = args.classnamespath
-  tf.logging.debug('labels path set to: {}'.format(class_names_path))
+  logging.debug('labels path set to: {}'.format(class_names_path))
 
   if args.cpuonly:
     device_id_list = ['0']
@@ -429,7 +484,7 @@ if __name__ == '__main__':
 
   device_id_list_len = len(device_id_list)
 
-  tf.logging.info('Found {} available {} device(s).'.format(device_id_list_len, device_type))
+  logging.info('Found {} available {} device(s).'.format(device_id_list_len, device_type))
 
   # child processes will dequeue and enqueue device names
   device_id_queue = Queue(device_id_list_len)
@@ -447,104 +502,118 @@ if __name__ == '__main__':
   # plus one for IO
   child_process_semaphore = BoundedSemaphore(device_id_list_len + 1)
   child_process_list = []
-
-  tf.logging.info('Processing {} videos in directory: {}'.format(len(video_file_names),
+  logging.info('Processing {} videos in directory: {}'.format(len(video_file_names),
                   video_dir_path))
+  print('\nProcessing {} videos in directory: {}'.format(len(video_file_names), video_dir_path))
 
   unprocessed_video_file_names = []
 
-  while len(video_file_names) > 0:
+  def call_multi_process_video(video_file_name, child_process_semaphore):
     # Before popping the next video off of the list and creating a process to scan it,
     # check to see if fewer than device_id_list_len + 1 processes are active. If not,
     # Wait for a child process to release its semaphore acquisition. If so, acquire the
     # semaphore, pop the next video name, create the next child process, and pass the
     # semaphore to it
-    child_process_semaphore.acquire()  # block if three child processes are active
+    video_file_path = path.join(video_dir_path, video_file_name)
+    if device_id_list_len > 1:
+      logging.debug('Creating new child process.')
 
-    tf.logging.debug('Main process {} acquired child_process_semaphore'.format(os.getpid()))
+      if loglevel == logging.INFO or loglevel == logging.DEBUG:
+        print('Creating new child process.')
+
+      child_process = Process(target=multi_process_video,
+                              name='Child process for video {}'.format(video_file_name),
+                              args=(video_file_path, tensor_name_map, class_name_list,
+                                    model_map, device_id_queue, child_process_semaphore,
+                                    logqueue, device_type, device_id_list_len))
+
+      logging.debug('Starting starting child process.')
+
+      if loglevel == logging.INFO or loglevel == logging.DEBUG:
+        print('Starting starting child process.')
+
+      child_process.start()
+
+      child_process_list.append(child_process)
+    else:
+      logging.info('Invoking multi_process_video() in main process because device_type == {}'.format(device_type))
+      multi_process_video(video_file_path, tensor_name_map, class_name_list, model_map, device_id_queue,
+                          child_process_semaphore, logqueue, device_type, device_id_list_len)
+
+  while len(video_file_names) > 0:
+    child_process_semaphore.acquire()  # block if three child processes are active
+    logging.debug('Main process {} acquired child_process_semaphore'.format(os.getpid()))
 
     video_file_name = video_file_names.pop()
-    video_file_path = path.join(video_dir_path, video_file_name)
 
     try:
-      if device_id_list_len > 1:
-        tf.logging.debug('Creating new child process.')
-    
-        child_process = Process(target=multi_process_video,
-                                name='video %s process' % video_file_name,
-                                args=(video_file_path, tensor_name_map, class_name_list,
-                                      model_map, device_id_queue, child_process_semaphore,
-                                      logqueue, device_type))
-  
-        tf.logging.debug('Starting starting child process.')
-  
-        child_process.start()
-  
-        child_process_list.append(child_process)
-      else:
-        print('Invoking multi_process_video() in main process because device_type == {}'.format(device_type))
-        multi_process_video(video_file_path, tensor_name_map, class_name_list, model_map, device_id_queue,
-                            child_process_semaphore, logqueue, device_type)
+      call_multi_process_video(video_file_name, child_process_semaphore)
     except Exception as e:
       tf.logging.error('An unknown error has occured. Appending {} to the end of '
                        'video_file_names to re-attemt processing later'.format(video_file_name))
+      tf.logging.error(e)
       unprocessed_video_file_names.append(video_file_name)
+      tf.logging.error('Releasing child_process_semaphore for child process with raised exception.')
+      child_process_semaphore.release()
 
-  tf.logging.info('Joining remaining active child processes.')
+  logging.info('Joining remaining active child processes.')
+
+  if loglevel == logging.INFO or loglevel == logging.DEBUG:
+    print('Joining remaining active child processes.')
 
   for child_process in child_process_list:
     if child_process.is_alive():
-      tf.logging.debug('Joining child process {}'.format(child_process.pid))
+      logging.debug('Joining child process {}'.format(child_process.pid))
+
+      if loglevel == logging.INFO or loglevel == logging.DEBUG:
+        print('Joining child process {}'.format(child_process.pid))
+
       child_process.join()
 
   if len(unprocessed_video_file_names) > 0:
-    tf.logging.info('Re-attempting to process any video that did not succeed on the first attempt')
+    logging.info('Re-attempting to process any video that did not succeed on the first attempt')
+
+    if loglevel == logging.INFO or loglevel == logging.DEBUG:
+      print('Re-attempting to process any video that did not succeed on the first attempt')
 
     child_process_list.clear()
 
     while len(unprocessed_video_file_names) > 0:
       child_process_semaphore.acquire()  # block if three child processes are active
-
-      tf.logging.debug('Main process {} acquired child_process_semaphore'.format(os.getpid()))
+      logging.debug('Main process {} acquired child_process_semaphore'.format(os.getpid()))
 
       video_file_name = unprocessed_video_file_names.pop()
-      video_file_path = path.join(video_dir_path, video_file_name)
       try:
-        if device_id_list_len > 1:
-          tf.logging.debug('Creating new child process.')
-  
-          child_process = Process(target=multi_process_video,
-                                  name='Child process for video {}'.format(video_file_name),
-                                  args=(video_file_path, tensor_name_map, class_name_list,
-                                        model_map, device_id_queue, child_process_semaphore,
-                                        logqueue, device_type))
-  
-          tf.logging.debug('Starting starting child process.')
-  
-          child_process.start()
-  
-          child_process_list.append(child_process)
-        else:
-          print('Invoking multi_process_video() in main process because device_type == {}'.format(device_type))
-          multi_process_video(video_file_path, tensor_name_map, class_name_list, model_map, device_id_queue,
-                              child_process_semaphore, logqueue, device_type)
+        call_multi_process_video(video_file_name, child_process_semaphore)
       except Exception as e:
         tf.logging.error('An unknown error has occured during the second attempt to process {}. No further attempts '
                          'will be made'.format(video_file_name))
         tf.logging.error(e)
+        tf.logging.error('Releasing child_process_semaphore for child process with raised exception.')
+        child_process_semaphore.release()
 
-    tf.logging.info('Joining remaining active child processes.')
+    logging.info('Joining remaining active child processes.')
+
+    if loglevel == logging.INFO or loglevel == logging.DEBUG:
+      print('Joining remaining active child processes.')
 
     for child_process in child_process_list:
       if child_process.is_alive():
-        tf.logging.debug('Joining child process {}'.format(child_process.pid))
+        logging.debug('Joining child process {}'.format(child_process.pid))
+
+        if loglevel == logging.INFO or loglevel == logging.DEBUG:
+          print('Joining child process {}'.format(child_process.pid))
         child_process.join()
 
   end = time.time() - start
 
-  IO.print_processing_duration(end, 'Video processing completed with total elapsed time: ')
-
+  IO.print_processing_duration(end, 'Video processing completed with total elapsed time: ', loglevel)
+  print('Video processing completed')
   #Signal the logging thread to finish up
-  tf.logging.debug('Signaling log queue to end service.')
+  logging.debug('Signaling log queue to end service.')
   logqueue.put(None)
   lp.join()
+
+
+if __name__ == '__main__':
+  main()

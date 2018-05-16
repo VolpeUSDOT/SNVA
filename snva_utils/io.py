@@ -1,5 +1,6 @@
 import csv
 import json
+import logging
 import numpy as np
 import os
 import subprocess
@@ -26,7 +27,7 @@ class IO:
 
   @staticmethod
   def load_model(model_path, device_type, gpu_memory_fraction):
-    tf.logging.debug('Process {} is loading model at path: {}'.format(
+    logging.debug('Process {} is loading model at path: {}'.format(
       os.getpid(), model_path))
 
     graph_def = tf.GraphDef()
@@ -61,12 +62,17 @@ class IO:
                    if any(fn.lower().endswith(ext) for ext in included_extenstions)])
 
   @staticmethod
-  def print_processing_duration(end_time, msg):
+  def print_processing_duration(end_time, msg, loglevel):
     minutes, seconds = divmod(end_time, 60)
     hours, minutes = divmod(minutes, 60)
-    tf.logging.info('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
-      msg, int(round(hours)), int(round(minutes)),
-      seconds, int(round(end_time * 1000))))
+    hours = int(round(hours))
+    minutes = int(round(minutes))
+    milliseconds = int(round(end_time * 1000))
+    logging.info('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
+      msg, hours, minutes, seconds, milliseconds))
+    if loglevel == logging.INFO or loglevel == logging.DEBUG:
+      print('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
+        msg, hours, minutes, seconds, milliseconds))
 
   @staticmethod
   def _read_meta_file(file_path):
@@ -74,16 +80,16 @@ class IO:
     return {line[0]: line[1] for line in meta_lines}
 
   @staticmethod
-  def read_video_metadata(video_file_path):
-    command = ['ffprobe', '-show_streams', '-print_format',
+  def read_video_metadata(video_file_path, ffprobe_path):
+    command = [ffprobe_path, '-show_streams', '-print_format',
                'json', '-loglevel', 'quiet', video_file_path]
     process_id = os.getpid()
-    tf.logging.debug('Process {} invoked ffprobe command: {}'.format(
+    logging.debug('Process {} invoked ffprobe command: {}'.format(
       process_id, command))
     pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     json_string, err = pipe.communicate()
     json_map = json.loads(json_string)
-    tf.logging.debug('Process {} received ffprobe response: {}'.format(
+    logging.debug('Process {} received ffprobe response: {}'.format(
       process_id, json.dumps(json_map)))
     if not json_map:
       tf.logging.error('Process {} received no response from ffprobe. '
