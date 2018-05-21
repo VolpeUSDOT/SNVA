@@ -75,25 +75,39 @@ class IO:
         msg, hours, minutes, seconds, milliseconds))
 
   @staticmethod
+  def print_subprocess_command(arg_list, process_id=os.getpid()):
+    command_string = arg_list[0]
+
+    for elem in arg_list[1:]:
+      command_string += ' ' + elem
+
+    logging.debug('Process {} invoked command: {}'.format(process_id, command_string))
+
+  @staticmethod
   def _read_meta_file(file_path):
     meta_lines = [line.rstrip().split(':') for line in tf.gfile.GFile(file_path).readlines()]
     return {line[0]: line[1] for line in meta_lines}
 
   @staticmethod
   def read_video_metadata(video_file_path, ffprobe_path):
-    command = [ffprobe_path, '-show_streams', '-print_format',
-               'json', '-loglevel', 'quiet', video_file_path]
+    command = [ffprobe_path, '-show_streams', '-print_format', 'json', '-loglevel', 'warning',
+               video_file_path]
     process_id = os.getpid()
-    logging.debug('Process {} invoked ffprobe command: {}'.format(
-      process_id, command))
-    pipe = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    json_string, err = pipe.communicate()
-    json_map = json.loads(json_string)
-    logging.debug('Process {} received ffprobe response: {}'.format(
+    IO.print_subprocess_command(command, process_id)
+
+    completed_subprocess = subprocess.run(
+      command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    if len(completed_subprocess.stderr) > 0:
+      raise Exception(str(completed_subprocess.stderr))
+
+    logging.info('Process {} received raw processed response: {}'.format(
+      process_id, completed_subprocess.stdout))
+
+    json_map = json.loads(completed_subprocess.stdout)
+
+    logging.info('Process {} received ffprobe processed response: {}'.format(
       process_id, json.dumps(json_map)))
-    if not json_map:
-      tf.logging.error('Process {} received no response from ffprobe. '
-                       'This is possibly a permissions issue'.format(process_id))
 
     return {'width': int(json_map['streams'][0]['width']),
             'height': int(json_map['streams'][0]['height']),
