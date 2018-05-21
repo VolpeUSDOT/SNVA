@@ -84,6 +84,8 @@ parser.add_argument('--verbose', '-vb', action='store_true',
                     help='Print additional information in logs')
 parser.add_argument('--debug', '-d', action='store_true',
                     help='Print debug information in logs')
+parser.add_argument('--noisy', '-n', action='store_true',
+                    help='Output log messages to console as well as to logfiles') 
 
 args = parser.parse_args()
 
@@ -103,6 +105,8 @@ def logger_thread(q):
         if record is None:
             logging.debug('Terminating log thread')
             break
+        if (args.noisy):
+          print(record.getMessage())
         logger = logging.getLogger(record.name)
         logger.handle(record)
 
