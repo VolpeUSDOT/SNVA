@@ -18,19 +18,7 @@ from snva_utils.timestamp import Timestamp
 
 path = os.path
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-if platform.system() == 'Windows':
-  FFMPEG_PATH = 'ffmpeg.exe'
-  FFPROBE_PATH = 'ffprobe.exe'
-else:
-  FFMPEG_PATH = '/usr/local/bin/ffmpeg' if path.exists('/usr/local/bin/ffmpeg') \
-    else '/usr/bin/ffmpeg'
-  FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') \
-    else '/usr/bin/ffprobe'
-
-parser = argparse.ArgumentParser(
-  description='SHRP2 NDS Video Analytics built on TensorFlow')
+parser = argparse.ArgumentParser(description='SHRP2 NDS Video Analytics built on TensorFlow')
 
 parser.add_argument('--batchsize', '-bs', type=int, default=32,
                     help='The number of images fed into the neural net at a time')
@@ -39,37 +27,25 @@ parser.add_argument('--binarizeprobs', '-b', action='store_true',
                          'with two 0.5 values, both will be rounded up to 1.0')
 parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
 parser.add_argument('--crop', '-c', action='store_true',
-                    help='Crop video frames to [offsetheight, '
-                         'offsetwidth, targetheight, targetwidth]')
-parser.add_argument('--cropheight', '-ch', type=int, default=356,
-                    help='y-component of bottom-right corner of crop.')
-parser.add_argument('--cropwidth', '-cw', type=int, default=474,
-                    help='x-component of bottom-right corner of crop.')
-parser.add_argument('--cropx', '-cx', type=int, default=2,
-                    help='x-component of top-left corner of crop.')
-parser.add_argument('--cropy', '-cy', type=int, default=0,
-                    help='y-component of top-left corner of crop.')
-parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
+                    help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
+parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-component of bottom-right corner of crop.')
+parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
+parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
+parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
+parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.85,
                     help='% of GPU memory available to this process.')
-parser.add_argument('--iotensornamespath', '-itp', default=None,
-                    help='Path to the io tensor names text file.')
-parser.add_argument('--classnamespath', '-cnp', default=None,
-                    help='Path to the class ids/names text file.')
+parser.add_argument('--iotensornamespath', '-itp', default=None, help='Path to the io tensor names text file.')
+parser.add_argument('--classnamespath', '-cnp', default=None, help='Path to the class ids/names text file.')
 parser.add_argument('--modelinputsize', '-mis', type=int, default=299,
                     help='The square input dimensions of the neural net.')
-parser.add_argument('--logpath', '-l', default='./logs',
-                    help='Path to the directory where log files are stored.')
-parser.add_argument('--numchannels', '-nc', type=int, default=3,
-                    help='The fourth dimension of image batches.')
-parser.add_argument('--modelpath', '-mp', required=True,
-                    help='Path to the tensorflow protobuf model file.')
-parser.add_argument('--reportpath', '-rp', default='./results',
-                    help='Path to the directory where results are stored.')
+parser.add_argument('--logpath', '-l', default='./logs', help='Path to the directory where log files are stored.')
+parser.add_argument('--numchannels', '-nc', type=int, default=3, help='The fourth dimension of image batches.')
+parser.add_argument('--modelpath', '-mp', required=True, help='Path to the tensorflow protobuf model file.')
+parser.add_argument('--reportpath', '-rp', default='./results', help='Path to the directory where results are stored.')
 parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
                     help='The class-wise probability smoothing factor.')
 parser.add_argument('--smoothprobs', '-sm', action='store_true',
-                    help='Apply class-wise smoothing across video frame class'
-                         'probability distributions.')
+                    help='Apply class-wise smoothing across video frame class probability distributions.')
 parser.add_argument('--timestampheight', '-th', type=int, default=16,
                     help='The length of the y-dimension of the timestamp overlay.')
 parser.add_argument('--timestampmaxwidth', '-tw', type=int, default=160,
@@ -78,16 +54,31 @@ parser.add_argument('--timestampx', '-tx', type=int, default=25,
                     help='x-component of top-left corner of timestamp (before cropping).')
 parser.add_argument('--timestampy', '-ty', type=int, default=340,
                     help='y-component of top-left corner of timestamp (before cropping).')
-parser.add_argument('--videopath', '-v', required=True,
-                    help='Path to video file(s).')
-parser.add_argument('--verbose', '-vb', action='store_true',
-                    help='Print additional information in logs')
-parser.add_argument('--debug', '-d', action='store_true',
-                    help='Print debug information in logs')
-parser.add_argument('--noisy', '-n', action='store_true',
-                    help='Output log messages to console as well as to logfiles') 
+parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
+parser.add_argument('--verbose', '-vb', action='store_true', help='Print additional information in logs')
+parser.add_argument('--debug', '-d', action='store_true', help='Print debug information in logs')
+parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile') 
+
 
 args = parser.parse_args()
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+FFMPEG_PATH = os.environ['FFMPEG_HOME']
+print(FFMPEG_PATH)
+if not FFMPEG_PATH:
+  if platform.system() == 'Windows':
+    FFMPEG_PATH = 'ffmpeg.exe'
+  else:
+    FFMPEG_PATH = '/usr/local/bin/ffmpeg' if path.exists('/usr/local/bin/ffmpeg') else '/usr/bin/ffmpeg'
+
+FFPROBE_PATH = os.environ['FFPROBE_HOME']
+print(FFPROBE_PATH)
+if not FFPROBE_PATH:
+  if platform.system() == 'Windows':
+    FFPROBE_PATH = 'ffprobe.exe'
+  else:
+    FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') else '/usr/bin/ffprobe'
 
 # Define our log level based on arguments
 loglevel = logging.WARNING
@@ -148,13 +139,8 @@ def infer_class_names(
                   '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
 
   # log the constructed command string if debug
-  if (loglevel == logging.DEBUG):
-    command_string = command[0]
-
-    for elem in command[1:]:
-      command_string += ' ' + elem
-
-    logging.debug('FFMPEG Command: {}'.format(command_string))
+  if loglevel == logging.DEBUG:
+    IO.print_subprocess_command(command)
 
   #####################################
   # prepare neural net input pipeline #
@@ -163,7 +149,7 @@ def infer_class_names(
   image_string_len = output_width * output_height * args.numchannels
 
   # TODO: set buffsize equal to the smallest multiple of a power of two >= batch_size * image_size_in_bytes
-  image_pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=batch_size*2*512**2)
+  image_pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=batch_size * 2 * 512 ** 2)
 
   timestamp_array = np.ndarray(
     (args.timestampheight * num_frames, args.timestampmaxwidth, args.numchannels), dtype='uint8')
@@ -181,17 +167,27 @@ def infer_class_names(
     tw = args.timestampmaxwidth
 
     while True:
-      image_string = image_pipe.stdout.read(image_string_len)
-      if not image_string:
-        logging.info('Child process {} is closing image pipe for {}'.format(process_id, video_file_name))
-        image_pipe.stdout.close()
-        return
+      try:
+        image_string = image_pipe.stdout.read(image_string_len)
+        if not image_string:
+          logging.info('Child process {} is closing image pipe for {}'.format(process_id, video_file_name))
+          image_pipe.stdout.close()
+          return
 
-      image_array = np.fromstring(image_string, dtype=np.uint8)
-      image_array = np.reshape(image_array, (output_height, output_width, num_channels))
-      timestamp_array[th * i:th * (i + 1)] = image_array[ty:ty+th, tx:tx+tw]
-      i += 1
-      yield image_array
+        image_array = np.fromstring(image_string, dtype=np.uint8)
+        image_array = np.reshape(image_array, (output_height, output_width, num_channels))
+        timestamp_array[th * i:th * (i + 1)] = image_array[ty:ty + th, tx:tx + tw]
+        i += 1
+        yield image_array
+      except Exception as e:
+        logging.error('An unexpected error occured after processing {} frames from {}.'
+                      .format(num_processed_frames, video_file_name))
+        logging.error(e)
+        logging.error('Child process {} is closing image pipe for {}'.format(
+          process_id, video_file_name))
+        image_pipe.stdout.close()
+        logging.error('Child process {} is raising exception to caller.'.format(process_id))
+        raise e
 
   logging.debug('Child process {} is constructing image dataset pipeline'.format(process_id))
   image_dataset = tf.data.Dataset.from_generator(
@@ -214,11 +210,11 @@ def infer_class_names(
   #################
   # run inference #
   #################
-  logging.debug('Child process {} is starting inference on video {} at path {}'.format(
-    process_id, video_file_name, video_file_path))
+  logging.debug('Child process {} is starting inference on video at path {}'.format(
+    process_id, video_file_path))
   if loglevel == logging.INFO or loglevel == logging.DEBUG:
-    print('Child process {} is starting inference on video {} at path {}'.format(
-      process_id, video_file_name, video_file_path))
+    logging.debug('Child process {} is starting inference on video at path {}'.format(
+      process_id, video_file_path))
 
   with tf.device('/cpu:0') if device_type == 'cpu' else tf.device(None):
     with tf.Session(graph=session_graph, config=session_config) as session:
@@ -237,12 +233,11 @@ def infer_class_names(
           prob_array[num_processed_frames:num_processed_frames + num_probs] = probs
           num_processed_frames += num_probs
         except tf.errors.OutOfRangeError:
-          logging.debug('Child process {} has completed inference on video {} at path {}'.format(
-            process_id, video_file_name, video_file_path))
-
+          logging.info('Child process {} has completed inference on video at path {}'.format(
+            process_id, video_file_path))
           if loglevel == logging.INFO or loglevel == logging.DEBUG:
-            print('Child process {} has completed inference on video {} at path {}'.format(
-              process_id, video_file_name, video_file_path))
+            print('Child process {} has completed inference on video at path {}'.format(
+              process_id, video_file_path))
           break
 
       assert num_processed_frames == num_frames
@@ -253,13 +248,12 @@ def infer_class_names(
 def multi_process_video(
     video_file_path, tensor_name_map, class_names, model_map, device_id_queue,
     child_process_semaphore, logqueue, device_type, device_count):
-  
   # Configure logging for this process
   qh = logging.handlers.QueueHandler(logqueue)
   root = logging.getLogger()
 
   # Clear any handlers to avoid duplicate entries
-  if (root.hasHandlers()):
+  if root.hasHandlers():
     root.handlers.clear()
   root.setLevel(loglevel)
   root.addHandler(qh)
@@ -287,15 +281,34 @@ def multi_process_video(
 
   logging.info('Child process {} is preparing to process {}'.format(process_id, video_file_name))
 
-  video_meta_map = IO.read_video_metadata(video_file_path, FFPROBE_PATH)
+  try:
+    video_meta_map = IO.read_video_metadata(video_file_path, FFPROBE_PATH)
+  except Exception as e:
+    logging.debug('Process {} received ffprobe error: {}'.format(
+      process_id, e))
+
+    logging.debug('Child process {} released child_process_semaphore back to parent process {}'
+                  .format(process_id, os.getppid()))
+    child_process_semaphore.release()
+
+    logging.debug('Child process {} terminated itself'.format(process_id))
+    exit()
+
+  except Exception as e:
+    tf.logging.error('An unexpected error occured while probing {} for metadata.'.format(
+      video_file_name))
+
+    tf.logging.error('Throwing exception to main process.')
+
+    raise e
 
   device_id = device_id_queue.get()
   logging.debug('Child process {} acquired {} device_id {}'.format(
     process_id, device_type, device_id))
 
   if device_type == 'gpu':
-    logging.info('Child process {} is setting CUDA_VISIBLE_DEVICES environment variable to {}.'.
-                    format(process_id, device_id))
+    logging.info('Child process {} is setting CUDA_VISIBLE_DEVICES environment variable to {}.'
+                 .format(process_id, device_id))
     os.environ['CUDA_VISIBLE_DEVICES'] = device_id
   else:
     logging.info('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
@@ -344,44 +357,53 @@ def multi_process_video(
       batch_size = int(batch_size / 2)
       # If an error occurs, retry up to two times
       logging.warning(ree)
-      logging.warning('Resources reportedly exhausted, most likely due to being out of memory. '
-                         'Inference will be reattempted with a new batch size of {}'.format(
-                          batch_size))
+      logging.warning('Resources reportedly exhausted. Inference will be reattempted with a new '
+                      'batch size of {}'.format(batch_size))
       attempts += 1
 
       if attempts < 3:
         tf.logging.error('Re-attempting inference for {}'.format(video_file_name))
       else:
-        tf.logging.error('Throwing exception to main process')
-
         logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
         device_id_queue.put(device_id)
 
-        raise ree
+        logging.debug('Child process {} released child_process_semaphore back to parent process {}'
+                      .format(process_id, os.getppid()))
+        child_process_semaphore.release()
+
+        logging.debug('Child process {} terminated itself'.format(process_id))
+        exit()
     except tf.errors.InternalError as ie:
-      tf.logging.error(ie)
-      tf.logging.error('Internal error reported, most likely due to a failed session creation '
-                       'attempt.')
+      tf.logging.error('An internal error occured while running inference on {}\n{}'.format(
+        video_file_name, ie))
+
       attempts += 1
 
       if attempts < 3:
         tf.logging.error('Re-attempting inference for {}'.format(video_file_name))
       else:
-        tf.logging.error('Throwing exception to main process')
-
         logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
         device_id_queue.put(device_id)
 
-        raise ie
+        logging.debug('Child process {} released child_process_semaphore back to parent process {}'
+                      .format(process_id, os.getppid()))
+        child_process_semaphore.release()
+
+        logging.debug('Child process {} terminated itself'.format(process_id))
+        exit()
     except Exception as e:
-      tf.logging.error('An unexpected error occured while running inference on {}'.format(
-        video_file_name))
-      tf.logging.error('Throwing exception to main process')
+      tf.logging.error('An unexpected error occured while running inference on {}\n{}'.format(
+        video_file_name, e))
 
       logging.debug('Child process {} released device_id {}'.format(process_id, device_id))
       device_id_queue.put(device_id)
 
-      raise e
+      logging.debug('Child process {} released child_process_semaphore back to parent process {}'
+                    .format(process_id, os.getppid()))
+      child_process_semaphore.release()
+
+      logging.debug('Child process {} terminated itself'.format(process_id))
+      exit()
 
   try:
     start = time.time()
@@ -397,7 +419,7 @@ def multi_process_video(
   except Exception as e:
     tf.logging.error(
       'An unexpected error occured while converting timestamp images to strings for {}'.
-      format(video_file_name))
+        format(video_file_name))
     tf.logging.error('Throwing exception to main process')
     raise e
 
@@ -415,12 +437,12 @@ def multi_process_video(
         process_id, video_file_name), loglevel)
   except Exception as e:
     tf.logging.error('An unexpected error occured while generating report on {}'.
-      format(video_file_name))
+                     format(video_file_name))
     tf.logging.error('Throwing exception to main process')
     raise e
 
   logging.debug('Child process {} released child_process_semaphore back to parent process {}'.
-        format(process_id, os.getppid()))
+                format(process_id, os.getppid()))
   child_process_semaphore.release()
 
 
@@ -460,7 +482,7 @@ def main():
     raise ValueError('The video file/folder specified at the path {} could not be found.'.format(
       args.videopath))
 
-  #TODO modelpath should not be required to be passed at the command line
+  # TODO modelpath should not be required to be passed at the command line
   if not path.isfile(args.modelpath):
     raise ValueError('The model specified at the path {} could not be found.'.format(
       args.modelpath))
@@ -507,7 +529,7 @@ def main():
   child_process_semaphore = BoundedSemaphore(device_id_list_len + 1)
   child_process_list = []
   logging.info('Processing {} videos in directory: {}'.format(len(video_file_names),
-                  video_dir_path))
+                                                              video_dir_path))
   print('\nProcessing {} videos in directory: {}'.format(len(video_file_names), video_dir_path))
 
   unprocessed_video_file_names = []
@@ -526,7 +548,7 @@ def main():
         print('Creating new child process.')
 
       child_process = Process(target=multi_process_video,
-                              name='Child process for video {}'.format(video_file_name),
+                              name='ChildProcess:{}'.format(video_file_name),
                               args=(video_file_path, tensor_name_map, class_name_list,
                                     model_map, device_id_queue, child_process_semaphore,
                                     logqueue, device_type, device_id_list_len))
@@ -557,6 +579,7 @@ def main():
                        'video_file_names to re-attemt processing later'.format(video_file_name))
       tf.logging.error(e)
       unprocessed_video_file_names.append(video_file_name)
+
       tf.logging.error('Releasing child_process_semaphore for child process with raised exception.')
       child_process_semaphore.release()
 
@@ -613,7 +636,7 @@ def main():
 
   IO.print_processing_duration(end, 'Video processing completed with total elapsed time: ', loglevel)
   print('Video processing completed')
-  #Signal the logging thread to finish up
+  # Signal the logging thread to finish up
   logging.debug('Signaling log queue to end service.')
   logqueue.put(None)
   lp.join()
