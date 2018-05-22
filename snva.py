@@ -57,13 +57,15 @@ parser.add_argument('--timestampy', '-ty', type=int, default=340,
 parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
 parser.add_argument('--verbose', '-vb', action='store_true', help='Print additional information in logs')
 parser.add_argument('--debug', '-d', action='store_true', help='Print debug information in logs')
+parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile') 
+
 
 args = parser.parse_args()
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 FFMPEG_PATH = os.environ['FFMPEG_HOME']
-print(FFMPEG_PATH)
+
 if not FFMPEG_PATH:
   if platform.system() == 'Windows':
     FFMPEG_PATH = 'ffmpeg.exe'
@@ -71,7 +73,7 @@ if not FFMPEG_PATH:
     FFMPEG_PATH = '/usr/local/bin/ffmpeg' if path.exists('/usr/local/bin/ffmpeg') else '/usr/bin/ffmpeg'
 
 FFPROBE_PATH = os.environ['FFPROBE_HOME']
-print(FFPROBE_PATH)
+
 if not FFPROBE_PATH:
   if platform.system() == 'Windows':
     FFPROBE_PATH = 'ffprobe.exe'
@@ -89,13 +91,15 @@ if args.debug:
 # Logger thread: listens for updates to our log queue and writes them as they come in
 # Terminates after we add None to the queue
 def logger_thread(q):
-  while True:
-    record = q.get()
-    if record is None:
-      logging.debug('Terminating log thread')
-      break
-    logger = logging.getLogger(record.name)
-    logger.handle(record)
+    while True:
+        record = q.get()
+        if record is None:
+            logging.debug('Terminating log thread')
+            break
+        if (args.noisy):
+          print(record.getMessage())
+        logger = logging.getLogger(record.name)
+        logger.handle(record)
 
 
 def preprocess_for_inception(image):
@@ -233,9 +237,6 @@ def infer_class_names(
         except tf.errors.OutOfRangeError:
           logging.info('Child process {} has completed inference on video at path {}'.format(
             process_id, video_file_path))
-          if loglevel == logging.INFO or loglevel == logging.DEBUG:
-            print('Child process {} has completed inference on video at path {}'.format(
-              process_id, video_file_path))
           break
 
       assert num_processed_frames == num_frames
@@ -456,9 +457,6 @@ def main():
   else:
     logging.info("Creating log directory {}".format(args.logpath))
 
-    if loglevel == logging.INFO or loglevel == logging.DEBUG:
-      print("Creating log directory {}".format(args.logpath))
-
     os.makedirs(args.logpath)
 
   logging.basicConfig(filename=path.join(args.logpath, dt.now().strftime('snva_%m_%d_%Y.log')), level=loglevel,
@@ -528,7 +526,6 @@ def main():
   child_process_list = []
   logging.info('Processing {} videos in directory: {}'.format(len(video_file_names),
                                                               video_dir_path))
-  print('\nProcessing {} videos in directory: {}'.format(len(video_file_names), video_dir_path))
 
   unprocessed_video_file_names = []
 
@@ -543,9 +540,6 @@ def main():
     if device_id_list_len > 1:
       logging.debug('Creating new child process.')
 
-      if loglevel == logging.INFO or loglevel == logging.DEBUG:
-        print('Creating new child process.')
-
       child_process = Process(target=multi_process_video,
                               name='ChildProcess:{}'.format(video_file_name),
                               args=(video_file_path, tensor_name_map, class_name_list,
@@ -553,9 +547,6 @@ def main():
                                     logqueue, device_type, device_id_list_len))
 
       logging.debug('Starting starting child process.')
-
-      if loglevel == logging.INFO or loglevel == logging.DEBUG:
-        print('Starting starting child process.')
 
       child_process.start()
 
@@ -584,23 +575,14 @@ def main():
 
   logging.info('Joining remaining active child processes.')
 
-  if loglevel == logging.INFO or loglevel == logging.DEBUG:
-    print('Joining remaining active child processes.')
-
   for child_process in child_process_list:
     if child_process.is_alive():
       logging.debug('Joining child process {}'.format(child_process.pid))
-
-      if loglevel == logging.INFO or loglevel == logging.DEBUG:
-        print('Joining child process {}'.format(child_process.pid))
 
       child_process.join()
 
   if len(unprocessed_video_file_names) > 0:
     logging.info('Re-attempting to process any video that did not succeed on the first attempt')
-
-    if loglevel == logging.INFO or loglevel == logging.DEBUG:
-      print('Re-attempting to process any video that did not succeed on the first attempt')
 
     child_process_list.clear()
 
@@ -620,21 +602,15 @@ def main():
 
     logging.info('Joining remaining active child processes.')
 
-    if loglevel == logging.INFO or loglevel == logging.DEBUG:
-      print('Joining remaining active child processes.')
-
     for child_process in child_process_list:
       if child_process.is_alive():
         logging.debug('Joining child process {}'.format(child_process.pid))
-
-        if loglevel == logging.INFO or loglevel == logging.DEBUG:
-          print('Joining child process {}'.format(child_process.pid))
         child_process.join()
 
   end = time.time() - start
 
   IO.print_processing_duration(end, 'Video processing completed with total elapsed time: ', loglevel)
-  print('Video processing completed')
+
   # Signal the logging thread to finish up
   logging.debug('Signaling log queue to end service.')
   logqueue.put(None)

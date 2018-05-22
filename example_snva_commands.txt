@@ -1,14 +1,21 @@
 
 # five ~90MB ~15,000 frame videos (takes ~2:02 minutes to process on Bilbo Baggins reading from disk)
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 64 --smoothprobs --binarizeprobs --debug
 
 
-# six ~20MB ~3,000 frame videos (takes ~0:38 minutes to process on Bilbo Baggins reading from disk)
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2/ --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs --debug
+# six ~20MB ~3,000 frame videos (takes ~0:37 minutes to process on Bilbo Baggins reading from disk)
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2/ --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --debug --cpuonly
 
 # six ~450MB  ~75,000 frame videos (takes 9:31 minutes to process on Bilbo Baggins reading from disk)
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp4 --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs --debug
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp4 --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs --debug
 
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2/Event_ID_152219861_Front.mp4 --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs
+# six videos that were certainly not trained on
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs --debug
 
-python3 snva.py --modelpath /media/data_1/snva/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/franklin/d5083f8e-224a-4a05-a37f-650abf34887c/Raw_Data/fhwa/shrp2_nds/Videos/Event_ID_152219941_Front.mp4 --reportpath /media/data_1/snva/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 64 --smoothprobs --binarizeprobs
+
+
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/os_backup/data_0_files/Data/temp2/Event_ID_152219861_Front.mp4 --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 32 --smoothprobs --binarizeprobs
+
+python3 snva.py --modelpath /media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --videopath /media/franklin/d5083f8e-224a-4a05-a37f-650abf34887c/Raw_Data/fhwa/shrp2_nds/Videos/Event_ID_152219941_Front.mp4 --reportpath /media/data_1/snva_1/Reports/fhwa/shrp2_nds/fabodo --crop --cropx 2 --cropy 0 --cropwidth 474 --cropheight 356 --batchsize 64 --smoothprobs --binarizeprobs
+
+(convert training checkpoint file to protobuf file) python3 export_inception_v3_alt.py --checkpoint_path=/media/data_1/snva_1/Checkpoints/fhwa/shrp2_nds/active_learning_round_1_checkpoints/inception_v3/coarse_tune_init_frozen_L1_L6/model.ckpt-81594 --protobuf_file=/media/data_1/snva_1/Models/fhwa/shrp2_nds/active_learning_round_1/coarse_tune_init_frozen_L1_L6_81594.pb --num_classes=4
