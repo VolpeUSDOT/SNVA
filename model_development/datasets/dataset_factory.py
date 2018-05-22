@@ -24,24 +24,24 @@ from datasets import dataset
 
 
 def get_dataset(dataset_name, split_name, dataset_dir, file_pattern=None, reader=None):
-    """Given a dataset name and a split_name returns a Dataset.
-  
-    Args:
-      name: String, the name of the dataset.
-      split_name: A training/test split name.
-      dataset_dir: The directory where the dataset files are stored.
-      file_pattern: The file pattern to use for matching the dataset source files.
-      reader: The subclass of tf.ReaderBase. If left as `None`, then the default
-        reader defined by each dataset is used.
-  
-    Returns:
-      A `Dataset` class.
-  
-    Raises:
-      ValueError: If the dataset is not found in dataset_dir.
-    """
-    if dataset_name not in os.listdir(dataset_dir):
-        raise ValueError('The dataset named {0} was not found in the directory {1}',
-                         dataset_name, dataset_dir)
+  """Given a dataset name and a split_name returns a Dataset.
 
-    return dataset.get_split(dataset_name, split_name, dataset_dir, file_pattern, reader)
+  Args:
+    name: String, the name of the dataset.
+    split_name: A training/test split name.
+    dataset_dir: The directory where the dataset files are stored.
+    file_pattern: The file pattern to use for matching the dataset source files.
+    reader: The subclass of tf.ReaderBase. If left as `None`, then the default
+      reader defined by each dataset is used.
+
+  Returns:
+    A `Dataset` class.
+
+  Raises:
+    ValueError: If the dataset is not found in dataset_dir.
+  """
+  if dataset_name not in os.listdir(dataset_dir):
+    raise ValueError('The dataset named {0} was not found in the directory {1}',
+                     dataset_name, dataset_dir)
+
+  return dataset.get_split(dataset_name, split_name, dataset_dir, file_pattern, reader)

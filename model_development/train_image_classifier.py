@@ -27,7 +27,7 @@ from tensorflow.python.training import saver as tf_saver
 
 from datasets import dataset_factory
 from deployment import model_deploy
-from model_development.nets import nets_factory
+from nets import nets_factory
 from preprocessing import preprocessing_factory
 
 slim = tf.contrib.slim

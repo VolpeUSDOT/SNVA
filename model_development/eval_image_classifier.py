@@ -37,9 +37,8 @@ from tensorflow.contrib import metrics
 from tensorflow.contrib import slim
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
-
 from datasets import dataset_factory
-from model_development.nets import nets_factory
+from nets import nets_factory
 from preprocessing import preprocessing_factory
 
 tf.app.flags.DEFINE_integer(

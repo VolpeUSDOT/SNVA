@@ -93,7 +93,7 @@ def _get_filepaths(data_subset_dir_path, split_name):
         image_file_path = path.join(data_subset_class_dir_path, image_name)
         image_file_paths.append(image_file_path)
 
-  #TODO: Explain why we dont need to shuffle the frames here
+  # TODO: Explain why we dont need to shuffle the frames here
   # if creating an eval subset, leave the frames sorted so that predictions can
   # be sequentially compared to images (that appear ordered in the file system)
   # if split_name != 'eval':
@@ -597,7 +597,7 @@ def create(class_names, create_standard_subsets, create_eval_subset, data_source
     data_set_dir_path, class_names, create_standard_subsets, create_eval_subset)
 
   video_frame_dir_names = sorted(set(os.listdir(data_source_dir_path)) -
-                            {'training', 'dev', 'test', 'eval', 'tfrecords'})
+                                 {'training', 'dev', 'test', 'eval', 'tfrecords'})
 
   # for each folder of frames in the data dir
   for video_frame_dir_name in video_frame_dir_names:

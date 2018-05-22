@@ -4,7 +4,7 @@ import sys
 import tensorflow as tf
 import time
 
-from model_development.nets import inception
+from nets import inception
 from preprocessing import inception_preprocessing
 
 tf.app.flags.DEFINE_string(

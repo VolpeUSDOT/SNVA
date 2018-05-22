@@ -21,7 +21,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from model_development.nets import inception
+from nets import inception
 
 slim = tf.contrib.slim
 

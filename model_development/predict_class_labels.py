@@ -7,7 +7,7 @@ import uuid
 import numpy as np
 import tensorflow as tf
 
-from model_development.nets import inception
+from nets import inception
 from preprocessing import inception_preprocessing
 
 path = os.path

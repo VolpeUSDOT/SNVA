@@ -3,10 +3,10 @@ import sys
 
 import tensorflow as tf
 
-from model_development.nets import inception_v4
+from nets import inception_v4
 from preprocessing import inception_preprocessing
-from model_development.nets import inception_resnet_v2
-from model_development.nets import inception_v3
+from nets import inception_resnet_v2
+from nets import inception_v3
 
 modelType = sys.argv[1]
 datasetName = sys.argv[2]
