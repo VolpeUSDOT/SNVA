@@ -9,7 +9,7 @@ import platform
 # import psutil
 import signal
 from snva_utils.io import IO
-import subprocess
+from subprocess import Popen, PIPE
 import sys
 import tensorflow as tf
 from threading import Thread
@@ -32,7 +32,7 @@ parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-compon
 parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
 parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
 parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
-parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.85,
+parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                     help='% of GPU memory available to this process.')
 parser.add_argument('--iotensornamespath', '-itp', default=None, help='Path to the io tensor names text file.')
 parser.add_argument('--classnamespath', '-cnp', default=None, help='Path to the class ids/names text file.')
@@ -145,7 +145,7 @@ def infer_class_names(
   image_string_len = output_width * output_height * args.numchannels
 
   # TODO: set buffsize equal to the smallest multiple of a power of two >= batch_size * image_size_in_bytes
-  image_pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=batch_size * 2 * 512 ** 2)
+  image_pipe = Popen(command, stdout=PIPE, bufsize=batch_size * 2 * 512 ** 2)
 
   timestamp_array = np.ndarray(
     (args.timestampheight * num_frames, args.timestampmaxwidth, args.numchannels), dtype='uint8')
@@ -168,6 +168,7 @@ def infer_class_names(
         if not image_string:
           logging.info('Child process {} is closing image pipe for {}'.format(process_id, video_file_name))
           image_pipe.stdout.close()
+          image_pipe.terminate()
           return
 
         image_array = np.fromstring(image_string, dtype=np.uint8)
@@ -182,6 +183,7 @@ def infer_class_names(
         logging.error('Child process {} is closing image pipe for {}'.format(
           process_id, video_file_name))
         image_pipe.stdout.close()
+        image_pipe.terminate()
         logging.error('Child process {} is raising exception to caller.'.format(process_id))
         raise e
 
@@ -537,6 +539,7 @@ def main():
     # semaphore, pop the next video name, create the next child process, and pass the
     # semaphore to it
     video_file_path = path.join(video_dir_path, video_file_name)
+
     if device_id_list_len > 1:
       logging.debug('Creating new child process.')
 

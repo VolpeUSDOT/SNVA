@@ -8,6 +8,7 @@ import tensorflow as tf
 import uuid
 
 path = os.path
+PIPE = subprocess.PIPE
 
 
 class IO:
@@ -90,13 +91,14 @@ class IO:
 
   @staticmethod
   def read_video_metadata(video_file_path, ffprobe_path):
-    command = [ffprobe_path, '-show_streams', '-print_format', 'json', '-loglevel', 'warning',
-               video_file_path]
+    command = [ffprobe_path, '-show_streams', '-print_format',
+               'json', '-loglevel', 'warning', video_file_path]
+
     process_id = os.getpid()
+
     IO.print_subprocess_command(command, process_id)
 
-    completed_subprocess = subprocess.run(
-      command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    completed_subprocess = subprocess.run(command, stdout=PIPE, stderr=PIPE, timeout=600)
 
     if len(completed_subprocess.stderr) > 0:
       raise Exception(str(completed_subprocess.stderr))
