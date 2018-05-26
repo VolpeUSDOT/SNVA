@@ -59,42 +59,37 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow.python.platform import gfile
-from datasets import dataset_factory
 from nets import nets_factory
-
+from tensorflow.python.tools.freeze_graph import freeze_graph_with_def_protos
+from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
 
 slim = tf.contrib.slim
 
 tf.app.flags.DEFINE_string(
-    'model_name', 'inception_v3', 'The name of the architecture to save.')
-
-tf.app.flags.DEFINE_boolean(
-    'is_training', False,
-    'Whether to save out a training-focused version of the model.')
-
-tf.app.flags.DEFINE_integer(
-    'image_size', None,
-    'The image size to use, otherwise use the model default_image_size.')
-
-tf.app.flags.DEFINE_integer(
-    'batch_size', None,
-    'Batch size for the exported model. Defaulted to "None" so batch size can '
-    'be specified at model runtime.')
-
-tf.app.flags.DEFINE_string('dataset_name', 'imagenet',
-                           'The name of the dataset to use with the model.')
-
-tf.app.flags.DEFINE_integer(
-    'labels_offset', 0,
-    'An offset for the labels in the dataset. This flag is primarily used to '
-    'evaluate the VGG and ResNet architectures which do not use a background '
-    'class for the ImageNet dataset.')
+  'checkpoint_path', None,
+  'A directory containing checkpoints or an absolute path to a checkpoint file.')
 
 tf.app.flags.DEFINE_string(
-    'output_file', '', 'Where to save the resulting file to.')
+  'model_name', None, 'The name of the architecture to save.')
+
+tf.app.flags.DEFINE_integer(
+  'image_size', None,
+  'The image size to use, otherwise use the model default_image_size.')
+
+tf.app.flags.DEFINE_integer(
+  'num_classes', 2,
+  'The number of classes that the model was trained to predict.')
 
 tf.app.flags.DEFINE_string(
-    'dataset_dir', '', 'Directory to save intermediate dataset files to')
+  'output_file', '', 'Where to save the resulting file to.')
+
+tf.app.flags.DEFINE_string(
+  'input_node_name', 'images',
+  'Name of the tensor through which images are input to the network')
+
+tf.app.flags.DEFINE_string(
+  'output_node_name', None,
+  'Name of the tensor through which images are input to the network')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -102,22 +97,40 @@ FLAGS = tf.app.flags.FLAGS
 def main(_):
   if not FLAGS.output_file:
     raise ValueError('You must supply the path to save to with --output_file')
+
   tf.logging.set_verbosity(tf.logging.INFO)
+
   with tf.Graph().as_default() as graph:
-    dataset = dataset_factory.get_dataset(FLAGS.dataset_name, 'train',
-                                          FLAGS.dataset_dir)
     network_fn = nets_factory.get_network_fn(
-        FLAGS.model_name,
-        num_classes=(dataset.num_classes - FLAGS.labels_offset),
-        is_training=FLAGS.is_training)
+      FLAGS.model_name, num_classes=FLAGS.num_classes, is_training=False)
+
     image_size = FLAGS.image_size or network_fn.default_image_size
-    placeholder = tf.placeholder(name='input', dtype=tf.float32,
-                                 shape=[FLAGS.batch_size, image_size,
-                                        image_size, 3])
-    network_fn(placeholder)
+
+    images = tf.placeholder(tf.float32, name=FLAGS.input_node_name,
+                            shape=[None, image_size, image_size, 3])
+
+    network_fn(images)
+
     graph_def = graph.as_graph_def()
-    with gfile.GFile(FLAGS.output_file, 'wb') as f:
-      f.write(graph_def.SerializeToString())
+
+    saver_def = tf.train.Saver().as_saver_def()
+
+    if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
+      checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
+    else:
+      checkpoint_path = FLAGS.checkpoint_path
+
+    frozen_graph_def = freeze_graph_with_def_protos(
+      graph_def, saver_def, checkpoint_path, FLAGS.output_node_name,
+      restore_op_name=None, filename_tensor_name=None,
+      output_graph=None, clear_devices=True, initializer_nodes=None)
+
+    optimized_graph_def = optimize_for_inference(
+      frozen_graph_def, [FLAGS.input_node_name],
+      [FLAGS.output_node_name], tf.float32.as_datatype_enum)
+
+    with gfile.GFile(FLAGS.output_file, 'wb') as output_file:
+      output_file.write(optimized_graph_def.SerializeToString())
 
 
 if __name__ == '__main__':
