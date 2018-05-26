@@ -140,7 +140,7 @@ def main(_):
     if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
       checkpoint_path = FLAGS.checkpoint_path
     else:
-      raise ValueError('checkpoint_path must be a directory if --periodic or --exhaustive are specified')
+      raise ValueError('checkpoint_path must be a directory if --periodic or --exhaustive is specified')
     if FLAGS.mode == 'all':
       checkpoint_text_file_path = path.join(FLAGS.checkpoint_path, 'checkpoint')
       if not tf.gfile.Exists(checkpoint_text_file_path):
