@@ -76,7 +76,7 @@ tf.app.flags.DEFINE_integer(
     'task', 0, 'Task id of the replica running the training.')
 
 tf.app.flags.DEFINE_float(
-  'dropout_rate', None,
+  'dropout_keep_prob', None,
   'The ratio of activations that are randomly ignored each training step.')
 
 ######################
@@ -481,7 +481,7 @@ def main(_):
             num_classes=(dataset.num_classes - FLAGS.labels_offset),
             weight_decay=FLAGS.weight_decay,
             is_training=True,
-            dropout_rate=FLAGS.dropout_rate)
+            dropout_keep_prob=FLAGS.dropout_keep_prob)
 
         #####################################
         # Select the preprocessing function #
