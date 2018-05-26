@@ -5,7 +5,6 @@ import numpy as np
 import os
 import subprocess
 import tensorflow as tf
-import uuid
 
 path = os.path
 PIPE = subprocess.PIPE
@@ -27,17 +26,21 @@ class IO:
     return {int(key): value for key, value in meta_map.items()}
 
   @staticmethod
-  def load_model(model_path, device_type, gpu_memory_fraction):
+  def load_model(
+      model_path, io_node_names_path, device_type, gpu_memory_fraction):
     logging.debug('Process {} is loading model at path: {}'.format(
       os.getpid(), model_path))
 
     graph_def = tf.GraphDef()
 
-    with tf.gfile.FastGFile(model_path, 'rb') as file:
+    with open(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
 
-    session_name = str(uuid.uuid4())
-    session_graph = tf.import_graph_def(graph_def, name=session_name)
+    node_names_map = IO.read_node_names(io_node_names_path)
+
+    input_node, output_node = tf.import_graph_def(
+      graph_def, return_elements=[node_names_map['input_node_name'],
+                                  node_names_map['output_node_name']])
 
     if device_type == 'gpu':
       gpu_options = tf.GPUOptions(allow_growth=True,
@@ -47,13 +50,14 @@ class IO:
                                       gpu_options=gpu_options)
     else:
       session_config = None
-    return {'session_name': session_name,
-            'session_graph': session_graph,
-            'session_config': session_config}
+
+    return {'session_config': session_config,
+            'input_node': input_node,
+            'output_node': output_node}
 
   @staticmethod
-  def read_tensor_names(io_tensor_names_path):
-    meta_map = IO._read_meta_file(io_tensor_names_path)
+  def read_node_names(io_node_names_path):
+    meta_map = IO._read_meta_file(io_node_names_path)
     return {key: value + ':0' for key, value in meta_map.items()}
 
   @staticmethod
@@ -179,7 +183,7 @@ class IO:
 
 # TODO: confirm that the csv can be opened after writing
   @staticmethod
-  def write_report(video_file_name, report_path, stimestamps, class_probs, class_names,
+  def write_report(video_file_name, report_path, exclude_timestamps, stimestamps, class_probs, class_names,
                    smooth_probs, smoothing_factor, binarize_probs, process_id):
     class_names = ['{}_probability'.format(class_name) for class_name in class_names]
 
@@ -193,16 +197,23 @@ class IO:
       binarized_probs = IO._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
-    header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
+    if exclude_timestamps:
+      header = ['file_name', 'frame_number'] + class_names
 
-    rows = [[video_file_name, '{:07d}'.format(i+1), stimestamps[i]]
-            + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
-            for i in range(len(class_probs))]
+      rows = [[video_file_name, '{:d}'.format(i+1)]
+              + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
+              for i in range(len(class_probs))]
+    else:
+      header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
+
+      rows = [[video_file_name, '{:d}'.format(i + 1), stimestamps[i]]
+              + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
+              for i in range(len(class_probs))]
 
     if not path.exists(report_path):
       os.makedirs(report_path)
 
-    report_file_path = path.join(report_path, video_file_name + '_results.csv')
+    report_file_path = path.join(report_path, video_file_name + '.csv')
 
     with open(report_file_path, 'w', newline='') as report_file:
       csv_writer = csv.writer(report_file)
