@@ -7,6 +7,7 @@ import subprocess
 import tensorflow as tf
 
 path = os.path
+
 PIPE = subprocess.PIPE
 
 
@@ -15,7 +16,7 @@ class IO:
   def get_device_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
-    pipe = subprocess.run(command, stdout=subprocess.PIPE, encoding='utf-8')
+    pipe = subprocess.run(command, stdout=PIPE, encoding='utf-8')
     line_list = pipe.stdout.rstrip().split('\n')
     device_labels = [line.split(':')[0] for line in line_list]
     return [device_label.split(' ')[1] for device_label in device_labels]
@@ -219,6 +220,3 @@ class IO:
       csv_writer = csv.writer(report_file)
       csv_writer.writerow(header)
       csv_writer.writerows(rows)
-
-
-

@@ -1,107 +1,35 @@
 import argparse
-from datetime import datetime as dt
+from datetime import datetime
 import logging
-import logging.handlers
+from logging.handlers import QueueHandler
 from multiprocessing import BoundedSemaphore, Process, Queue
 import numpy as np
 import os
 import platform
-# import psutil
 import signal
-from snva_utils.io import IO
 from subprocess import Popen, PIPE
 import sys
 import tensorflow as tf
 from threading import Thread
 import time
-from snva_utils.timestamp import Timestamp
+from utils.io import IO
+from utils.timestamp import Timestamp
 
 path = os.path
-
-parser = argparse.ArgumentParser(description='SHRP2 NDS Video Analytics built on TensorFlow')
-
-parser.add_argument('--batchsize', '-bs', type=int, default=32,
-                    help='The number of images fed into the neural net at a time')
-parser.add_argument('--binarizeprobs', '-b', action='store_true',
-                    help='Round probabilities to zero or one. For distributions'
-                         'with two 0.5 values, both will be rounded up to 1.0')
-parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
-parser.add_argument('--crop', '-c', action='store_true',
-                    help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
-parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-component of bottom-right corner of crop.')
-parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
-parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
-parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
-parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
-                    help='% of GPU memory available to this process.')
-parser.add_argument('--ionodenamespath', '-itp', default=None, help='Path to the io tensor names text file.')
-parser.add_argument('--classnamespath', '-cnp', default=None, help='Path to the class ids/names text file.')
-parser.add_argument('--modelinputsize', '-mis', type=int, required=True,
-                    help='The square input dimensions of the neural net.')
-parser.add_argument('--logpath', '-l', default='./logs', help='Path to the directory where log files are stored.')
-parser.add_argument('--numchannels', '-nc', type=int, default=3, help='The fourth dimension of image batches.')
-parser.add_argument('--modelpath', '-mp', required=True, help='Path to the tensorflow protobuf model file.')
-parser.add_argument('--reportpath', '-rp', default='./results', help='Path to the directory where results are stored.')
-parser.add_argument('--smoothprobs', '-sm', action='store_true',
-                    help='Apply class-wise smoothing across video frame class probability distributions.')
-parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
-                    help='The class-wise probability smoothing factor.')
-parser.add_argument('--excludetimestamps', '-et', action='store_true',
-                    help='Read timestamps off of video frames and include them as strings in the output CSV.')
-parser.add_argument('--timestampheight', '-th', type=int, default=16,
-                    help='The length of the y-dimension of the timestamp overlay.')
-parser.add_argument('--timestampmaxwidth', '-tw', type=int, default=160,
-                    help='The length of the x-dimension of the timestamp overlay.')
-parser.add_argument('--timestampx', '-tx', type=int, default=25,
-                    help='x-component of top-left corner of timestamp (before cropping).')
-parser.add_argument('--timestampy', '-ty', type=int, default=340,
-                    help='y-component of top-left corner of timestamp (before cropping).')
-parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
-parser.add_argument('--verbose', '-vb', action='store_true', help='Print additional information in logs')
-parser.add_argument('--debug', '-d', action='store_true', help='Print debug information in logs')
-parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile')
-
-
-args = parser.parse_args()
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-FFMPEG_PATH = os.environ['FFMPEG_HOME']
-
-if not FFMPEG_PATH:
-  if platform.system() == 'Windows':
-    FFMPEG_PATH = 'ffmpeg.exe'
-  else:
-    FFMPEG_PATH = '/usr/local/bin/ffmpeg' if path.exists('/usr/local/bin/ffmpeg') else '/usr/bin/ffmpeg'
-
-FFPROBE_PATH = os.environ['FFPROBE_HOME']
-
-if not FFPROBE_PATH:
-  if platform.system() == 'Windows':
-    FFPROBE_PATH = 'ffprobe.exe'
-  else:
-    FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') else '/usr/bin/ffprobe'
-
-# Define our log level based on arguments
-loglevel = logging.WARNING
-if args.verbose:
-  loglevel = logging.INFO
-if args.debug:
-  loglevel = logging.DEBUG
 
 
 # Logger thread: listens for updates to our log queue and writes them as they come in
 # Terminates after we add None to the queue
 def logger_thread(q):
-    while True:
-        record = q.get()
-        if record is None:
-            logging.debug('Terminating log thread')
-            break
-        if (args.noisy):
-          print(record.getMessage())
-        logger = logging.getLogger(record.name)
-        logger.handle(record)
+  while True:
+    record = q.get()
+    if record is None:
+      logging.debug('Terminating log thread')
+      break
+    if (args.noisy):
+      print(record.getMessage())
+    logger = logging.getLogger(record.name)
+    logger.handle(record)
 
 
 def preprocess_for_inception(image):
@@ -160,10 +88,10 @@ def infer_class_names(
 
 
 def multi_process_video(
-    video_file_path, class_names, model_map, device_id_queue,
-    child_process_semaphore, logqueue, device_type, device_count):
+    video_file_path, class_names, model_map, device_id_queue, child_process_semaphore,
+    logqueue, device_type, device_count, ffprobe_path, ffmpeg_path):
   # Configure logging for this process
-  qh = logging.handlers.QueueHandler(logqueue)
+  qh = QueueHandler(logqueue)
   root = logging.getLogger()
 
   # Clear any handlers to avoid duplicate entries
@@ -171,9 +99,6 @@ def multi_process_video(
     root.handlers.clear()
   root.setLevel(loglevel)
   root.addHandler(qh)
-
-  # Should this be set to match our command line arg, or should we always output this level of detail?
-  tf.logging.set_verbosity(tf.logging.INFO)
 
   def interrupt_handler(signal_number, _):
     logging.warning('Received interrupt signal (%d).', signal_number)
@@ -196,7 +121,7 @@ def multi_process_video(
   logging.info('Child process {} is preparing to process {}'.format(process_id, video_file_name))
 
   try:
-    video_meta_map = IO.read_video_metadata(video_file_path, FFPROBE_PATH)
+    video_meta_map = IO.read_video_metadata(video_file_path, ffprobe_path)
 
     output_width = video_meta_map['width']
     output_height = video_meta_map['height']
@@ -224,7 +149,7 @@ def multi_process_video(
 
   start = time.time()
   logging.debug('Constructing ffmpeg command')
-  command = [FFMPEG_PATH, '-i', video_file_path]
+  command = [ffmpeg_path, '-i', video_file_path]
 
   if args.crop and all([output_width >= args.cropwidth > 0, output_height >= args.cropheight > 0,
                         output_width > args.cropx >= 0, output_height > args.cropy >= 0]):
@@ -448,13 +373,35 @@ def main():
 
     os.makedirs(args.logpath)
 
-  logging.basicConfig(filename=path.join(args.logpath, dt.now().strftime('snva_%m_%d_%Y.log')), level=loglevel,
+  logging.basicConfig(filename=path.join(args.logpath, datetime.now().strftime('snva_%m_%d_%Y.log')), level=loglevel,
                       format='%(processName)-10s:%(asctime)s:%(levelname)s::%(message)s')
   # Start our listener thread
   lp = Thread(target=logger_thread, args=(logqueue,))
   lp.start()
   logging.info('Entering main process')
+
+  try:
+    FFMPEG_PATH = os.environ['FFMPEG_HOME']
+  except KeyError as ke:
+    logging.error('Environment variable FFMPEG_HOME not set. Attempting to use default ffmpeg binary location.')
+    logging.error(ke)
+    if platform.system() == 'Windows':
+      FFMPEG_PATH = 'ffmpeg.exe'
+    else:
+      FFMPEG_PATH = '/usr/local/bin/ffmpeg' if path.exists('/usr/local/bin/ffmpeg') else '/usr/bin/ffmpeg'
+
   logging.debug('FFMPEG Path: {}'.format(FFMPEG_PATH))
+
+  try:
+    FFPROBE_PATH = os.environ['FFPROBE_HOME']
+  except KeyError as ke:
+    logging.error('Environment variable FFPROBE_HOME not set. Attempting to use default ffprobe binary location.')
+    logging.error(ke)
+    if platform.system() == 'Windows':
+      FFPROBE_PATH = 'ffprobe.exe'
+    else:
+      FFPROBE_PATH = '/usr/local/bin/ffprobe' if path.exists('/usr/local/bin/ffprobe') else '/usr/bin/ffprobe'
+
   logging.debug('FFPROBE Path: {}'.format(FFPROBE_PATH))
 
   if path.isdir(args.videopath):
@@ -466,6 +413,17 @@ def main():
   else:
     raise ValueError('The video file/folder specified at the path {} could not be found.'.format(
       args.videopath))
+
+  if args.excludepreviouslyprocessed:
+    report_file_names = os.listdir(args.reportpath)
+
+    if len(report_file_names) > 0:
+      video_ext = path.splitext(video_file_names[0])[1]
+      report_ext = path.splitext(report_file_names[0])[1]
+      previously_processed_video_file_names = [name.replace(report_ext, video_ext)
+                                               for name in os.listdir(args.reportpath)]
+      video_file_names = [name for name in video_file_names
+                          if name not in previously_processed_video_file_names]
 
   # TODO modelpath should not be required to be passed at the command line
   if not path.isfile(args.modelpath):
@@ -505,7 +463,7 @@ def main():
 
   label_map = IO.read_class_names(class_names_path)
   class_name_list = list(label_map.values())
-  # node_name_map = IO.read_node_names(io_node_names_path)
+
   model_map = IO.load_model(args.modelpath, io_node_names_path, device_type, args.gpumemoryfraction)
 
   # The chief worker will allow at most device_count + 1 child processes to be created
@@ -533,7 +491,7 @@ def main():
                               name='ChildProcess:{}'.format(video_file_name),
                               args=(video_file_path, class_name_list,
                                     model_map, device_id_queue, child_process_semaphore,
-                                    logqueue, device_type, device_id_list_len))
+                                    logqueue, device_type, device_id_list_len, FFPROBE_PATH, FFMPEG_PATH))
 
       logging.debug('Starting starting child process.')
 
@@ -543,7 +501,7 @@ def main():
     else:
       logging.info('Invoking multi_process_video() in main process because device_type == {}'.format(device_type))
       multi_process_video(video_file_path, class_name_list, model_map, device_id_queue,
-                          child_process_semaphore, logqueue, device_type, device_id_list_len)
+                          child_process_semaphore, logqueue, device_type, device_id_list_len, FFPROBE_PATH, FFMPEG_PATH)
 
   while len(video_file_names) > 0:
     child_process_semaphore.acquire()  # block if three child processes are active
@@ -607,4 +565,64 @@ def main():
 
 
 if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='SHRP2 NDS Video Analytics built on TensorFlow')
+
+  parser.add_argument('--batchsize', '-bs', type=int, default=32,
+                      help='The number of images fed into the neural net at a time')
+  parser.add_argument('--binarizeprobs', '-b', action='store_true',
+                      help='Round probabilities to zero or one. For distributions'
+                           'with two 0.5 values, both will be rounded up to 1.0')
+  parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
+  parser.add_argument('--crop', '-c', action='store_true',
+                      help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
+  parser.add_argument('--cropheight', '-ch', type=int, default=356, help='y-component of bottom-right corner of crop.')
+  parser.add_argument('--cropwidth', '-cw', type=int, default=474, help='x-component of bottom-right corner of crop.')
+  parser.add_argument('--cropx', '-cx', type=int, default=2, help='x-component of top-left corner of crop.')
+  parser.add_argument('--cropy', '-cy', type=int, default=0, help='y-component of top-left corner of crop.')
+  parser.add_argument('--excludepreviouslyprocessed', '-epp', action='store_true',
+                      help='Skip processing of videos for which reports already exist in reportpath.')
+  parser.add_argument('--excludetimestamps', '-et', action='store_true',
+                      help='Read timestamps off of video frames and include them as strings in the output CSV.')
+  parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
+                      help='% of GPU memory available to this process.')
+  parser.add_argument('--ionodenamespath', '-itp', default=None, help='Path to the io tensor names text file.')
+  parser.add_argument('--classnamespath', '-cnp', default=None, help='Path to the class ids/names text file.')
+  parser.add_argument('--modelinputsize', '-mis', type=int, required=True,
+                      help='The square input dimensions of the neural net.')
+  parser.add_argument('--logpath', '-l', default='./logs', help='Path to the directory where log files are stored.')
+  parser.add_argument('--numchannels', '-nc', type=int, default=3, help='The fourth dimension of image batches.')
+  parser.add_argument('--modelpath', '-mp', required=True, help='Path to the tensorflow protobuf model file.')
+  parser.add_argument('--reportpath', '-rp', default='./results',
+                      help='Path to the directory where results are stored.')
+  parser.add_argument('--smoothprobs', '-sm', action='store_true',
+                      help='Apply class-wise smoothing across video frame class probability distributions.')
+  parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
+                      help='The class-wise probability smoothing factor.')
+  parser.add_argument('--timestampheight', '-th', type=int, default=16,
+                      help='The length of the y-dimension of the timestamp overlay.')
+  parser.add_argument('--timestampmaxwidth', '-tw', type=int, default=160,
+                      help='The length of the x-dimension of the timestamp overlay.')
+  parser.add_argument('--timestampx', '-tx', type=int, default=25,
+                      help='x-component of top-left corner of timestamp (before cropping).')
+  parser.add_argument('--timestampy', '-ty', type=int, default=340,
+                      help='y-component of top-left corner of timestamp (before cropping).')
+  parser.add_argument('--videopath', '-v', required=True, help='Path to video file(s).')
+  parser.add_argument('--verbose', '-vb', action='store_true', help='Print additional information in logs')
+  parser.add_argument('--debug', '-d', action='store_true', help='Print debug information in logs')
+  parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile')
+
+  args = parser.parse_args()
+
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+  # Should this be set to match our command line arg, or should we always output this level of detail?
+  tf.logging.set_verbosity(tf.logging.INFO)
+
+  # Define our log level based on arguments
+  loglevel = logging.WARNING
+  if args.verbose:
+    loglevel = logging.INFO
+  if args.debug:
+    loglevel = logging.DEBUG
+
   main()
