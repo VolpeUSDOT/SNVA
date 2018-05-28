@@ -5,6 +5,7 @@ import tensorflow as tf
 import time
 
 path = os.path
+
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('data_set_dir', None,
@@ -19,6 +20,9 @@ tf.app.flags.DEFINE_string('report_dir_path', None,
 tf.app.flags.DEFINE_string('label_predictions_dir', None,
                            'A path to a directory where a report of image analysis will be stored.')
 
+tf.app.flags.DEFINE_string('skip_priors', False,
+                           'Unsafely skip symlink creation for videos aready represented in label_predictions_dir')
+
 
 def print_processing_duration(start_time, msg):
   end_time = time.time() - start_time
@@ -30,6 +34,10 @@ def print_processing_duration(start_time, msg):
 def add_example_to_label_predictions(
     raw_data_path, label_predictions_dir_path, video_file_name, predicted_class_dir_name):
   label_predictions_subdir_path = path.join(label_predictions_dir_path, video_file_name)
+
+  if FLAGS.skip_priors and path.exists(label_predictions_subdir_path):
+    return
+
   # for convenience, create paths at the per-video level and the per-round level
   predicted_class_dir_path = path.join(label_predictions_subdir_path, predicted_class_dir_name)
 
@@ -40,7 +48,7 @@ def add_example_to_label_predictions(
   label_predictions_example_file_path = path.join(predicted_class_dir_path, example_file_name)
 
   if path.exists(label_predictions_example_file_path):
-    os.remove(label_predictions_example_file_path)
+    return
 
   os.symlink(raw_data_path, label_predictions_example_file_path)
 
