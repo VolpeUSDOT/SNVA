@@ -82,7 +82,7 @@ V2_DEF = dict(
 
 
 @slim.add_arg_scope
-def mobilenet_140(input_tensor,
+def mobilenet_v2_140(input_tensor,
               num_classes=1001,
               depth_multiplier=1.4,
               scope='MobilenetV2',
@@ -91,7 +91,7 @@ def mobilenet_140(input_tensor,
               min_depth=None,
               divisible_by=None,
               **kwargs):
-  return mobilenet(input_tensor,
+  return mobilenet_v2(input_tensor,
                    num_classes=num_classes,
                    depth_multiplier=depth_multiplier,
                    scope=scope,
@@ -101,9 +101,57 @@ def mobilenet_140(input_tensor,
                    divisible_by=divisible_by,
                    **kwargs)
 
+mobilenet_v2_140.default_image_size = 224
+
 
 @slim.add_arg_scope
-def mobilenet(input_tensor,
+def mobilenet_v2_075(input_tensor,
+              num_classes=1001,
+              depth_multiplier=0.75,
+              scope='MobilenetV2',
+              conv_defs=None,
+              finegrain_classification_mode=False,
+              min_depth=None,
+              divisible_by=None,
+              **kwargs):
+  return mobilenet_v2(input_tensor,
+                   num_classes=num_classes,
+                   depth_multiplier=depth_multiplier,
+                   scope=scope,
+                   conv_defs=conv_defs,
+                   finegrain_classification_mode=finegrain_classification_mode,
+                   min_depth=min_depth,
+                   divisible_by=divisible_by,
+                   **kwargs)
+
+mobilenet_v2_075.default_image_size = 224
+
+
+@slim.add_arg_scope
+def mobilenet_v2_050(input_tensor,
+              num_classes=1001,
+              depth_multiplier=0.5,
+              scope='MobilenetV2',
+              conv_defs=None,
+              finegrain_classification_mode=False,
+              min_depth=None,
+              divisible_by=None,
+              **kwargs):
+  return mobilenet_v2(input_tensor,
+                   num_classes=num_classes,
+                   depth_multiplier=depth_multiplier,
+                   scope=scope,
+                   conv_defs=conv_defs,
+                   finegrain_classification_mode=finegrain_classification_mode,
+                   min_depth=min_depth,
+                   divisible_by=divisible_by,
+                   **kwargs)
+
+mobilenet_v2_050.default_image_size = 224
+
+
+@slim.add_arg_scope
+def mobilenet_v2(input_tensor,
               num_classes=1001,
               depth_multiplier=1.0,
               scope='MobilenetV2',
@@ -174,11 +222,13 @@ def mobilenet(input_tensor,
         multiplier=depth_multiplier,
         **kwargs)
 
+mobilenet_v2.default_image_size = 224
+
 
 @slim.add_arg_scope
 def mobilenet_base(input_tensor, depth_multiplier=1.0, **kwargs):
   """Creates base of the mobilenet (no pooling and no logits) ."""
-  return mobilenet(input_tensor,
+  return mobilenet_v2(input_tensor,
                    depth_multiplier=depth_multiplier,
                    base_only=True, **kwargs)
 

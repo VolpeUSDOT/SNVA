@@ -465,5 +465,3 @@ def training_scope(is_training=True,
                      weights_regularizer=slim.l2_regularizer(weight_decay)), \
       slim.arg_scope([slim.separable_conv2d], weights_regularizer=None) as s:
     return s
-
-mobilenet.default_image_size = 224
