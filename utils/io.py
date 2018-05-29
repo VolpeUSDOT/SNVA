@@ -68,7 +68,7 @@ class IO:
                    if any(fn.lower().endswith(ext) for ext in included_extenstions)])
 
   @staticmethod
-  def print_processing_duration(end_time, msg, loglevel):
+  def print_processing_duration(end_time, msg):
     minutes, seconds = divmod(end_time, 60)
     hours, minutes = divmod(minutes, 60)
     hours = int(round(hours))
@@ -76,9 +76,6 @@ class IO:
     milliseconds = int(round(end_time * 1000))
     logging.info('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
       msg, hours, minutes, seconds, milliseconds))
-    if loglevel == logging.INFO or loglevel == logging.DEBUG:
-      print('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
-        msg, hours, minutes, seconds, milliseconds))
 
   @staticmethod
   def print_subprocess_command(arg_list, process_id=os.getpid()):
@@ -95,7 +92,7 @@ class IO:
     return {line[0]: line[1] for line in meta_lines}
 
   @staticmethod
-  def read_video_metadata(video_file_path, ffprobe_path):
+  def get_video_dimensions(video_file_path, ffprobe_path):
     command = [ffprobe_path, '-show_streams', '-print_format',
                'json', '-loglevel', 'warning', video_file_path]
 
@@ -108,17 +105,17 @@ class IO:
     if len(completed_subprocess.stderr) > 0:
       raise Exception(str(completed_subprocess.stderr))
 
-    logging.info('Process {} received raw processed response: {}'.format(
+    logging.info('Process {} received raw ffprobe response: {}'.format(
       process_id, completed_subprocess.stdout))
 
     json_map = json.loads(completed_subprocess.stdout)
 
-    logging.info('Process {} received ffprobe processed response: {}'.format(
+    logging.info('Process {} received processed ffprobe response: {}'.format(
       process_id, json.dumps(json_map)))
 
-    return {'width': int(json_map['streams'][0]['width']),
-            'height': int(json_map['streams'][0]['height']),
-            'frame_count': int(json_map['streams'][0]['nb_frames'])}
+    return int(json_map['streams'][0]['width']),\
+           int(json_map['streams'][0]['height']),\
+           int(json_map['streams'][0]['nb_frames'])
 
   @staticmethod
   def _div_odd(n):
