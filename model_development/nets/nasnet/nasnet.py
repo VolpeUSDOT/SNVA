@@ -24,8 +24,9 @@ import tensorflow as tf
 
 from nets.nasnet import nasnet_utils
 
-arg_scope = tf.contrib.framework.arg_scope
 slim = tf.contrib.slim
+arg_scope = tf.contrib.framework.arg_scope
+# arg_scope = slim.arg_scope
 
 
 # Notes for training NASNet Cifar Model
@@ -173,6 +174,7 @@ def _medium_imagenet_config(is_training=True):
 # auxiliary head weighting: 0.4
 # label smoothing: 0.1
 # clip global norm of all gradients by 10
+@slim.add_arg_scope
 def mobile_imagenet_config():
   return tf.contrib.training.HParams(
       stem_multiplier=1.0,
@@ -193,6 +195,37 @@ def _update_hparams(hparams, is_training):
   """Update hparams for given is_training option."""
   if not is_training:
     hparams.set_hparam('drop_path_keep_prob', 1.0)
+
+
+class NoOpScope(object):
+  """No-op context manager."""
+
+  def __enter__(self):
+    return None
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    return False
+
+
+def safe_arg_scope(funcs, **kwargs):
+  """Returns `slim.arg_scope` with all None arguments removed.
+
+  Arguments:
+    funcs: Functions to pass to `arg_scope`.
+    **kwargs: Arguments to pass to `arg_scope`.
+
+  Returns:
+    arg_scope or No-op context manager.
+
+  Note: can be useful if None value should be interpreted as "do not overwrite
+    this parameter value".
+  """
+  filtered_args = {name: value for name, value in kwargs.items()
+                   if value is not None}
+  if filtered_args:
+    return arg_scope(funcs, **filtered_args)
+  else:
+    return NoOpScope()
 
 
 def nasnet_cifar_arg_scope(weight_decay=5e-4,
@@ -231,7 +264,8 @@ def nasnet_cifar_arg_scope(weight_decay=5e-4,
 
 def nasnet_mobile_arg_scope(weight_decay=4e-5,
                             batch_norm_decay=0.9997,
-                            batch_norm_epsilon=1e-3):
+                            batch_norm_epsilon=1e-3,
+                            dropout_keep_prob=0.5):
   """Defines the default arg scope for the NASNet-A Mobile ImageNet model.
   Args:
     weight_decay: The weight decay to use for regularizing the model.
@@ -253,14 +287,13 @@ def nasnet_mobile_arg_scope(weight_decay=4e-5,
   weights_initializer = tf.contrib.layers.variance_scaling_initializer(
       mode='FAN_OUT')
   with arg_scope([slim.fully_connected, slim.conv2d, slim.separable_conv2d],
-                 weights_regularizer=weights_regularizer,
-                 weights_initializer=weights_initializer):
-    with arg_scope([slim.fully_connected],
-                   activation_fn=None, scope='FC'):
-      with arg_scope([slim.conv2d, slim.separable_conv2d],
-                     activation_fn=None, biases_initializer=None):
-        with arg_scope([slim.batch_norm], **batch_norm_params) as sc:
-          return sc
+                      weights_regularizer=weights_regularizer,
+                      weights_initializer=weights_initializer), \
+       arg_scope([slim.fully_connected], activation_fn=None, scope='FC'), \
+       arg_scope([slim.conv2d, slim.separable_conv2d],
+                      activation_fn=None, biases_initializer=None), \
+       arg_scope([slim.batch_norm], **batch_norm_params) as sc:
+    return sc
 
 
 def nasnet_large_arg_scope(weight_decay=5e-5,
@@ -407,13 +440,14 @@ def build_nasnet_cifar(images,
 build_nasnet_cifar.default_image_size = 32
 
 
+@slim.add_arg_scope
 def build_nasnet_mobile(images,
                         num_classes,
                         is_training=True,
                         final_endpoint=None,
                         config=None):
   """Build NASNet Mobile model for the ImageNet Dataset."""
-  hparams = (mobile_imagenet_config(is_training=is_training) if config is None
+  hparams = (mobile_imagenet_config() if config is None
              else copy.deepcopy(config))
   _update_hparams(hparams, is_training)
 
@@ -655,6 +689,7 @@ def build_nasnet_large(images,
 build_nasnet_large.default_image_size = 331
 
 
+@slim.add_arg_scope
 def _build_nasnet_base(images,
                        normal_cell,
                        reduction_cell,
@@ -662,7 +697,8 @@ def _build_nasnet_base(images,
                        hparams,
                        is_training,
                        stem_type,
-                       final_endpoint=None):
+                       final_endpoint=None,
+                       scope=None):
   """Constructs a NASNet image model."""
 
   end_points = {}
@@ -681,6 +717,7 @@ def _build_nasnet_base(images,
     stem = lambda: _cifar_stem(images, hparams)
   else:
     raise ValueError('Unknown stem_type: ', stem_type)
+  # with tf.variable_scope(scope, 'NASNet', [images]):
   net, cell_outputs = stem()
   if add_and_check_endpoint('Stem', net): return net, end_points
 
@@ -738,6 +775,7 @@ def _build_nasnet_base(images,
     if add_and_check_endpoint('global_pool', net) or not num_classes:
       return net, end_points
     net = slim.dropout(net, hparams.dense_dropout_keep_prob, scope='dropout')
+    # net = slim.dropout(net, scope='dropout')
     logits = slim.fully_connected(net, num_classes)
 
     if add_and_check_endpoint('Logits', logits):

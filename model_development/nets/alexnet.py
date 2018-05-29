@@ -135,4 +135,5 @@ def alexnet_v2(inputs,
             net = tf.squeeze(net, [1, 2], name='fc8/squeezed')
           end_points[sc.name + '/fc8'] = net
       return net, end_points
+
 alexnet_v2.default_image_size = 224

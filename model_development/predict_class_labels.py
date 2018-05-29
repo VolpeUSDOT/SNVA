@@ -11,17 +11,22 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('data_set_dir', None,
                            'A path to a directory of images or to the parent of multiple directories of images.')
 
-tf.app.flags.DEFINE_string('raw_data_dir', None,
-                           'A path to a directory of images or to the parent of multiple directories of images.')
+tf.app.flags.DEFINE_string(
+  'raw_data_dir', None,
+  'A path to a directory of images or to the parent of multiple directories of images.')
 
-tf.app.flags.DEFINE_string('report_dir_path', None,
-                           'A path to a folder containing CSV files.')
+tf.app.flags.DEFINE_string('report_dir_path', None, 'A path to a folder containing CSV files.')
 
-tf.app.flags.DEFINE_string('label_predictions_dir', None,
-                           'A path to a directory where a report of image analysis will be stored.')
+tf.app.flags.DEFINE_string(
+  'label_predictions_dir', None,
+  'A path to a directory where a report of image analysis will be stored.')
 
-tf.app.flags.DEFINE_string('skip_priors', False,
-                           'Unsafely skip symlink creation for videos aready represented in label_predictions_dir')
+tf.app.flags.DEFINE_integer(
+  'num_classes', 2, 'The number of classes that the model was trained to predict.')
+
+tf.app.flags.DEFINE_boolean(
+  'skip_priors', False,
+  'Unsafely skip symlink creation for videos aready represented in label_predictions_dir')
 
 
 def print_processing_duration(start_time, msg):
@@ -125,22 +130,26 @@ def main():
     with open(report_file_path, newline='') as report_file:
       report_reader = csv.reader(report_file)
       header = next(report_reader)
-      class_name_list = [name.rstrip('_probability') for name in header[2:]]
+      class_name_list = [name.rstrip('_probability') for name in header[2:2 + FLAGS.num_classes]]
       class_name_map = {i: class_name_list[i] for i in range(len(class_name_list))}
-      class_prob_map = {row[1]: [float(prob) for prob in row[2:]] for row in report_reader}
+      class_prob_map = {row[1]: [float(prob) for prob in row[2:2 + FLAGS.num_classes]]
+                        for row in report_reader}
     print_processing_duration(start, 'Elapsed time')
 
     report_name, _ = path.splitext(report_file_name)
 
     print('Identifying previously incorporated examples in {}.'.format(report_name))
     start = time.time()
-    example_file_name_set = set([report_name + '_{:07d}'.format(i) + '.jpg' for i in range(1, len(class_prob_map) + 1)])
+    image_ext = '.jpg'
+    example_file_name_set = set([report_name + '_{:07d}'.format(i) + image_ext
+                                 for i in range(1, len(class_prob_map) + 1)])
     unincorporated_example_file_name_set = example_file_name_set - incorporated_example_file_name_set
     unincorporated_class_prob_map = {}
     for unincorporated_example_file_name in unincorporated_example_file_name_set:
       frame_dir_path = path.join(FLAGS.raw_data_dir, report_name)
-      unincorporated_example_file_path = path.join(frame_dir_path, unincorporated_example_file_name)
-      frame_number = unincorporated_example_file_name[len(report_name) + 1:-4]
+      unincorporated_example_file_path = path.join(frame_dir_path,
+                                                   unincorporated_example_file_name)
+      frame_number = unincorporated_example_file_name[len(report_name) + 1:-len(image_ext)]
       unincorporated_class_prob_map[unincorporated_example_file_path] = class_prob_map[frame_number]
     print_processing_duration(start, 'Elapsed time')
 

@@ -17,15 +17,15 @@ r"""Downloads and converts a particular dataset.
 Usage:
 ```shell
 
-$ python download_and_convert_data.py \
+$ python convert_data_set.py \
     --dataset_name=mnist \
     --dataset_dir=/tmp/mnist
 
-$ python download_and_convert_data.py \
+$ python convert_data_set.py \
     --dataset_name=cifar10 \
     --dataset_dir=/tmp/cifar10
 
-$ python download_and_convert_data.py \
+$ python convert_data_set.py \
     --dataset_name=flowers \
     --dataset_dir=/tmp/flowers
 ```

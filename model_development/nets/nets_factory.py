@@ -31,7 +31,7 @@ from nets import overfeat
 from nets import resnet_v1
 from nets import resnet_v2
 from nets import vgg
-from nets.mobilenet import mobilenet_v2
+from nets.mobilenet import mobilenet, mobilenet_v2
 from nets.nasnet import nasnet
 
 slim = tf.contrib.slim
@@ -53,11 +53,12 @@ networks_map = {'alexnet_v2': alexnet.alexnet_v2,
                 'lenet': lenet.lenet,
                 'overfeat': overfeat.overfeat,
                 'mobilenet_v1': mobilenet_v1.mobilenet_v1,
-                'mobilenet_v1_175': mobilenet_v1.mobilenet_v1_175,
                 'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_075,
                 'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_050,
                 'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_025,
                 'mobilenet_v2': mobilenet_v2.mobilenet,
+                'mobilenet_v2_140': mobilenet_v2.mobilenet_140,
+                'mobilenet_v2_075': mobilenet_v2.mobilenet,
                 'nasnet_cifar': nasnet.build_nasnet_cifar,
                 'nasnet_15_at_1920': nasnet.build_nasnet_15_at_1920,
                 'nasnet_7_at_1920': nasnet.build_nasnet_7_at_1920,
@@ -91,14 +92,15 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   'inception_v3_025': inception.inception_v3_arg_scope,
                   'inception_v4': inception.inception_v4_arg_scope,
                   'inception_resnet_v2':
-                      inception.inception_resnet_v2_arg_scope,
+                    inception.inception_resnet_v2_arg_scope,
                   'lenet': lenet.lenet_arg_scope,
                   'mobilenet_v1': mobilenet_v1.mobilenet_v1_arg_scope,
-                  'mobilenet_v1_175': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_075': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_050': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v1_025': mobilenet_v1.mobilenet_v1_arg_scope,
                   'mobilenet_v2': mobilenet_v2.training_scope,
+                  'mobilenet_v2_140': mobilenet_v2.training_scope,
+                  'mobilenet_v2_075': mobilenet_v2.training_scope,
                   'nasnet_cifar': nasnet.nasnet_cifar_arg_scope,
                   'nasnet_15_at_1920': nasnet.nasnet_large_arg_scope,
                   'nasnet_7_at_1920': nasnet.nasnet_large_arg_scope,
@@ -120,11 +122,61 @@ arg_scopes_map = {'alexnet_v2': alexnet.alexnet_v2_arg_scope,
                   }
 
 
+default_image_size_map = {'alexnet_v2': alexnet.alexnet_v2.default_image_size,
+                          'cifarnet': cifarnet.cifarnet.default_image_size,
+                          'densenet_bc': densenet_bc.densenet_bc.default_image_size,
+                          'densenet_bc_12_100': densenet_bc.densenet_bc.default_image_size,
+                          'densenet_bc_18_75': densenet_bc.densenet_bc.default_image_size,
+                          'densenet_bc_24_50': densenet_bc.densenet_bc.default_image_size,
+                          'densenet_bc_12_40': densenet_bc.densenet_bc.default_image_size,
+                          'densenet_bc_6_50': densenet_bc.densenet_bc.default_image_size,
+                          'inception_v1': inception.inception_v1.default_image_size,
+                          'inception_v2': inception.inception_v2.default_image_size,
+                          'inception_v3': inception.inception_v3.default_image_size,
+                          'inception_v3_025': inception.inception_v3.default_image_size,
+                          'inception_v4': inception.inception_v4.default_image_size,
+                          'inception_resnet_v2': inception.inception_resnet_v2.default_image_size,
+                          'lenet': lenet.lenet.default_image_size,
+                          'mobilenet_v1': mobilenet_v1.mobilenet_v1.default_image_size,
+                          'mobilenet_v1_075': mobilenet_v1.mobilenet_v1.default_image_size,
+                          'mobilenet_v1_050': mobilenet_v1.mobilenet_v1.default_image_size,
+                          'mobilenet_v1_025': mobilenet_v1.mobilenet_v1.default_image_size,
+                          'mobilenet_v2': mobilenet.mobilenet.default_image_size,
+                          'mobilenet_v2_140': mobilenet.mobilenet.default_image_size,
+                          'mobilenet_v2_075': mobilenet.mobilenet.default_image_size,
+                          'nasnet_cifar': nasnet.build_nasnet_cifar.default_image_size,
+                          'nasnet_15_at_1920': nasnet.build_nasnet_15_at_1920.default_image_size,
+                          'nasnet_7_at_1920': nasnet.build_nasnet_7_at_1920.default_image_size,
+                          'nasnet_large': nasnet.build_nasnet_large.default_image_size,
+                          'nasnet_medium': nasnet.build_nasnet_medium.default_image_size,
+                          'nasnet_mobile': nasnet.build_nasnet_mobile.default_image_size,
+                          'overfeat': overfeat.overfeat.default_image_size,
+                          'resnet_v1_50': resnet_v1.resnet_v1.default_image_size,
+                          'resnet_v1_101': resnet_v1.resnet_v1.default_image_size,
+                          'resnet_v1_152': resnet_v1.resnet_v1.default_image_size,
+                          'resnet_v1_200': resnet_v1.resnet_v1.default_image_size,
+                          'resnet_v2_50': resnet_v2.resnet_v2.default_image_size,
+                          'resnet_v2_101': resnet_v2.resnet_v2.default_image_size,
+                          'resnet_v2_152': resnet_v2.resnet_v2.default_image_size,
+                          'resnet_v2_200': resnet_v2.resnet_v2.default_image_size,
+                          'vgg_a': vgg.vgg_a.default_image_size,
+                          'vgg_16': vgg.vgg_16.default_image_size,
+                          'vgg_19': vgg.vgg_19.default_image_size
+                          }
+
+
+def get_network_default_image_size(name):
+  if name not in default_image_size_map:
+    raise ValueError('Name of network unknown: %s' % name)
+
+  return default_image_size_map[name]
+
+
 def get_network_fn(name,
                    num_classes,
                    weight_decay=0.0,
                    is_training=False,
-                   dropout_rate=None):
+                   dropout_keep_prob=None):
   """Returns a network_fn such as `logits, end_points = network_fn(images)`.
 
   Args:
@@ -134,7 +186,7 @@ def get_network_fn(name,
     weight_decay: The l2 coefficient for the model weights.
     is_training: `True` if the model is being used for training and `False`
       otherwise.
-      dropout_rate: the ratio of activations that are preserved each training step.
+      dropout_keep_prob: the ratio of activations that are preserved each training step.
 
   Returns:
     network_fn: A function that applies the model to a batch of images. It has
@@ -156,19 +208,17 @@ def get_network_fn(name,
     ValueError: If network `name` is not recognized.
   """
   if name not in networks_map:
-      raise ValueError('Name of network unknown %s' % name)
+    raise ValueError('Name of network unknown: %s' % name)
   func = networks_map[name]
 
   @functools.wraps(func)
   def network_fn(images, **kwargs):
-      arg_scope = arg_scopes_map[name](weight_decay=weight_decay)
+    arg_scope = arg_scopes_map[name](weight_decay=weight_decay, **kwargs)
 
-      with slim.arg_scope(arg_scope):
-          if dropout_rate is not None:
-              return func(images, num_classes, is_training=is_training, dropout_keep_prob=1-dropout_rate, **kwargs)
-          else:
-              return func(images, num_classes, is_training=is_training, **kwargs)
+    with slim.arg_scope(arg_scope):
+      return func(images, num_classes, is_training=is_training, **kwargs)
+
   if hasattr(func, 'default_image_size'):
-      network_fn.default_image_size = func.default_image_size
+    network_fn.default_image_size = func.default_image_size
 
   return network_fn

@@ -461,7 +461,9 @@ def training_scope(is_training=True,
       safe_arg_scope([slim.batch_norm], **batch_norm_params), \
       safe_arg_scope([slim.dropout], is_training=is_training,
                      keep_prob=dropout_keep_prob), \
-      slim.arg_scope([slim.conv2d], \
+      slim.arg_scope([slim.conv2d],
                      weights_regularizer=slim.l2_regularizer(weight_decay)), \
       slim.arg_scope([slim.separable_conv2d], weights_regularizer=None) as s:
     return s
+
+mobilenet.default_image_size = 224
