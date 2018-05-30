@@ -60,6 +60,7 @@ def mount_nfs(sharepath, mountpath, username, password):
   except CalledProcessError:
     logging.error("Failed to mount nfs share")
     return None
+  logging.debug("NFS Share mount success")
   return mountpath
 
 # Unmount nfs share
@@ -68,6 +69,7 @@ def unmount_nfs(mountpath):
     check_call('sudo umount ' + mountpath, shell=True)
   except CalledProcessError:
     logging.error("Failed to unmount nfs share")
+  logging.debug("NFS Share unmounted")
 
 
 def analyze_video(video_file_path, video_frame_generator, video_frame_shape, batch_size,
