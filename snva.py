@@ -7,7 +7,7 @@ import numpy as np
 import os
 import platform
 import signal
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, check_call, CalledProcessError
 import sys
 import tensorflow as tf
 from threading import Thread
@@ -43,6 +43,33 @@ def preprocess_for_inception(image, image_size):
   image = tf.subtract(image, 0.5)
   image = tf.multiply(image, 2.0)
   return image
+
+# Mount an nfs share at a specified directory
+def mount_nfs(sharepath, mountpath, username, password):
+  if (not path.exists(mountpath)):
+    logging.debug("Mount path {} does not exist, creating...".format(mountpath))
+    os.makedirs(mountpath)
+  logging.debug('Mounting NFS Share {} at directory {}'.format(sharepath, mountpath))
+  mountCommand = 'sudo mount -t nfs '
+  if username != None and password != None:
+    logging.debug('NFS Username/password provided')
+    mountCommand += '-o username=' + username + ',password=' + password + ' '
+  mountCommand += sharepath + ' ' + mountpath
+  try:
+    check_call(mountCommand, shell=True)
+  except CalledProcessError:
+    logging.error("Failed to mount nfs share")
+    return None
+  logging.debug("NFS Share mount success")
+  return mountpath
+
+# Unmount nfs share
+def unmount_nfs(mountpath):
+  try:
+    check_call('sudo umount ' + mountpath, shell=True)
+  except CalledProcessError:
+    logging.error("Failed to unmount nfs share")
+  logging.debug("NFS Share unmounted")
 
 
 def analyze_video(video_file_path, video_frame_generator, video_frame_shape, batch_size,
@@ -396,7 +423,12 @@ def main():
 
   logging.debug('FFPROBE Path: {}'.format(FFPROBE_PATH))
 
-  if path.isdir(args.videopath):
+  if (args.nfs):
+    video_dir_path = mount_nfs(args.videopath, "./videos", args.nfs_username, args.nfs_password)
+    if video_dir_path == None:
+      raise ValueError('Could not connect to the specified NFS share {}'.format(args.videopath))
+    video_file_names = IO.read_video_file_names(video_dir_path)
+  elif path.isdir(args.videopath):
     video_dir_path = args.videopath
     video_file_names = IO.read_video_file_names(video_dir_path)
   elif path.isfile(args.videopath):
@@ -577,6 +609,8 @@ def main():
   end = time() - start
 
   IO.print_processing_duration(end, 'Video processing completed with total elapsed time: ')
+  if (args.nfs):
+    unmount_nfs(video_dir_path)
 
   # Signal the logging thread to finish up
   logging.debug('Signaling log queue to end service.')
@@ -631,6 +665,9 @@ if __name__ == '__main__':
   parser.add_argument('--verbose', '-vb', action='store_true', help='Print additional information in logs')
   parser.add_argument('--debug', '-d', action='store_true', help='Print debug information in logs')
   parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile')
+  parser.add_argument('--nfs', '-nfs', action='store_true', help='Indicates videopath is an nfs share')
+  parser.add_argument('--nfs_username', '-nu', default=None, help='Username for videopath nfs share')
+  parser.add_argument('--nfs_password', '-np', default=None, help='Password for videopath nfs share')
 
   args = parser.parse_args()
 
