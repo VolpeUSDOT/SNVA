@@ -5,7 +5,6 @@ import numpy as np
 import os
 import subprocess
 import tensorflow as tf
-
 path = os.path
 
 PIPE = subprocess.PIPE
@@ -16,8 +15,13 @@ class IO:
   def get_device_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
-    pipe = subprocess.run(command, stdout=PIPE, encoding='utf-8')
-    line_list = pipe.stdout.rstrip().split('\n')
+    pipe = subprocess.run(command, stdout=PIPE, stderr=PIPE, timeout=60)
+
+    if len(pipe.stderr) > 0:
+      raise Exception(str(pipe.stderr, encoding='utf-8'))
+
+    std_out = str(pipe.stdout, encoding='utf-8')
+    line_list = std_out.rstrip().split('\n')
     device_labels = [line.split(':')[0] for line in line_list]
     return [device_label.split(' ')[1] for device_label in device_labels]
 
@@ -102,13 +106,12 @@ class IO:
 
     completed_subprocess = subprocess.run(command, stdout=PIPE, stderr=PIPE, timeout=600)
 
+    std_out = str(completed_subprocess.stdout, encoding='utf-8')
+
     if len(completed_subprocess.stderr) > 0:
-      raise Exception(str(completed_subprocess.stderr))
+      raise Exception(str(completed_subprocess.stderr, encoding='utf-8'))
 
-    logging.info('Process {} received raw ffprobe response: {}'.format(
-      process_id, completed_subprocess.stdout))
-
-    json_map = json.loads(completed_subprocess.stdout)
+    json_map = json.loads(std_out)
 
     logging.info('Process {} received processed ffprobe response: {}'.format(
       process_id, json.dumps(json_map)))

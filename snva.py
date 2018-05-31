@@ -32,13 +32,13 @@ def logger_thread(q):
     logger.handle(record)
 
 
-def preprocess_for_inception(image):
+def preprocess_for_inception(image, image_size):
   if image.dtype != tf.float32:
     image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-  if image.shape[0] != args.modelinputsize or image.shape[1] != args.modelinputsize:
+  if image.shape[0] != image_size or image.shape[1] != image_size:
     image = tf.expand_dims(image, 0)
     image = tf.image.resize_bilinear(
-      image, [args.modelinputsize, args.modelinputsize], align_corners=False)
+      image, [image_size, image_size], align_corners=False)
     image = tf.squeeze(image, [0])
   image = tf.subtract(image, 0.5)
   image = tf.multiply(image, 2.0)
@@ -46,15 +46,15 @@ def preprocess_for_inception(image):
 
 
 def analyze_video(video_file_path, video_frame_generator, video_frame_shape, batch_size,
-                  session_config, input_node, output_node, prob_array, child_process_semaphore,
-                  device_id_queue, device_type, device_count, process_id):
+                  session_config, input_node, output_node, preprocessing_fn, prob_array,
+                  child_process_semaphore, device_id_queue, device_type, device_count, process_id):
   logging.debug('Child process {} is constructing image dataset pipeline'.format(process_id))
 
   video_frame_dataset = tf.data.Dataset.from_generator(
     video_frame_generator, tf.uint8, tf.TensorShape(list(video_frame_shape)))
 
   video_frame_dataset = video_frame_dataset.map(
-    preprocess_for_inception, num_parallel_calls=int(os.cpu_count() / device_count))
+    preprocessing_fn, num_parallel_calls=int(os.cpu_count() / device_count))
 
   video_frame_dataset = video_frame_dataset.batch(batch_size)
 
@@ -168,7 +168,7 @@ def analyze_video(video_file_path, video_frame_generator, video_frame_shape, bat
       exit()
 
 
-def process_video(video_file_path, class_names, model_map, device_id_queue, child_process_semaphore,
+def process_video(video_file_path, class_names, model_map, model_input_size, device_id_queue, child_process_semaphore,
                   logqueue, loglevel, device_type, device_count, ffprobe_path, ffmpeg_path):
   # Configure logging for this process
   qh = QueueHandler(logqueue)
@@ -285,13 +285,17 @@ def process_video(video_file_path, class_names, model_map, device_id_queue, chil
           logging.error('Child process {} is raising exception to caller.'.format(process_id))
           raise e
 
+  def preprocessing_fn(image):
+    return preprocess_for_inception(image, model_input_size)
+
   # pre-allocate memory for prediction storage
   num_classes = len(class_names)
   probability_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
 
   analyze_video(
-    video_file_path, video_frame_generator, video_frame_shape, batch_size, model_map['session_config'],
-    model_map['input_node'], model_map['output_node'],  probability_array, child_process_semaphore,
+    video_file_path, video_frame_generator, video_frame_shape, batch_size, 
+    model_map['session_config'], model_map['input_node'], model_map['output_node'],  
+    preprocessing_fn, probability_array, child_process_semaphore,
     device_id_queue, device_type, device_count, process_id)
 
   if args.excludetimestamps:
@@ -338,7 +342,17 @@ def process_video(video_file_path, class_names, model_map, device_id_queue, chil
 
   
 def main():
-  start = time()
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+  # Should this be set to match our command line arg, or should we always output this level of detail?
+  tf.logging.set_verbosity(tf.logging.INFO)
+
+  # Define our log level based on arguments
+  loglevel = logging.WARNING
+  if args.verbose or args.noisy:
+    loglevel = logging.INFO
+  if args.debug:
+    loglevel = logging.DEBUG
 
   # Create a queue to handle log requests from multiple processes
   logqueue = Queue()
@@ -392,10 +406,34 @@ def main():
     raise ValueError('The video file/folder specified at the path {} could not be found.'.format(
       args.videopath))
 
-  # TODO modelpath should not be required to be passed at the command line
-  if not path.isfile(args.modelpath):
+  if not path.isdir(args.modelsdirpath):
     raise ValueError('The model specified at the path {} could not be found.'.format(
-      args.modelpath))
+      args.modelsdirpath))
+
+  model_dir_path = path.join(args.modelsdirpath, args.modelname)
+  model_file_path = path.join(model_dir_path, args.protobuffilename)
+
+  # TODO modelpath should not be required to be passed at the command line
+  if not path.isfile(model_file_path):
+    raise ValueError('The model specified at the path {} could not be found.'.format(
+      model_file_path))
+
+  model_input_size_file_path = path.join(model_dir_path, 'input_size.txt')
+
+  if not path.isfile(model_input_size_file_path):
+    raise ValueError('The model input size file specified at the path {} could not be found.'.format(
+      model_input_size_file_path))
+
+  with open(model_input_size_file_path) as file:
+    model_input_size_string = file.readline().rstrip()
+
+    valid_size_set = ['224', '299']
+
+    if model_input_size_string not in valid_size_set:
+      raise ValueError('The model input size is not in the set {}.'.format(valid_size_set))
+
+    model_input_size = int(model_input_size_string)
+
 
   if args.excludepreviouslyprocessed and path.isdir(args.reportpath):
     report_file_names = os.listdir(args.reportpath)
@@ -411,18 +449,16 @@ def main():
   if not path.isdir(args.reportpath):
     os.makedirs(args.reportpath)
 
-  if args.ionodenamespath is None or not path.isfile(args.ionodenamespath):
-    model_dir_path, _ = path.split(args.modelpath)
+  if args.ionodenamesfilepath is None or not path.isfile(args.ionodenamesfilepath):
     io_node_names_path = path.join(model_dir_path, 'io_node_names.txt')
   else:
-    io_node_names_path = args.ionodenamespath
+    io_node_names_path = args.ionodenamesfilepath
   logging.debug('io tensors path set to: {}'.format(io_node_names_path))
 
-  if args.classnamespath is None or not path.isfile(args.classnamespath):
-    model_dir_path, _ = path.split(args.modelpath)
-    class_names_path = path.join(model_dir_path, 'class_names.txt')
+  if args.classnamesfilepath is None or not path.isfile(args.classnamesfilepath):
+    class_names_path = path.join(args.modelsdirpath, 'class_names.txt')
   else:
-    class_names_path = args.classnamespath
+    class_names_path = args.classnamesfilepath
   logging.debug('labels path set to: {}'.format(class_names_path))
 
   if args.cpuonly:
@@ -445,7 +481,7 @@ def main():
   label_map = IO.read_class_names(class_names_path)
   class_name_list = list(label_map.values())
 
-  model_map = IO.load_model(args.modelpath, io_node_names_path, device_type, args.gpumemoryfraction)
+  model_map = IO.load_model(model_file_path, io_node_names_path, device_type, args.gpumemoryfraction)
 
   # The chief worker will allow at most device_count + 1 child processes to be created
   # since the greatest number of concurrent operations is the number of compute devices
@@ -470,9 +506,9 @@ def main():
 
       child_process = Process(target=process_video,
                               name='ChildProcess:{}'.format(video_file_name),
-                              args=(video_file_path, class_name_list,
-                                    model_map, device_id_queue, child_process_semaphore, logqueue,
-                                    loglevel, device_type, device_id_list_len, FFPROBE_PATH, FFMPEG_PATH))
+                              args=(video_file_path, class_name_list, model_map, model_input_size,
+                                    device_id_queue, child_process_semaphore, logqueue, loglevel,
+                                    device_type, device_id_list_len, FFPROBE_PATH, FFMPEG_PATH))
 
       logging.debug('Starting starting child process.')
 
@@ -481,8 +517,11 @@ def main():
       child_process_list.append(child_process)
     else:
       logging.info('Invoking process_video() in main process because device_type == {}'.format(device_type))
-      process_video(video_file_path, class_name_list, model_map, device_id_queue, child_process_semaphore, 
-                     logqueue, loglevel, device_type, device_id_list_len, FFPROBE_PATH, FFMPEG_PATH)
+      process_video(video_file_path, class_name_list, model_map, model_input_size, device_id_queue,
+                    child_process_semaphore, logqueue, loglevel, device_type, device_id_list_len, FFPROBE_PATH,
+                    FFMPEG_PATH)
+
+  start = time()
 
   while len(video_file_names) > 0:
     child_process_semaphore.acquire()  # block if three child processes are active
@@ -553,6 +592,7 @@ if __name__ == '__main__':
   parser.add_argument('--binarizeprobs', '-b', action='store_true',
                       help='Round probabilities to zero or one. For distributions'
                            'with two 0.5 values, both will be rounded up to 1.0')
+  parser.add_argument('--classnamesfilepath', '-cnfp', help='Path to the class ids/names text file.')
   parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
   parser.add_argument('--crop', '-c', action='store_true',
                       help='Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]')
@@ -566,13 +606,13 @@ if __name__ == '__main__':
                       help='Read timestamps off of video frames and include them as strings in the output CSV.')
   parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                       help='% of GPU memory available to this process.')
-  parser.add_argument('--ionodenamespath', '-itp', default=None, help='Path to the io tensor names text file.')
-  parser.add_argument('--classnamespath', '-cnp', default=None, help='Path to the class ids/names text file.')
-  parser.add_argument('--modelinputsize', '-mis', type=int, required=True,
-                      help='The square input dimensions of the neural net.')
+  parser.add_argument('--ionodenamesfilepath', '-ifp', help='Path to the io tensor names text file.')
+  parser.add_argument('--modelsdirpath', '-mdp', default='./models/work_zone_scene_detection',
+                      help='Path to the parent directory of model directories.')
+  parser.add_argument('--modelname', '-mn', required=True, help='The square input dimensions of the neural net.')
   parser.add_argument('--logpath', '-l', default='./logs', help='Path to the directory where log files are stored.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3, help='The fourth dimension of image batches.')
-  parser.add_argument('--modelpath', '-mp', required=True, help='Path to the model protobuf file.')
+  parser.add_argument('--protobuffilename', '-pbfn', default='model.pb', help='Name of the model protobuf file.')
   parser.add_argument('--reportpath', '-rp', default='./results',
                       help='Path to the directory where results are stored.')
   parser.add_argument('--smoothprobs', '-sm', action='store_true',
@@ -593,17 +633,5 @@ if __name__ == '__main__':
   parser.add_argument('--noisy', '-n', action='store_true', help='Print logs to console as well as logfile')
 
   args = parser.parse_args()
-
-  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-  # Should this be set to match our command line arg, or should we always output this level of detail?
-  tf.logging.set_verbosity(tf.logging.INFO)
-
-  # Define our log level based on arguments
-  loglevel = logging.WARNING
-  if args.verbose:
-    loglevel = logging.INFO
-  if args.debug:
-    loglevel = logging.DEBUG
 
   main()
