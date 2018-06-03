@@ -3,11 +3,9 @@ import json
 import logging
 import numpy as np
 import os
-import subprocess
-import tensorflow as tf
-path = os.path
+import subprocess as sp
 
-PIPE = subprocess.PIPE
+path = os.path
 
 
 class IO:
@@ -15,7 +13,7 @@ class IO:
   def get_device_ids():
     # TODO: Consider replacing a subprocess invocation with nvml bindings
     command = ['nvidia-smi', '-L']
-    pipe = subprocess.run(command, stdout=PIPE, stderr=PIPE, timeout=60)
+    pipe = sp.run(command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=60)
 
     if len(pipe.stderr) > 0:
       raise Exception(str(pipe.stderr, encoding='utf-8'))
@@ -23,6 +21,7 @@ class IO:
     std_out = str(pipe.stdout, encoding='utf-8')
     line_list = std_out.rstrip().split('\n')
     device_labels = [line.split(':')[0] for line in line_list]
+
     return [device_label.split(' ')[1] for device_label in device_labels]
 
   @staticmethod
@@ -31,68 +30,43 @@ class IO:
     return {int(key): value for key, value in meta_map.items()}
 
   @staticmethod
-  def load_model(
-      model_path, io_node_names_path, device_type, gpu_memory_fraction):
-    logging.debug('Process {} is loading model at path: {}'.format(
-      os.getpid(), model_path))
-
-    graph_def = tf.GraphDef()
-
-    with open(model_path, 'rb') as file:
-      graph_def.ParseFromString(file.read())
-
-    node_names_map = IO.read_node_names(io_node_names_path)
-
-    input_node, output_node = tf.import_graph_def(
-      graph_def, return_elements=[node_names_map['input_node_name'],
-                                  node_names_map['output_node_name']])
-
-    if device_type == 'gpu':
-      gpu_options = tf.GPUOptions(allow_growth=True,
-                                  per_process_gpu_memory_fraction=gpu_memory_fraction)
-      session_config = tf.ConfigProto(allow_soft_placement=True,
-                                      # log_device_placement=True,
-                                      gpu_options=gpu_options)
-    else:
-      session_config = None
-
-    return {'session_config': session_config,
-            'input_node': input_node,
-            'output_node': output_node}
-
-  @staticmethod
   def read_node_names(io_node_names_path):
     meta_map = IO._read_meta_file(io_node_names_path)
+
     return {key: value + ':0' for key, value in meta_map.items()}
 
   @staticmethod
   def read_video_file_names(video_file_dir_path):
     included_extenstions = ['avi', 'mp4', 'asf', 'mkv', 'm4v', 'mpeg', 'mov']
-    return sorted([fn for fn in os.listdir(video_file_dir_path)
-                   if any(fn.lower().endswith(ext) for ext in included_extenstions)])
+
+    return sorted(
+      [fn for fn in os.listdir(video_file_dir_path)
+       if any(fn.lower().endswith(ext) for ext in included_extenstions)])
 
   @staticmethod
-  def print_processing_duration(end_time, msg):
+  def get_processing_duration(end_time, msg):
     minutes, seconds = divmod(end_time, 60)
     hours, minutes = divmod(minutes, 60)
     hours = int(round(hours))
     minutes = int(round(minutes))
     milliseconds = int(round(end_time * 1000))
-    logging.info('{} {:02d}:{:02d}:{:05.2f} ({:d} ms)\n'.format(
-      msg, hours, minutes, seconds, milliseconds))
+    return '{} {:02d}:{:02d}:{:05.2f} ({:d} ms)'.format(
+      msg, hours, minutes, seconds, milliseconds)
 
   @staticmethod
-  def print_subprocess_command(arg_list, process_id=os.getpid()):
+  def command_as_string(arg_list):
     command_string = arg_list[0]
 
     for elem in arg_list[1:]:
       command_string += ' ' + elem
 
-    logging.debug('Process {} invoked command: {}'.format(process_id, command_string))
+    return 'invoked command: {}'.format(command_string)
 
   @staticmethod
   def _read_meta_file(file_path):
-    meta_lines = [line.rstrip().split(':') for line in tf.gfile.GFile(file_path).readlines()]
+    meta_lines = [line.rstrip().split(':')
+                  for line in open(file_path).readlines()]
+
     return {line[0]: line[1] for line in meta_lines}
 
   @staticmethod
@@ -100,21 +74,23 @@ class IO:
     command = [ffprobe_path, '-show_streams', '-print_format',
                'json', '-loglevel', 'warning', video_file_path]
 
-    process_id = os.getpid()
-
-    IO.print_subprocess_command(command, process_id)
-
-    completed_subprocess = subprocess.run(command, stdout=PIPE, stderr=PIPE, timeout=600)
+    completed_subprocess = sp.run(
+      command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=600)
 
     std_out = str(completed_subprocess.stdout, encoding='utf-8')
 
     if len(completed_subprocess.stderr) > 0:
       raise Exception(str(completed_subprocess.stderr, encoding='utf-8'))
 
-    json_map = json.loads(std_out)
-
-    logging.info('Process {} received processed ffprobe response: {}'.format(
-      process_id, json.dumps(json_map)))
+    try:
+      json_map = json.loads(std_out)
+    except Exception as e:
+      logging.error('Process {} encountered an exception while parsing ffprobe '
+                    'JSON file.')
+      logging.debug('Process {} received raw ffprobe response: {}'.format(
+        os.getpid(), std_out))
+      logging.debug('Process {} will raise exception to caller.')
+      raise e
 
     return int(json_map['streams'][0]['width']),\
            int(json_map['streams'][0]['height']),\
@@ -136,7 +112,8 @@ class IO:
     return weight, window
 
   @staticmethod
-  def _smooth_class_prob_sequence(probs, weight, weight_sum, indices, head_padding_len, tail_padding_len):
+  def _smooth_class_prob_sequence(
+      probs, weight, weight_sum, indices, head_padding_len, tail_padding_len):
     smoothed_probs = weight * probs[indices]
     smoothed_probs = np.sum(smoothed_probs, axis=1)
     smoothed_probs = smoothed_probs / weight_sum
@@ -144,7 +121,8 @@ class IO:
     head_padding = np.ones((head_padding_len, )) * smoothed_probs[0]
     tail_padding = np.ones((tail_padding_len, )) * smoothed_probs[-1]
 
-    smoothed_probs = np.concatenate((head_padding, smoothed_probs, tail_padding))
+    smoothed_probs = np.concatenate(
+      (head_padding, smoothed_probs, tail_padding))
 
     return smoothed_probs
 
@@ -162,7 +140,8 @@ class IO:
 
     for i in range(class_probs.shape[1]):
       smoothed_probs[:, i] = IO._smooth_class_prob_sequence(
-        class_probs[:, i], weight, weight_sum, indices, head_padding_len, tail_padding_len)
+        class_probs[:, i], weight, weight_sum, indices,
+        head_padding_len, tail_padding_len)
 
     return smoothed_probs
 
@@ -173,20 +152,24 @@ class IO:
 
   @staticmethod
   def _binarize_probs(class_probs):
-    # because numpy will round 0.5 down to 0.0, we need to identify occurrences of 0.5
-    # and replace them with 1.0. If a prob has two 0.5s, replace them both with 1.0
+    # because numpy will round 0.5 down to 0.0, we need to identify occurrences
+    # of 0.5 and replace them with 1.0. If a prob has two 0.5s, replace them
+    # both with 1.0
     binarized_probs = class_probs.copy()
     uncertain_probs = binarized_probs == 0.5
     binarized_probs[uncertain_probs] = 1.0
     binarized_probs = np.round(binarized_probs)
+
     return binarized_probs
 
 
 # TODO: confirm that the csv can be opened after writing
   @staticmethod
-  def write_report(video_file_name, report_path, exclude_timestamps, stimestamps, class_probs, class_names,
-                   smooth_probs, smoothing_factor, binarize_probs, process_id):
-    class_names = ['{}_probability'.format(class_name) for class_name in class_names]
+  def write_report(
+      video_file_name, report_path, exclude_timestamps, stimestamps,
+      class_probs, class_names, smooth_probs, smoothing_factor, binarize_probs):
+    class_names = ['{}_probability'.format(class_name)
+                   for class_name in class_names]
 
     if smooth_probs and smoothing_factor > 1:
       class_names = IO._expand_class_names(class_names, '_smoothed')
