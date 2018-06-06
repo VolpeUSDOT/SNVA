@@ -10,19 +10,23 @@ path = os.path
 
 class IO:
   @staticmethod
+  def _invoke_subprocess(command):
+    completed_subprocess = sp.run(
+      command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=60)
+
+    if len(completed_subprocess.stderr) > 0:
+      std_err = str(completed_subprocess.stderr, encoding='utf-8')
+
+      raise Exception(std_err)
+
+    return str(completed_subprocess.stdout, encoding='utf-8')
+
+  @staticmethod
   def get_device_ids():
-    # TODO: Consider replacing a subprocess invocation with nvml bindings
-    command = ['nvidia-smi', '-L']
-    pipe = sp.run(command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=60)
-
-    if len(pipe.stderr) > 0:
-      raise Exception(str(pipe.stderr, encoding='utf-8'))
-
-    std_out = str(pipe.stdout, encoding='utf-8')
-    line_list = std_out.rstrip().split('\n')
-    device_labels = [line.split(':')[0] for line in line_list]
-
-    return [device_label.split(' ')[1] for device_label in device_labels]
+    command = ['nvidia-smi', '--query-gpu=index', '--format=csv']
+    output = IO._invoke_subprocess(command)
+    line_list = output.rstrip().split('\n')
+    return line_list[1:]
 
   @staticmethod
   def read_class_names(class_names_path):
@@ -32,16 +36,13 @@ class IO:
   @staticmethod
   def read_node_names(io_node_names_path):
     meta_map = IO._read_meta_file(io_node_names_path)
-
     return {key: value + ':0' for key, value in meta_map.items()}
 
   @staticmethod
   def read_video_file_names(video_file_dir_path):
     included_extenstions = ['avi', 'mp4', 'asf', 'mkv', 'm4v', 'mpeg', 'mov']
-
-    return sorted(
-      [fn for fn in os.listdir(video_file_dir_path)
-       if any(fn.lower().endswith(ext) for ext in included_extenstions)])
+    return sorted([fn for fn in os.listdir(video_file_dir_path) if any(
+      fn.lower().endswith(ext) for ext in included_extenstions)])
 
   @staticmethod
   def get_processing_duration(end_time, msg):
@@ -56,42 +57,28 @@ class IO:
   @staticmethod
   def command_as_string(arg_list):
     command_string = arg_list[0]
-
     for elem in arg_list[1:]:
       command_string += ' ' + elem
-
-    return 'invoked command: {}'.format(command_string)
+    return 'command street: {}'.format(command_string)
 
   @staticmethod
   def _read_meta_file(file_path):
     meta_lines = [line.rstrip().split(':')
                   for line in open(file_path).readlines()]
-
     return {line[0]: line[1] for line in meta_lines}
 
   @staticmethod
   def get_video_dimensions(video_file_path, ffprobe_path):
     command = [ffprobe_path, '-show_streams', '-print_format',
                'json', '-loglevel', 'warning', video_file_path]
-
-    completed_subprocess = sp.run(
-      command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=600)
-
-    std_out = str(completed_subprocess.stdout, encoding='utf-8')
-
-    if len(completed_subprocess.stderr) > 0:
-      raise Exception(str(completed_subprocess.stderr, encoding='utf-8'))
-
+    output = IO._invoke_subprocess(command)
     try:
-      json_map = json.loads(std_out)
+      json_map = json.loads(output)
     except Exception as e:
-      logging.error('Process {} encountered an exception while parsing ffprobe '
-                    'JSON file.')
-      logging.debug('Process {} received raw ffprobe response: {}'.format(
-        os.getpid(), std_out))
-      logging.debug('Process {} will raise exception to caller.')
+      logging.error('encountered an exception while parsing ffprobe JSON file.')
+      logging.debug('received raw ffprobe response: {}'.format(output))
+      logging.debug('will raise exception to caller.')
       raise e
-
     return int(json_map['streams'][0]['width']),\
            int(json_map['streams'][0]['height']),\
            int(json_map['streams'][0]['nb_frames'])
@@ -104,11 +91,9 @@ class IO:
   def _get_gauss_weight_and_window(smoothing_factor):
     window = smoothing_factor * 2 - 1
     weight = np.ndarray((window,))
-
     for i in range(window):
       frac = (i - smoothing_factor + 1) / window
       weight[i] = 1 / np.exp((4 * frac) ** 2)
-
     return weight, window
 
   @staticmethod
@@ -117,32 +102,24 @@ class IO:
     smoothed_probs = weight * probs[indices]
     smoothed_probs = np.sum(smoothed_probs, axis=1)
     smoothed_probs = smoothed_probs / weight_sum
-
     head_padding = np.ones((head_padding_len, )) * smoothed_probs[0]
     tail_padding = np.ones((tail_padding_len, )) * smoothed_probs[-1]
-
     smoothed_probs = np.concatenate(
       (head_padding, smoothed_probs, tail_padding))
-
     return smoothed_probs
 
   @staticmethod
   def _smooth_probs(class_probs, smoothing_factor):
     weight, window = IO._get_gauss_weight_and_window(smoothing_factor)
     weight_sum = np.sum(weight)
-
     indices = np.arange(class_probs.shape[0] - window)
     indices = np.expand_dims(indices, axis=1) + np.arange(weight.shape[0])
-
     head_padding_len, tail_padding_len = IO._div_odd(window)
-
     smoothed_probs = np.ndarray(class_probs.shape)
-
     for i in range(class_probs.shape[1]):
       smoothed_probs[:, i] = IO._smooth_class_prob_sequence(
         class_probs[:, i], weight, weight_sum, indices,
         head_padding_len, tail_padding_len)
-
     return smoothed_probs
 
   @staticmethod
@@ -152,14 +129,12 @@ class IO:
 
   @staticmethod
   def _binarize_probs(class_probs):
-    # because numpy will round 0.5 down to 0.0, we need to identify occurrences
-    # of 0.5 and replace them with 1.0. If a prob has two 0.5s, replace them
-    # both with 1.0
+    # since numpy rounds 0.5 to 0.0, identify occurrences of 0.5 and replace
+    # them with 1.0. If a prob has two 0.5s, replace them both with 1.0
     binarized_probs = class_probs.copy()
-    uncertain_probs = binarized_probs == 0.5
-    binarized_probs[uncertain_probs] = 1.0
+    uncertain_prob_indices = binarized_probs == 0.5
+    binarized_probs[uncertain_prob_indices] = 1.0
     binarized_probs = np.round(binarized_probs)
-
     return binarized_probs
 
 
@@ -170,35 +145,27 @@ class IO:
       class_probs, class_names, smooth_probs, smoothing_factor, binarize_probs):
     class_names = ['{}_probability'.format(class_name)
                    for class_name in class_names]
-
     if smooth_probs and smoothing_factor > 1:
       class_names = IO._expand_class_names(class_names, '_smoothed')
       smoothed_probs = IO._smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
-
     if binarize_probs:
       class_names = IO._expand_class_names(class_names, '_binarized')
       binarized_probs = IO._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
-
     if exclude_timestamps:
       header = ['file_name', 'frame_number'] + class_names
-
       rows = [[video_file_name, '{:d}'.format(i+1)]
               + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
     else:
       header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
-
       rows = [[video_file_name, '{:d}'.format(i + 1), stimestamps[i]]
               + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
-
     if not path.exists(report_path):
       os.makedirs(report_path)
-
     report_file_path = path.join(report_path, video_file_name + '.csv')
-
     with open(report_file_path, 'w', newline='') as report_file:
       csv_writer = csv.writer(report_file)
       csv_writer.writerow(header)
