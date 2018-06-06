@@ -196,7 +196,7 @@ class Timestamp:
     timestamp_image_array = self._binarize_timestamps(timestamp_image_array)
     # (16 * nd, 16 * nt)
     timestamp_image_array = np.transpose(timestamp_image_array)
-    
+
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
     for i in range(num_timestamps):
@@ -225,7 +225,7 @@ class Timestamp:
     timestamp_errors = timestamp_string_array == 0
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
     timestamp_string_array[timestamp_errors] = ''
-    
+
     return timestamp_string_array
 
   # (16 * nt, 16 * nd, nc)
@@ -240,7 +240,7 @@ class Timestamp:
       timestamp_image_array, (0, 2, 1))
     # (nt, nd, 16, 16)
     timestamp_image_array = np.reshape(timestamp_image_array,
-                                       (num_timestamps, self.num_digits, 
+                                       (num_timestamps, self.num_digits,
                                         self.height, self.height))
     # (nt, 1, nd, 16, 16)
     timestamp_image_array = np.expand_dims(timestamp_image_array, 1)
@@ -252,7 +252,7 @@ class Timestamp:
     frame_numbers, digits, positions = np.nonzero(_all)
 
     digits = digits.astype(np.unicode_)
-    
+
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
     # TODO: confirm that counts are monotonically non-decreasing,
@@ -296,16 +296,16 @@ class Timestamp:
 
   def stringify_timestamps(self, timestamp_image_array):
     process_id = os.getpid()
-    
+
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
-    
+
     try:
-      timestamp_string_array = self._stringify_timestamps(timestamp_image_array, 
+      timestamp_string_array = self._stringify_timestamps(timestamp_image_array,
                                                           num_timestamps)
       return timestamp_string_array
     except Exception as e:
       logging.warning('Process {} encountered an exception while converting '
-                    'timestamp images to strings en masse.'.format(process_id))
+                      'timestamp images to strings en masse'.format(process_id))
       logging.warning(e)
       logging.warning('Process {} will re-attempt conversions one-at-a-time')
 

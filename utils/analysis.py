@@ -97,14 +97,14 @@ def analyze_video(video_frame_generator, video_frame_shape, batch_size,
     # size variable to benefit all future videos within the current app run.
     except tf.errors.ResourceExhaustedError as ree:
       logging.warning('encountered a resource exhausted error.')
-      logging.debug(ree)
+      logging.warning(ree)
       attempts += 1
 
       # If an error occurs, retry up to two times
       if attempts < 3:
         batch_size = int(batch_size / 2)
-        logging.warning('will re-attempt inference with a new batch size of '
-                        '{}'.format(batch_size))
+        logging.debug('will re-attempt inference with a new batch size of '
+                      '{}'.format(batch_size))
       else:
         logging.error('will not re-attempt inference.')
         break
