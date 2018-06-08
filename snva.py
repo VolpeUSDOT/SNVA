@@ -416,23 +416,37 @@ def main():
   else:
     raise ValueError('The video file/folder specified at the path {} could '
                      'not be found.'.format(args.inputpath))
+  try:
+    snva_home = os.environ['SNVA_HOME']
+  except KeyError:
+    logging.error('SNVA root dir not found in environment. Attempting to use '
+                  'the current working directory.')
+    snva_home = '.'
 
-  if not path.isdir(args.modelsdirpath):
-    raise ValueError('The model specified at the path {} could not be '
-                     'found.'.format(args.modelsdirpath))
+  logging.debug('SNVA_HOME set to {}'.format(snva_home))
 
-  model_dir_path = path.join(args.modelsdirpath, args.modelname)
-  model_file_path = path.join(model_dir_path, args.protobuffilename)
+  models_root_dir_path = path.join(snva_home, args.modelsdirpath)
+
+  models_dir_path = path.join(models_root_dir_path, args.modelname)
+
+  logging.debug('models_dir_path set to {}'.format(models_dir_path))
+
+  model_file_path = path.join(models_dir_path, args.protobuffilename)
 
   if not path.isfile(model_file_path):
     raise ValueError('The model specified at the path {} could not be '
                      'found.'.format(model_file_path))
 
-  model_input_size_file_path = path.join(model_dir_path, 'input_size.txt')
+  logging.debug('model_file_path set to {}'.format(model_file_path))
+
+  model_input_size_file_path = path.join(models_dir_path, 'input_size.txt')
 
   if not path.isfile(model_input_size_file_path):
     raise ValueError('The model input size file specified at the path {} '
                      'could not be found.'.format(model_input_size_file_path))
+
+  logging.debug('model_input_size_file_path set to {}'.format(
+    model_input_size_file_path))
 
   with open(model_input_size_file_path) as file:
     model_input_size_string = file.readline().rstrip()
@@ -463,14 +477,14 @@ def main():
 
   if args.ionodenamesfilepath is None \
       or not path.isfile(args.ionodenamesfilepath):
-    io_node_names_path = path.join(model_dir_path, 'io_node_names.txt')
+    io_node_names_path = path.join(models_dir_path, 'io_node_names.txt')
   else:
     io_node_names_path = args.ionodenamesfilepath
   logging.debug('io tensors path set to: {}'.format(io_node_names_path))
 
   if args.classnamesfilepath is None \
       or not path.isfile(args.classnamesfilepath):
-    class_names_path = path.join(args.modelsdirpath, 'class_names.txt')
+    class_names_path = path.join(models_root_dir_path, 'class_names.txt')
   else:
     class_names_path = args.classnamesfilepath
   logging.debug('labels path set to: {}'.format(class_names_path))
@@ -683,11 +697,6 @@ if __name__ == '__main__':
                       help='% of GPU memory available to this process.')
   parser.add_argument('--ionodenamesfilepath', '-ifp',
                       help='Path to the io tensor names text file.')
-  parser.add_argument('--modelsdirpath', '-mdp',
-                      default='./models/work_zone_scene_detection',
-                      help='Path to the parent directory of model directories.')
-  parser.add_argument('--modelname', '-mn', required=True,
-                      help='The square input dimensions of the neural net.')
   parser.add_argument('--loglevel', '-ll', default='info',
                       help='Defaults to \'info\'. Pass \'debug\' or \'error\' '
                            'for verbose or minimal logging, respectively.')
@@ -699,6 +708,11 @@ if __name__ == '__main__':
   parser.add_argument('--logsilently', '-ls', action='store_true',
                       help='Print logs to logfile only and not to console. '
                            'Use together with --logmode flags')
+  parser.add_argument('--modelsdirpath', '-mdp',
+                      default='models/work_zone_scene_detection',
+                      help='Path to the parent directory of model directories.')
+  parser.add_argument('--modelname', '-mn', required=True,
+                      help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
   parser.add_argument('--numprocessespergpu', '-nppg', type=int, default=1,
