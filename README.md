@@ -64,7 +64,7 @@ sudo nvidia-docker run \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
-  --modelname inception_v3 --batchsize 128  --extracttimestamps --smoothprobs \
+  --modelname inception_v3 --batchsize 128 --extracttimestamps --smoothprobs \
   --binarizeprobs
 ```
 
