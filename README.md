@@ -41,15 +41,18 @@ SNVA is intended to run on systems with NVIDIA GPUs, but can also run in a CPU-o
 
 ## To run on Ubuntu:
 
+```shell
 python3 snva.py
   --inputpath /path/to/your/desired/video_file/source/directory/or/file \
   --outputpath /path/to/your/desired/csv_file/destination/directory \
   --logspath /path/to/your/desired/log_file/destination/directory \
   --modelname inception_v3
+```
 
 
 ## To run using NVIDIA-Docker on Ubuntu:
 
+```shell
 sudo nvidia-docker run \
   --mount type=bind, \
     src=/path/to/your/desired/video_file/source/directory,dst=/media/input \
@@ -60,6 +63,7 @@ sudo nvidia-docker run \
   volpeusdot/snva \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
   --modelname mobilenet_v2 --batchsize 128 --smoothprobs --binarizeprobs
+```
 
 
 ## Usage
@@ -68,7 +72,7 @@ Flags | Shortcuts | Properties | Descriptions
 :------:|:---------------:|:---------------------:|:-----------:
 --batchsize|-bs|type=int, default=32|Number of concurrent neural net inputs
 --binarizeprobs|-b|action=store_true|Round probs to zero or one. For distributions with two 0.5 values, both will be rounded up to 1.0
---classnamesfilepath|-cnfp|Path to the class ids/names text file
+--classnamesfilepath|-cnfp||Path to the class ids/names text file
 --cpuonly|-cpu|action=store_true|Useful for systems without an NVIDIA GPU
 --crop|-c|action=store_true|Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]
 --cropheight|-ch|type=int, default=356|y-component of bottom-right corner of crop

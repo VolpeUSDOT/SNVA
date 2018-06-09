@@ -713,7 +713,7 @@ if __name__ == '__main__':
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
   parser.add_argument('--numpergpuprocesses', '-npgp', type=int, default=1,
-                      help='The number of instances of interence to perform '
+                      help='The number of instances of inference to perform '
                            'on each GPU.')
   parser.add_argument('--protobuffilename', '-pbfn', default='model.pb',
                       help='Name of the model protobuf file.')
