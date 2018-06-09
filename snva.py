@@ -501,18 +501,18 @@ def main():
   logging.info('Found {} physical {} device(s).'.format(
     device_id_list_len, device_type))
 
-  if not args.numprocessespergpu > 0:
+  if not args.numpergpuprocesses > 0:
       raise ValueError(
         'The the number of processes to assign to each GPU is expected to be '
         'an integer greater than zero.'.format(valid_size_set))
 
   for i in range(device_id_list_len,
-                 device_id_list_len * args.numprocessespergpu):
+                 device_id_list_len * args.numpergpuprocesses):
     device_id_list.append(str(i))
     device_id_list_len += 1
 
   logging.info('Generated an additional {} logical {} device(s).'.format(
-    int(device_id_list_len - (device_id_list_len / args.numprocessespergpu)),
+    int(device_id_list_len - (device_id_list_len / args.numpergpuprocesses)),
     device_type))
 
   # child processes will dequeue and enqueue device names
@@ -529,7 +529,7 @@ def main():
 
   model_map = analysis.load_model(
     model_file_path, io_node_names_path, device_type,
-    args.gpumemoryfraction / args.numprocessespergpu)
+    args.gpumemoryfraction / args.numpergpuprocesses)
 
   return_code_map = {}
 
@@ -541,7 +541,7 @@ def main():
   logging.info('Processing {} videos in directory: {} using {}'.format(
     total_num_video_to_process, video_dir_path, args.modelname))
 
-  def call_process_video(video_file_name):#, child_process_semaphore):
+  def call_process_video(video_file_name):
     # Before popping the next video off of the list and creating a process to
     # scan it, check to see if fewer than device_id_list_len + 1 processes are
     # active. If not, Wait for a child process to release its semaphore
@@ -553,28 +553,19 @@ def main():
 
     return_code_map[video_file_name] = return_code_queue
 
-    if device_id_list_len > 1:
-      logging.debug('creating new child process.')
+    logging.debug('creating new child process.')
 
-      child_process = Process(
-        target=process_video,
-        name='ChildProcess-{}'.format(path.splitext(video_file_name)[0]),
-        args=(video_file_path, class_name_list, model_map, model_input_size,
-              device_id_queue, return_code_queue, log_queue, log_level,
-              device_type, device_id_list_len, ffmpeg_path, ffprobe_path))
+    child_process = Process(
+      target=process_video,
+      name='ChildProcess-{}'.format(path.splitext(video_file_name)[0]),
+      args=(video_file_path, class_name_list, model_map, model_input_size,
+            device_id_queue, return_code_queue, log_queue, log_level,
+            device_type, device_id_list_len, ffmpeg_path, ffprobe_path))
 
-      logging.debug('starting child process.')
+    logging.debug('starting child process.')
 
-      child_process.start()
-    else:
-      logging.debug('invoking process_video() in main process because '
-                    'device_type == {}'.format(device_type))
+    child_process.start()
 
-      process_video(
-        video_file_path, class_name_list, model_map, model_input_size,
-        device_id_queue, return_code_queue, log_queue, log_level, device_type,
-        device_id_list_len, ffmpeg_path, ffprobe_path)
-  
   def close_completed_child_processes(
       total_num_processed_videos, total_num_processed_frames):
     for video_file_name in list(return_code_map.keys()):
@@ -593,11 +584,11 @@ def main():
         if return_code == 'success':
           total_num_processed_videos += 1
           total_num_processed_frames += return_value
-  
+
         try:
           os.kill(child_pid, signal.SIGTERM)
-          logging.debug('child process {} was still alive following return and '
-                        'had to be killed'.format(child_pid))
+          logging.debug('child process {} was still alive following return '
+                        'and had to be killed'.format(child_pid))
         except:
           pass
   
@@ -651,8 +642,9 @@ def main():
     logging.debug('return_code_map_len on entry == {}'.format(
       len(return_code_map)))
 
-    total_num_processed_videos, total_num_processed_frames = close_completed_child_processes(
-      total_num_processed_videos, total_num_processed_frames)
+    total_num_processed_videos, total_num_processed_frames = \
+      close_completed_child_processes(
+        total_num_processed_videos, total_num_processed_frames)
     
     logging.debug('return_code_map_len on exit == {}'.format(
       len(return_code_map)))
@@ -708,14 +700,11 @@ if __name__ == '__main__':
   parser.add_argument('--loglevel', '-ll', default='info',
                       help='Defaults to \'info\'. Pass \'debug\' or \'error\' '
                            'for verbose or minimal logging, respectively.')
-  parser.add_argument('--logmode', '-lm', default='standard',
-                      help='Print debug info in logs. If verbose and debug'
-                           ' are both not set, log level will default to error')
+  parser.add_argument('--logmode', '-lm', default='verbose',
+                      help='If verbose, log to file and console. If silent, '
+                           'log to file only.')
   parser.add_argument('--logpath', '-l', default='./logs',
                       help='Path to the directory where log files are stored.')
-  parser.add_argument('--logsilently', '-ls', action='store_true',
-                      help='Print logs to logfile only and not to console. '
-                           'Use together with --logmode flags')
   parser.add_argument('--modelsdirpath', '-mdp',
                       default='models/work_zone_scene_detection',
                       help='Path to the parent directory of model directories.')
@@ -723,14 +712,14 @@ if __name__ == '__main__':
                       help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
-  parser.add_argument('--numprocessespergpu', '-nppg', type=int, default=1,
-                      help='The number of instances of interence to perform'
+  parser.add_argument('--numpergpuprocesses', '-npgp', type=int, default=1,
+                      help='The number of instances of interence to perform '
                            'on each GPU.')
   parser.add_argument('--protobuffilename', '-pbfn', default='model.pb',
                       help='Name of the model protobuf file.')
-  parser.add_argument('--outputpath', '-rp', default='./reports',
+  parser.add_argument('--outputpath', '-op', default='./reports',
                       help='Path to the directory where reports are stored.')
-  parser.add_argument('--smoothprobs', '-sm', action='store_true',
+  parser.add_argument('--smoothprobs', '-sp', action='store_true',
                       help='Apply class-wise smoothing across video frame '
                            'class probability distributions.')
   parser.add_argument('--smoothingfactor', '-sf', type=int, default=16,
@@ -747,7 +736,7 @@ if __name__ == '__main__':
   parser.add_argument('--timestampy', '-ty', type=int, default=340,
                       help='y-component of top-left corner of timestamp '
                            '(before cropping).')
-  parser.add_argument('--inputpath', '-v', required=True,
+  parser.add_argument('--inputpath', '-ip', required=True,
                       help='Path to video file(s).')
 
   args = parser.parse_args()
@@ -781,8 +770,13 @@ if __name__ == '__main__':
   log_handlers = [TimedRotatingFileHandler(
     filename=log_file_path, when='midnight', encoding='utf-8')]
 
-  if not args.logsilently:
+  valid_log_modes = ['verbose', 'silent']
+
+  if args.logmode == 'verbose':
     log_handlers.append(logging.StreamHandler())
+  elif not args.logmode == 'silent':
+    raise ValueError(
+      'The specified logmode is not in the set {}.'.format(valid_log_modes))
 
   log_format = '%(asctime)s:%(processName)s:%(process)d:' \
                '%(levelname)s:%(module)s:%(funcName)s:%(message)s'
