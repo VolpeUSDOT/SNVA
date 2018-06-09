@@ -48,9 +48,7 @@ export FFPROBE_HOME=/path/to/parent/folder/of/ffprobe/binary
 ```shell
 python3 snva.py
   --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --outputpath /path/to/your/desired/csv_file/destination/directory \
-  --logspath /path/to/your/desired/log_file/destination/directory \
-  --modelname inception_v3
+  --modelname mobilenet_v2
 ```
 
 
@@ -66,7 +64,8 @@ sudo nvidia-docker run \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
-  --modelname mobilenet_v2 --batchsize 128 --smoothprobs --binarizeprobs
+  --modelname inception_v3 --batchsize 128  --extracttimestamps --smoothprobs \
+  --binarizeprobs
 ```
 
 
