@@ -107,15 +107,15 @@ Flag | Short Flag | Properties | Description
 
 ## Troubleshooting and Additional Considerations
 
-While inference speed has been observed to monotonically increase with batch size, it is important to not exceed the GPU's memory capacity. The SNVA app does not currently manage memory utilization. It is best to discover the optimal batch size by starting to run for a breif period at a relatively low batch size, then iteratively incrementing the batch size while monitoring GPU memory utilization (e.g. using the nvidia-smi CLI app or NVIDIA X Server Settings GUI app).
+While inference speed has been observed to monotonically increase with batch size, it is important to not exceed the GPU's memory capacity. The SNVA app does not currently manage memory utilization. It is best to discover the optimal batch size by starting to run for a breif period at a relatively low batch size, then iteratively incrementing the batch size while monitoring GPU memory utilization (e.g. using the nvidia-smi CLI app or NVIDIA X Server Settings GUI app). GPU memory is set to be dynamically allocated, so one should monitor its usage over time to increase the chance of observing peak utilization.
 
 When terminating the app using ctrl-c, there may be a delay while the app terminates gracefully.
 
-When terminating the dockerized app, use ctrl-c to let the app terminate gracefully before invoking the nvidia-docker stop command.
+When terminating the dockerized app, use ctrl-c to let the app terminate gracefully before invoking the nvidia-docker stop command (which actually shouldn't be needed).
 
 Windows is not officially supported but may be used with minor code tweaks.
 
-
+When using Docker, some C++ extraneous output is passed to the host machine's console that is not actually logged to file and is not intended to be seen. Consider this a bug and ignore it.
 ## License
 
 MIT
