@@ -34,6 +34,13 @@ SNVA is intended to run on systems with NVIDIA GPUs, but can also run in a CPU-o
 
 ## Installation
 
+```shell
+export SNVA_HOME=/path/to/parent/folder/of/snva.py
+export FFMPEG_HOME=/path/to/parent/folder/of/ffmpeg/binary
+export FFPROBE_HOME=/path/to/parent/folder/of/ffprobe/binary
+```
+
+...TBD
 
 
 ## To run on Ubuntu:
@@ -82,13 +89,13 @@ Flags | Shortcuts | Properties | Descriptions
 --ionodenamesfilepath|-ifp|Path to the io tensor names text file
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
 --logmode|-lm|default=verbose|If verbose, log to file and console. If silent, log to file only
---logpath|-l|default=./logs|Path to the directory where log files are stored
+--logpath|-l|default=logs|Path to the directory where log files are stored
 --modelsdirpath|-mdp|default=models/work_zone_scene_detection|Path to the parent directory of model directories
 --modelname|-mn|required=True|The square input dimensions of the neural net
 --numchannels|-nc|type=int, default=3|The fourth dimension of image batches
 --numpergpuprocesses|-npgp|type=int, default=1|The number of instances of inference to perform on each GPU
 --protobuffilename|-pbfn|default=model.pb|Name of the model protobuf file
---outputpath|-op|default=./reports|Path to the directory where reports are stored
+--outputpath|-op|default=reports|Path to the directory where reports are stored
 --smoothprobs|-sp|action=store_true|Apply class-wise smoothing across video frame class probability distributions
 --smoothingfactor|-sf|type=int, default=16|The class-wise probability smoothing factor
 --timestampheight|-th|type=int, default=16|The length of the y-dimension of the timestamp overlay
