@@ -1,6 +1,6 @@
 # SHRP2 NDS Video Analytics (SNVA)
 
-This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on TensorFlow-Slim.
+This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim).
 
 SNVA is intended to expand the Roadway Information Database (RID)’s ability to help transportation safety researchers develop and answer research questions. The RID is the primary source of data collected as part of the FHWA’s SHRP2 Naturalistic Driving Study, including vehicle telemetry, geolocation, and roadway characteristics data. Missing from the RID are the locations of work zones driven through by NDS volunteer drivers. The app’s first release will focus on enabling/enhancing research questions related to work zone safety by using machine learning-based computer vision techniques to exhaustively and automatically detect the presence of work zone features across the entire ~1 million-hour forward-facing video data set, and then conflating that information with the RID’s time-series records. Previously, researchers depended on sparse and low fidelity 511 data provided by states that hosted the routes driven by volunteers. A successful deployment of the SNVA app will make it possible to query the RID for the exact start/stop locations, lengths, and frequencies of work zones in trip videos; a long-standing, highly desired ability within the SHRP2 community.
 
@@ -72,7 +72,7 @@ sudo nvidia-docker run \
 
 ## Usage
 
-Flags | Shortcuts | Properties | Descriptions
+Flag | Short Flag | Properties | Description
 :------:|:---------------:|:---------------------:|:-----------:
 --batchsize|-bs|type=int, default=32|Number of concurrent neural net inputs
 --binarizeprobs|-b|action=store_true|Round probs to zero or one. For distributions with two 0.5 values, both will be rounded up to 1.0
