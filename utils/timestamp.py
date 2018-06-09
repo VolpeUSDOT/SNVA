@@ -199,8 +199,9 @@ class Timestamp:
 
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
+    # TODO confirm that the lengths match and that no gaps exist between digits
+    # TODO: quality controll all unreadable timestamps, not just blank ones
     for i in range(num_timestamps):
-      # TODO confirm that the lengths match and that no gaps exist between digits
       try:
         timestamp_image = timestamp_image_array[
                           :, self.height * i:self.height * (i + 1)]
@@ -213,18 +214,21 @@ class Timestamp:
         _all = np.all(_equal, axis=(2, 3))
         # ((10,), (nd,))
         digits, positions = np.nonzero(_all)
-        digits = digits.astype(np.unicode_)
-        sorted_positions = np.argsort(positions)
-        sorted_digits = digits[sorted_positions]
-        timestamp_string_array[i] = ''.join(sorted_digits)
+        if len(digits) > 0:
+          sorted_positions = np.argsort(positions)
+          digits = digits[sorted_positions]
+          digits = digits.astype(np.unicode_)
+          timestamp_string_array[i] = ''.join(digits)
+        else:
+          timestamp_string_array[i] = 0
       except Exception as e:
         # TODO log error message when a timestamp image cannot be interpreted
-        logging.debug(e)
-        timestamp_string_array[i] = 0
+        logging.debug('the {}th timestamp could not be interpreted'.format(i))
+        logging.error(e)
 
     timestamp_errors = timestamp_string_array == 0
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
-    timestamp_string_array[timestamp_errors] = ''
+    timestamp_string_array[timestamp_errors] = '-1'  # for quality control
 
     return timestamp_string_array
 
@@ -300,21 +304,21 @@ class Timestamp:
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
 
     try:
-      timestamp_string_array = self._stringify_timestamps(timestamp_image_array,
-                                                          num_timestamps)
-      return timestamp_string_array
-    except Exception as e:
-      logging.warning('Process {} encountered an exception while converting '
-                      'timestamp images to strings en masse'.format(process_id))
-      logging.warning(e)
-      logging.warning('Process {} will re-attempt conversions one-at-a-time')
-
-    try:
-      # slower, but will isolate and gracefully handle individual failures
       timestamp_string_array = self._stringify_timestamps_per_frame(
         timestamp_image_array, num_timestamps)
-
       return timestamp_string_array
+    # except Exception as e:
+    #   logging.warning('Process {} encountered an exception while converting '
+    #                   'timestamp images to strings en masse'.format(process_id))
+    #   logging.warning(e)
+    #   logging.warning('Process {} will re-attempt conversions one-at-a-time')
+    #
+    # try:
+    #   # slower, but will isolate and gracefully handle individual failures
+    #   timestamp_string_array = self._stringify_timestamps_per_frame(
+    #     timestamp_image_array, num_timestamps)
+    #
+    #   return timestamp_string_array
     except Exception as e:
       logging.debug('Process {} encountered an exception while converting '
                     'timestamp images to strings one-at-a-time.'.format(

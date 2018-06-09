@@ -658,6 +658,8 @@ def main():
           total_num_processed_videos += 1
           total_num_processed_frames += return_value
 
+        # TODO: resolve issue with children stalling. Terminating children
+        # prematurely can lead to their logs not being written
         try:
           os.kill(child_pid, signal.SIGTERM)
           logging.debug('child process {} remained alive following return and '
