@@ -95,25 +95,6 @@ def should_extract_timestamps(frame_width, frame_height):
     return False
 
 
-def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
-  logging.debug('Constructing ffmpeg command')
-
-  command = [ffmpeg_path, '-i', video_file_path]
-
-  if should_crop(frame_width, frame_height):
-    command.extend(['-vf', 'crop=w={}:h={}:x={}:y={}'.format(
-      args.cropwidth, args.cropheight, args.cropx, args.cropy)])
-
-    frame_width = args.cropwidth
-    frame_height = args.cropheight
-
-  command.extend(
-    ['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
-     '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
-
-  return command, frame_width, frame_height
-
-
 def process_video(
     video_file_path, output_dir_path, class_names, model_map, model_input_size,
     device_id_queue, return_code_queue, log_queue, log_level, device_type,
@@ -144,29 +125,58 @@ def process_video(
                   'dimensions')
     logging.error(e)
 
-    logging.debug('will exit with code: exception and value None')
+    logging.debug(
+      'will exit with code: exception and value get_video_dimensions')
 
     return_code_queue.put(
       {'child_pid': os.getpid(), 'video_frame_pipe_pid': None,
-       'return_code': 'exception', 'return_value': None})
+       'return_code': 'exception', 'return_value': 'get_video_dimensions'})
 
     return_code_queue.close()
 
     return
 
-  ffmpeg_command, frame_width, frame_height = get_ffmpeg_command(
-    video_file_path, ffmpeg_path, frame_width, frame_height)
+  try:
+    crop = should_crop(frame_width, frame_height)
+  except Exception as e:
+    logging.error(e)
+
+    logging.debug('will exit with code: exception and value should_crop')
+
+    return_code_queue.put(
+      {'child_pid': os.getpid(), 'video_frame_pipe_pid': None,
+       'return_code': 'exception', 'return_value': 'should_crop'})
+
+    return_code_queue.close()
+
+    return
+
+  logging.debug('Constructing ffmpeg command')
+
+  ffmpeg_command = [ffmpeg_path, '-i', video_file_path]
+
+  if crop:
+    ffmpeg_command.extend(['-vf', 'crop=w={}:h={}:x={}:y={}'.format(
+      args.cropwidth, args.cropheight, args.cropx, args.cropy)])
+
+    frame_width = args.cropwidth
+    frame_height = args.cropheight
+
+  ffmpeg_command.extend(
+    ['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
+     '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
 
   try:
     extract_timestamps = should_extract_timestamps(frame_width, frame_height)
   except Exception as e:
     logging.error(e)
 
-    logging.debug('will exit with code: exception and value None')
+    logging.debug(
+      'will exit with code: exception and value should_extract_timestamps')
 
     return_code_queue.put(
       {'child_pid': os.getpid(), 'video_frame_pipe_pid': None,
-       'return_code': 'exception', 'return_value': None})
+       'return_code': 'exception', 'return_value': 'should_extract_timestamps'})
 
     return_code_queue.close()
 
@@ -179,6 +189,8 @@ def process_video(
 
   video_frame_shape = (frame_height, frame_width, args.numchannels)
 
+  logging.debug('video_frame_shape == {}'.format(video_frame_shape))
+
   video_frame_string_len = frame_height * frame_width * args.numchannels
 
   video_frame_pipe_pid = None
@@ -189,10 +201,14 @@ def process_video(
     if extract_timestamps:
       i = 0
 
-      tx = args.timestampx - args.cropx
-      ty = args.timestampy - args.cropy
+      tx = args.timestampx
+      ty = args.timestampy
       th = args.timestampheight
       tw = args.timestampmaxwidth
+
+      if crop:
+        tx -= args.cropx
+        ty -= args.cropy
 
     logging.debug('opening video frame pipe')
 
@@ -331,10 +347,10 @@ def process_video(
     release_device_id(device_id, device_id_queue)
 
     logging.debug(
-      'will exit with code: exception and value: None')
+      'will exit with code: exception and value: analyze_video')
     return_code_queue.put({
       'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
-      'return_code': 'exception', 'return_value': None})
+      'return_code': 'exception', 'return_value': 'analyze_video'})
     return_code_queue.close()
 
     return
@@ -359,10 +375,11 @@ def process_video(
                     'timestamp image crops to strings'.format(os.getpid()))
       logging.error(e)
 
-      logging.debug('will exit with code: exception and value: None')
+      logging.debug(
+        'will exit with code: exception and value: stringify_timestamps')
       return_code_queue.put(
         {'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
-         'return_code': 'exception', 'return_value': None})
+         'return_code': 'exception', 'return_value': 'stringify_timestamps'})
 
       return_code_queue.close()
 
@@ -370,7 +387,7 @@ def process_video(
   else:
     timestamp_strings = None
 
-  logging.debug('attempting to generate reports strings')
+  logging.debug('attempting to generate reports')
 
   try:
     start = time()
@@ -388,10 +405,10 @@ def process_video(
     logging.error('encountered an unexpected error while generating report.')
     logging.error(e)
 
-    logging.debug('will exit with code: exception and value: None')
+    logging.debug('will exit with code: exception and value: write_report')
     return_code_queue.put(
       {'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
-       'return_code': 'exception', 'return_value': None})
+       'return_code': 'exception', 'return_value': 'write_report'})
 
     return_code_queue.close()
 
