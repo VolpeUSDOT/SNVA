@@ -84,7 +84,7 @@ Flag | Short Flag | Properties | Description
 --cropx|-cx|type=int, default=2|x-component of top-left corner of crop
 --cropy|-cy|type=int, default=0|y-component of top-left corner of crop
 --excludepreviouslyprocessed|-epp|action=store_true|Skip processing of videos for which reports already exist in outputpath
---excludetimestamps|-et|action=store_true|Read timestamps off of video frames and include them as strings in the output CSV
+--extracttimestamps|-et|action=store_true|Crop timestamps out of video frames and map them to strings for inclusion in the output CSV
 --gpumemoryfraction|-gmf|type=float, default=0.9|% of GPU memory available to this process
 --ionodenamesfilepath|-ifp|Path to the io tensor names text file
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
