@@ -628,6 +628,14 @@ def main():
         close_completed_child_processes(
         total_num_processed_videos, total_num_processed_frames)
 
+    try:
+      _ = main_interrupt_queue.get_nowait()
+      logging.debug(
+        'breaking out of child process generation following interrupt signal')
+      break
+    except:
+      pass
+
     video_file_name = video_file_names.pop()
 
     try:
