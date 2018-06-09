@@ -141,31 +141,37 @@ class IO:
 # TODO: confirm that the csv can be opened after writing
   @staticmethod
   def write_report(
-      video_file_name, report_path, exclude_timestamps, stimestamps,
+      video_file_name, report_path, extract_timestamps, timestamp_strings,
       class_probs, class_names, smooth_probs, smoothing_factor, binarize_probs):
     class_names = ['{}_probability'.format(class_name)
                    for class_name in class_names]
+    
     if smooth_probs and smoothing_factor > 1:
       class_names = IO._expand_class_names(class_names, '_smoothed')
       smoothed_probs = IO._smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
+    
     if binarize_probs:
       class_names = IO._expand_class_names(class_names, '_binarized')
       binarized_probs = IO._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
-    if exclude_timestamps:
+    
+    if extract_timestamps:
+      header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
+      rows = [[video_file_name, '{:d}'.format(i + 1), timestamp_strings[i]]
+              + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
+              for i in range(len(class_probs))]
+    else:
       header = ['file_name', 'frame_number'] + class_names
       rows = [[video_file_name, '{:d}'.format(i+1)]
               + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
-    else:
-      header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
-      rows = [[video_file_name, '{:d}'.format(i + 1), stimestamps[i]]
-              + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
-              for i in range(len(class_probs))]
+    
     if not path.exists(report_path):
       os.makedirs(report_path)
+    
     report_file_path = path.join(report_path, video_file_name + '.csv')
+    
     with open(report_file_path, 'w', newline='') as report_file:
       csv_writer = csv.writer(report_file)
       csv_writer.writerow(header)

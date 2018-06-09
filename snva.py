@@ -44,20 +44,55 @@ def configure_logger(log_level, log_queue):
 
 def get_valid_num_per_device_processes(device_type):
   valid_n_procs = [1]
-  
   if device_type == 'cpu':
     n_cpus = os.cpu_count()
     n_procs = 2
-  
     while n_procs <= n_cpus:
       k = (n_cpus - n_procs) / n_procs
-      
       if k == int(k):
         valid_n_procs.append(n_procs)
-
       n_procs += 2
-    
   return valid_n_procs
+
+
+def should_crop(frame_width, frame_height):
+  if args.crop:
+    if all(
+        [frame_width >= args.cropwidth > 0, frame_height >= args.cropheight > 0,
+         frame_width > args.cropx >= 0, frame_height > args.cropy >= 0]):
+      logging.info(
+        'video frames will be cropped from [w={}:h={}:x={}:y={}]'.format(
+          args.cropwidth, args.cropheight, args.cropx, args.cropy))
+      return True
+    else:
+      raise ValueError(
+        'video frames cannot be cropped from [w={}:h={}:x={}:y={}] because the '
+        'video dimensions are [w={}:h={}]'.format(
+          args.cropwidth, args.cropheight, args.cropx,
+          args.cropy, frame_width, frame_height))
+  else:
+    logging.debug('video frames will not be cropped')
+    return False
+
+
+def should_extract_timestamps(frame_width, frame_height):
+  if args.extracttimestamps:
+    if all([frame_width >= args.timestampx + args.timestampmaxwidth > 0,
+            frame_height >= args.timestampy + args.timestampheight > 0]):
+      logging.info(
+        'timestamps will be extracted from [w={}:h={}:x={}:y={}]'.format(
+          args.timestampmaxwidth, args.timestampheight,
+          args.timestampx, args.timestampy))
+      return True
+    else:
+      raise ValueError(
+        'timestamps cannot be extracted from [w={}:h={}:x={}:y={}] because the '
+        'video dimensions are [w={}:h={}]'.format(
+          args.timestampmaxwidth, args.timestampheight, args.timestampx,
+          args.timestampy, frame_width, frame_height))
+  else:
+    logging.debug('timestamps will not be extracted')
+    return False
 
 
 def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
@@ -65,10 +100,7 @@ def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
 
   command = [ffmpeg_path, '-i', video_file_path]
 
-  if args.crop and all(
-      [frame_width >= args.cropwidth > 0, frame_height >= args.cropheight > 0,
-       frame_width > args.cropx >= 0, frame_height > args.cropy >= 0]
-  ):
+  if should_crop(frame_width, frame_height):
     command.extend(['-vf', 'crop=w={}:h={}:x={}:y={}'.format(
       args.cropwidth, args.cropheight, args.cropx, args.cropy)])
 
@@ -78,8 +110,6 @@ def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
   command.extend(
     ['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
      '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
-
-  # logging.debug(IO.stringify_command(command))
 
   return command, frame_width, frame_height
 
@@ -114,8 +144,8 @@ def process_video(
                   'dimensions')
     logging.error(e)
 
-    logging.debug(
-      'will exit with code: exception and value None')
+    logging.debug('will exit with code: exception and value None')
+
     return_code_queue.put(
       {'child_pid': os.getpid(), 'video_frame_pipe_pid': None,
        'return_code': 'exception', 'return_value': None})
@@ -127,7 +157,22 @@ def process_video(
   ffmpeg_command, frame_width, frame_height = get_ffmpeg_command(
     video_file_path, ffmpeg_path, frame_width, frame_height)
 
-  if not args.excludetimestamps:
+  try:
+    extract_timestamps = should_extract_timestamps(frame_width, frame_height)
+  except Exception as e:
+    logging.error(e)
+
+    logging.debug('will exit with code: exception and value None')
+
+    return_code_queue.put(
+      {'child_pid': os.getpid(), 'video_frame_pipe_pid': None,
+       'return_code': 'exception', 'return_value': None})
+
+    return_code_queue.close()
+
+    return
+
+  if extract_timestamps:
     timestamp_array = np.ndarray((args.timestampheight * num_frames,
                                   args.timestampmaxwidth, args.numchannels),
                                  dtype='uint8')
@@ -141,7 +186,7 @@ def process_video(
   # feed the tf.data input pipeline one image at a time and, while we're at it,
   # extract timestamp overlay crops for later mapping to strings.
   def video_frame_generator():
-    if not args.excludetimestamps:
+    if extract_timestamps:
       i = 0
 
       tx = args.timestampx - args.cropx
@@ -160,7 +205,7 @@ def process_video(
                                 bufsize=args.batchsize * base_two_exp)
 
     video_frame_pipe_pid = video_frame_pipe.pid
-    
+
     logging.debug('video frame pipe opened with pid: {}'.format(
       video_frame_pipe_pid))
 
@@ -191,7 +236,7 @@ def process_video(
         video_frame_array = np.fromstring(video_frame_string, dtype=np.uint8)
         video_frame_array = np.reshape(video_frame_array, video_frame_shape)
 
-        if not args.excludetimestamps:
+        if extract_timestamps:
           timestamp_array[th * i:th * (i + 1)] = \
             video_frame_array[ty:ty + th, tx:tx + tw]
           i += 1
@@ -296,9 +341,7 @@ def process_video(
 
   logging.debug('converting timestamp images to strings')
 
-  if args.excludetimestamps:
-    timestamp_strings = None
-  else:
+  if extract_timestamps:
     try:
       start = time()
 
@@ -324,13 +367,15 @@ def process_video(
       return_code_queue.close()
 
       return
+  else:
+    timestamp_strings = None
 
   logging.debug('attempting to generate reports strings')
 
   try:
     start = time()
 
-    IO.write_report(video_file_name, output_dir_path, args.excludetimestamps,
+    IO.write_report(video_file_name, output_dir_path, extract_timestamps,
                     timestamp_strings, probability_array, class_names,
                     args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
 
@@ -362,7 +407,7 @@ def process_video(
 
 
 def main():
-  logging.info('entering snva v0.1 main process')
+  logging.info('entering snva {} main process'.format(snva_version_string))
 
   total_num_video_to_process = None
 
@@ -372,8 +417,8 @@ def main():
                     '{}.'.format(signal_number))
     main_interrupt_queue.put('_')
 
-    if total_num_video_to_process is None or \
-            total_num_video_to_process == len(video_file_names):
+    if total_num_video_to_process is None \
+        or total_num_video_to_process == len(video_file_names):
 
       # Signal the logging thread to finish up
       logging.debug('signaling logger thread to end service.')
@@ -394,8 +439,10 @@ def main():
     if platform.system() == 'Windows':
       ffmpeg_path = 'ffmpeg.exe'
     else:
-      ffmpeg_path = '/usr/local/bin/ffmpeg' \
-        if path.exists('/usr/local/bin/ffmpeg') else '/usr/bin/ffmpeg'
+      ffmpeg_path = '/usr/local/bin/ffmpeg'
+
+      if not path.exists(ffmpeg_path):
+        ffmpeg_path = '/usr/bin/ffmpeg'
 
   logging.debug('FFMPEG path set to: {}'.format(ffmpeg_path))
 
@@ -407,8 +454,10 @@ def main():
     if platform.system() == 'Windows':
       ffprobe_path = 'ffprobe.exe'
     else:
-      ffprobe_path = '/usr/local/bin/ffprobe' \
-        if path.exists('/usr/local/bin/ffprobe') else '/usr/bin/ffprobe'
+      ffprobe_path = '/usr/local/bin/ffprobe'
+
+      if not path.exists(ffprobe_path):
+        ffprobe_path = '/usr/bin/ffprobe'
 
   logging.debug('FFPROBE path set to: {}'.format(ffprobe_path))
 
@@ -577,39 +626,39 @@ def main():
       total_num_processed_videos, total_num_processed_frames):
     for video_file_name in list(return_code_map.keys()):
       return_code_queue = return_code_map[video_file_name]
-  
+
       try:
         return_code_dictionary = return_code_queue.get_nowait()
-  
+
         child_pid = return_code_dictionary['child_pid']
         return_code = return_code_dictionary['return_code']
         return_value = return_code_dictionary['return_value']
 
         logging.debug('child process {} returned with exit code {} and exit '
                       'value {}'.format(child_pid, return_code, return_value))
-        
+
         if return_code == 'success':
           total_num_processed_videos += 1
           total_num_processed_frames += return_value
 
         try:
           os.kill(child_pid, signal.SIGTERM)
-          logging.debug('child process {} was still alive following return '
-                        'and had to be killed'.format(child_pid))
+          logging.debug('child process {} remained alive following return and '
+                        'had to be killed'.format(child_pid))
         except:
           pass
-  
+
         video_frame_pipe_pid = return_code_dictionary['video_frame_pipe_pid']
-  
+
         if video_frame_pipe_pid is not None:
           try:
             os.kill(video_frame_pipe_pid, signal.SIGTERM)
             logging.debug(
-              'child ffmpeg subprocess {} was still alive following return'
-              ' and had to be killed'.format(video_frame_pipe_pid))
+              'child ffmpeg subprocess {} remained alive following return and '
+              'had to be killed'.format(video_frame_pipe_pid))
           except:
             pass
-  
+
         return_code_queue.close()
         return_code_map.pop(video_file_name)
       except Empty:
@@ -643,32 +692,31 @@ def main():
                     '{}'.format(video_file_name))
       logging.error(e)
 
-  logging.debug('waiting for every child process to terminate.')
-
   while len(return_code_map) > 0:
-    logging.debug('return_code_map_len on entry == {}'.format(
-      len(return_code_map)))
+    logging.debug('waiting for the final {} child processes to '
+                  'terminate'.format(len(return_code_map)))
 
     total_num_processed_videos, total_num_processed_frames = \
-      close_completed_child_processes(
-        total_num_processed_videos, total_num_processed_frames)
-    
-    logging.debug('return_code_map_len on exit == {}'.format(
-      len(return_code_map)))
+      close_completed_child_processes(total_num_processed_videos,
+                                      total_num_processed_frames)
 
     # by now, the last device_id_queue_len videos are being processed,
     # so we can afford to poll for their completion infrequently
     if len(return_code_map) > 0:
-      sleep(10)
+      sleep_duration = 10
+      logging.debug('sleeping for {} seconds'.format(sleep_duration))
+      sleep(sleep_duration)
 
   end = time() - start
 
   processing_duration = IO.get_processing_duration(
-    end, 'snva v0.1 processed a total of {} videos and {} frames in: '.format(
-      total_num_processed_videos, total_num_processed_frames))
+    end, 'snva {} processed a total of {} videos and {} frames in: '.format(
+      snva_version_string, total_num_processed_videos,
+      total_num_processed_frames))
+
   logging.info(processing_duration)
 
-  logging.info('exiting snva v0.1 main process')
+  logging.info('exiting snva {} main process'.format(snva_version_string))
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
@@ -697,7 +745,7 @@ if __name__ == '__main__':
                       action='store_true',
                       help='Skip processing of videos for which reports '
                            'already exist in outputpath.')
-  parser.add_argument('--excludetimestamps', '-et', action='store_true',
+  parser.add_argument('--extracttimestamps', '-et', action='store_true',
                       help='Read timestamps off of video frames and include '
                            'them as strings in the output CSV.')
   parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
@@ -747,6 +795,8 @@ if __name__ == '__main__':
                       help='Path to video file(s).')
 
   args = parser.parse_args()
+
+  snva_version_string = 'v0.1'
 
   os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
