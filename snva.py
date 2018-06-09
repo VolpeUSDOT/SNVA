@@ -42,6 +42,24 @@ def configure_logger(log_level, log_queue):
   root_logger.addHandler(queue_handler)
 
 
+def get_valid_num_per_device_processes(device_type):
+  valid_n_procs = [1]
+  
+  if device_type == 'cpu':
+    n_cpus = os.cpu_count()
+    n_procs = 2
+  
+    while n_procs <= n_cpus:
+      k = (n_cpus - n_procs) / n_procs
+      
+      if k == int(k):
+        valid_n_procs.append(n_procs)
+
+      n_procs += 2
+    
+  return valid_n_procs
+
+
 def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
   logging.debug('Constructing ffmpeg command')
 
@@ -66,9 +84,10 @@ def get_ffmpeg_command(video_file_path, ffmpeg_path, frame_width, frame_height):
   return command, frame_width, frame_height
 
 
-def process_video(video_file_path, class_names, model_map, model_input_size,
-                  device_id_queue, return_code_queue, log_queue, log_level,
-                  device_type, device_count, ffmpeg_path, ffprobe_path):
+def process_video(
+    video_file_path, output_dir_path, class_names, model_map, model_input_size,
+    device_id_queue, return_code_queue, log_queue, log_level, device_type,
+    device_count, ffmpeg_path, ffprobe_path):
   configure_logger(log_level, log_queue)
 
   child_interrupt_queue = Queue()
@@ -202,20 +221,21 @@ def process_video(video_file_path, class_names, model_map, model_input_size,
   logging.debug('acquired {} device with id {}'.format(device_type, device_id))
 
   def release_device_id(device_id, device_id_queue):
-    logging.debug('released {} device with id {}'.format(
-      device_type, device_id))
-    device_id_queue.put(device_id)
-    device_id_queue.close()
-
-  try:
-    _ = child_interrupt_queue.get_nowait()
-
     try:
       logging.debug(
         'attempting to unset CUDA_VISIBLE_DEVICES environment variable.')
       os.environ.pop('CUDA_VISIBLE_DEVICES')
     except KeyError as ke:
       logging.warning(ke)
+
+    logging.debug('released {} device with id {}'.format(
+      device_type, device_id))
+
+    device_id_queue.put(device_id)
+    device_id_queue.close()
+
+  try:
+    _ = child_interrupt_queue.get_nowait()
 
     release_device_id(device_id, device_id_queue)
 
@@ -255,27 +275,13 @@ def process_video(video_file_path, class_names, model_map, model_input_size,
       raise AssertionError('num_analyzed_frames ({}) != num_frames ({})'.format(
         num_analyzed_frames, num_frames))
 
-    try:
-      logging.debug(
-        'attempting to unset CUDA_VISIBLE_DEVICES environment variable.')
-      os.environ.pop('CUDA_VISIBLE_DEVICES')
-    except KeyError as ke:
-      logging.warning(ke)
-
     release_device_id(device_id, device_id_queue)
 
-    device_id = None
+    # device_id = None
   except Exception as e:
     logging.error('encountered an unexpected error while analyzing {}'.format(
       video_file_name))
     logging.error(e)
-
-    try:
-      logging.debug(
-        'attempting to unset CUDA_VISIBLE_DEVICES environment variable.')
-      os.environ.pop('CUDA_VISIBLE_DEVICES')
-    except KeyError as ke:
-      logging.warning(ke)
 
     release_device_id(device_id, device_id_queue)
 
@@ -324,7 +330,7 @@ def process_video(video_file_path, class_names, model_map, model_input_size,
   try:
     start = time()
 
-    IO.write_report(video_file_name, args.outputpath, args.excludetimestamps,
+    IO.write_report(video_file_name, output_dir_path, args.excludetimestamps,
                     timestamp_strings, probability_array, class_names,
                     args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
 
@@ -370,14 +376,13 @@ def main():
             total_num_video_to_process == len(video_file_names):
 
       # Signal the logging thread to finish up
-      logging.debug('joining logger thread.')
+      logging.debug('signaling logger thread to end service.')
+
+      log_queue.put(None)
+
       logger_thread.join()
 
-      logging.debug('signaling logger thread to end service.')
-      log_queue.put(None)
-      log_queue.close()
-
-      exit()
+      logging.shutdown()
 
   signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -416,14 +421,6 @@ def main():
   else:
     raise ValueError('The video file/folder specified at the path {} could '
                      'not be found.'.format(args.inputpath))
-  try:
-    snva_home = os.environ['SNVA_HOME']
-  except KeyError:
-    logging.error('SNVA root dir not found in environment. Attempting to use '
-                  'the current working directory.')
-    snva_home = '.'
-
-  logging.debug('SNVA_HOME set to {}'.format(snva_home))
 
   models_root_dir_path = path.join(snva_home, args.modelsdirpath)
 
@@ -459,8 +456,18 @@ def main():
 
     model_input_size = int(model_input_size_string)
 
-  if args.excludepreviouslyprocessed and path.isdir(args.outputpath):
-    report_file_names = os.listdir(args.outputpath)
+  # if logpath is the default value, expand it using the SNVA_HOME prefix,
+  # otherwise, use the value explicitly passed by the user
+  if args.outputpath == 'reports':
+    output_dir_path = path.join(snva_home, args.outputpath)
+  else:
+    output_dir_path = args.outputpath
+
+  if not path.isdir(output_dir_path):
+    os.makedirs(output_dir_path)
+
+  if args.excludepreviouslyprocessed and path.isdir(output_dir_path):
+    report_file_names = os.listdir(output_dir_path)
 
     if len(report_file_names) > 0:
       video_ext = path.splitext(video_file_names[0])[1]
@@ -471,9 +478,6 @@ def main():
 
       video_file_names = [name for name in video_file_names if name
                           not in previously_processed_video_file_names]
-
-  if not path.isdir(args.outputpath):
-    os.makedirs(args.outputpath)
 
   if args.ionodenamesfilepath is None \
       or not path.isfile(args.ionodenamesfilepath):
@@ -501,18 +505,20 @@ def main():
   logging.info('Found {} physical {} device(s).'.format(
     device_id_list_len, device_type))
 
-  if not args.numpergpuprocesses > 0:
+  valid_num_processes_list = get_valid_num_per_device_processes(device_type)
+
+  if args.numperdeviceprocesses not in valid_num_processes_list:
       raise ValueError(
-        'The the number of processes to assign to each GPU is expected to be '
-        'an integer greater than zero.'.format(valid_size_set))
+        'The the number of processes to assign to each {} device is expected '
+        'to be in the set {}.'.format(device_type, valid_num_processes_list))
 
   for i in range(device_id_list_len,
-                 device_id_list_len * args.numpergpuprocesses):
+                 device_id_list_len * args.numperdeviceprocesses):
     device_id_list.append(str(i))
     device_id_list_len += 1
 
   logging.info('Generated an additional {} logical {} device(s).'.format(
-    int(device_id_list_len - (device_id_list_len / args.numpergpuprocesses)),
+    int(device_id_list_len - (device_id_list_len / args.numperdeviceprocesses)),
     device_type))
 
   # child processes will dequeue and enqueue device names
@@ -529,7 +535,7 @@ def main():
 
   model_map = analysis.load_model(
     model_file_path, io_node_names_path, device_type,
-    args.gpumemoryfraction / args.numpergpuprocesses)
+    args.gpumemoryfraction / args.numperdeviceprocesses)
 
   return_code_map = {}
 
@@ -558,9 +564,10 @@ def main():
     child_process = Process(
       target=process_video,
       name='ChildProcess-{}'.format(path.splitext(video_file_name)[0]),
-      args=(video_file_path, class_name_list, model_map, model_input_size,
-            device_id_queue, return_code_queue, log_queue, log_level,
-            device_type, device_id_list_len, ffmpeg_path, ffprobe_path))
+      args=(video_file_path, output_dir_path, class_name_list, model_map,
+            model_input_size, device_id_queue, return_code_queue, log_queue,
+            log_level, device_type, device_id_list_len, ffmpeg_path,
+            ffprobe_path))
 
     logging.debug('starting child process.')
 
@@ -615,7 +622,7 @@ def main():
   while len(video_file_names) > 0:
     # block if device_id_list_len + 1 child processes are active
     while len(return_code_map) > device_id_list_len:
-      num_processed_videos, total_num_processed_frames = \
+      total_num_processed_videos, total_num_processed_frames = \
         close_completed_child_processes(
         total_num_processed_videos, total_num_processed_frames)
 
@@ -703,7 +710,7 @@ if __name__ == '__main__':
   parser.add_argument('--logmode', '-lm', default='verbose',
                       help='If verbose, log to file and console. If silent, '
                            'log to file only.')
-  parser.add_argument('--logpath', '-l', default='./logs',
+  parser.add_argument('--logpath', '-l', default='logs',
                       help='Path to the directory where log files are stored.')
   parser.add_argument('--modelsdirpath', '-mdp',
                       default='models/work_zone_scene_detection',
@@ -712,12 +719,12 @@ if __name__ == '__main__':
                       help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
-  parser.add_argument('--numpergpuprocesses', '-npgp', type=int, default=1,
-                      help='The number of instances of inference to perform '
-                           'on each GPU.')
+  parser.add_argument('--numperdeviceprocesses', '-npdp', type=int, default=1,
+                      help='The number of instances of inference to perform on '
+                           'each device.')
   parser.add_argument('--protobuffilename', '-pbfn', default='model.pb',
                       help='Name of the model protobuf file.')
-  parser.add_argument('--outputpath', '-op', default='./reports',
+  parser.add_argument('--outputpath', '-op', default='reports',
                       help='Path to the directory where reports are stored.')
   parser.add_argument('--smoothprobs', '-sp', action='store_true',
                       help='Apply class-wise smoothing across video frame '
@@ -743,6 +750,11 @@ if __name__ == '__main__':
 
   os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+  try:
+    snva_home = os.environ['SNVA_HOME']
+  except KeyError:
+    snva_home = '.'
+
   # Define our log level based on arguments
   if args.loglevel == 'error':
     log_level = logging.ERROR
@@ -751,21 +763,28 @@ if __name__ == '__main__':
   else:
     log_level = logging.INFO
 
-  # Configure our log in the main process to write to a file
-  if path.exists(args.logpath):
-    if path.isfile(args.logpath):
-      raise ValueError('The specified logpath {} is expected to be a '
-                       'directory, not a file.'.format(args.logpath))
+  # if logpath is the default value, expand it using the SNVA_HOME prefix,
+  # otherwise, use the value explicitly passed by the user
+  if args.logpath == 'logs':
+    logs_dir_path = path.join(snva_home, args.logpath)
   else:
-    logging.debug("Creating log directory {}".format(args.logpath))
-    os.makedirs(args.logpath)
+    logs_dir_path = args.logpath
+
+  # Configure our log in the main process to write to a file
+  if path.exists(logs_dir_path):
+    if path.isfile(logs_dir_path):
+      raise ValueError('The specified logpath {} is expected to be a '
+                       'directory, not a file.'.format(logs_dir_path))
+  else:
+    logging.debug("Creating log directory {}".format(logs_dir_path))
+    os.makedirs(logs_dir_path)
 
   try:
     log_file_name = 'snva_' + socket.getfqdn() + '.log'
   except:
     log_file_name = 'snva.log'
 
-  log_file_path = path.join(args.logpath, log_file_name)
+  log_file_path = path.join(logs_dir_path, log_file_name)
 
   log_handlers = [TimedRotatingFileHandler(
     filename=log_file_path, when='midnight', encoding='utf-8')]
@@ -791,13 +810,14 @@ if __name__ == '__main__':
 
   logger_thread.start()
 
+  logging.debug('SNVA_HOME set to {}'.format(snva_home))
+
   main_interrupt_queue = Queue()
 
   main()
 
   logging.debug('signaling logger thread to end service.')
   log_queue.put(None)
-  log_queue.close()
 
   logger_thread.join()
 

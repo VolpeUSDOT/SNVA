@@ -93,7 +93,7 @@ Flags | Shortcuts | Properties | Descriptions
 --modelsdirpath|-mdp|default=models/work_zone_scene_detection|Path to the parent directory of model directories
 --modelname|-mn|required=True|The square input dimensions of the neural net
 --numchannels|-nc|type=int, default=3|The fourth dimension of image batches
---numpergpuprocesses|-npgp|type=int, default=1|The number of instances of inference to perform on each GPU
+--numperdeviceprocesses|-npdp|type=int, default=1|The number of instances of inference to perform on each device
 --protobuffilename|-pbfn|default=model.pb|Name of the model protobuf file
 --outputpath|-op|default=reports|Path to the directory where reports are stored
 --smoothprobs|-sp|action=store_true|Apply class-wise smoothing across video frame class probability distributions

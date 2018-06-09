@@ -45,6 +45,22 @@ def preprocess_for_inception(image, image_size):
   return image
 
 
+# assumed user specification of numperdeviceprocesses has been validated,
+# to be <= cpu cores when in --cpuonly mode
+def get_num_parallel_calls(device_type, device_count):
+  n_cpus = os.cpu_count()
+
+  if device_type == 'gpu':
+    return int(n_cpus / device_count)
+  else:
+    if device_count == 1:
+      return n_cpus - 1
+    elif device_count == n_cpus:
+      return n_cpus
+    else:
+      return int((n_cpus - device_count) / device_count)
+
+
 def analyze_video(video_frame_generator, video_frame_shape, batch_size,
                   session_config, input_node, output_node, preprocessing_fn,
                   prob_array, device_type, device_count):
@@ -52,7 +68,7 @@ def analyze_video(video_frame_generator, video_frame_shape, batch_size,
     video_frame_generator, tf.uint8, tf.TensorShape(list(video_frame_shape)))
 
   video_frame_dataset = video_frame_dataset.map(
-    preprocessing_fn, num_parallel_calls=int(os.cpu_count() / device_count))
+    preprocessing_fn, get_num_parallel_calls(device_type, device_count))
 
   video_frame_dataset = video_frame_dataset.batch(batch_size)
 
