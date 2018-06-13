@@ -27,7 +27,7 @@ Installation of the Docker-containerized version of SNVA has been tested using:
 - Docker = 18.03.1-CE
 
 
-## System Requirements
+## System Requirements and Performance Expectations
 
 SNVA is intended to run on systems with NVIDIA GPUs, but can also run in a CPU-only mode. SNVA runs ~10x faster on a single NVIDIA GeForce GTX 1080 Ti together with a 3.00GHz 10-core Intel Core i7-6950X CPU than it does on the 10-core CPU alone. For a system with N GPUs, SNVA will process N videos concurrently, but is not (at this time) designed to distribute the processing of a single video across multiple GPUs. Inference speeds depend on the particular CNN architecture used to develop the model. When tested on two GPUs against ~32,000,000 video frames spanning ~1,350 videos, InceptionV3 inferred class labels at ~860 fps, whereas MobilenetV2 operated at ~1520 fps, taking 10.75 and 6 hours to complete, respectively.
 
@@ -48,7 +48,7 @@ export FFPROBE_HOME=/path/to/parent/folder/of/ffprobe/binary
 ```shell
 python3 snva.py
   --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --modelname mobilenet_v2
+  --modelname mobilenet_v2 --batchsize 128
 ```
 
 
@@ -64,7 +64,7 @@ sudo nvidia-docker run \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
-  --modelname inception_v3 --batchsize 128 --extracttimestamps --smoothprobs \
+  --modelname inception_v3 --batchsize 32 --extracttimestamps --smoothprobs \
   --binarizeprobs
 ```
 
@@ -119,4 +119,4 @@ Windows is not officially supported but may be used with minor code tweaks.
 When using Docker, some C++ extraneous output is passed to the host machine's console that is not actually logged to file and is not intended to be seen. Consider this a bug and ignore it.
 ## License
 
-MIT
+[MIT](https://opensource.org/licenses/MIT)

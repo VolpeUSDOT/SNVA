@@ -135,8 +135,65 @@ class IO:
     uncertain_prob_indices = binarized_probs == 0.5
     binarized_probs[uncertain_prob_indices] = 1.0
     binarized_probs = np.round(binarized_probs)
+
     return binarized_probs
 
+  @staticmethod
+  def open_report(report_file_path):
+    report_file = open(report_file_path, newline='')
+
+    return csv.reader(report_file)
+
+  @staticmethod
+  def read_report_header(report_reader, frame_col_num=None,
+                         header_col_range=None, header_mask=None,
+                         return_reader=False):
+
+    report_header = next(report_reader)
+
+    if frame_col_num and header_col_range:
+      report_header = [report_header[frame_col_num]] + \
+                      report_header[header_col_range[0]: header_col_range[1]]
+
+    if header_mask and report_header != header_mask:
+      raise ValueError(
+        'report header: {} was expected to match header mask: {}\n'
+        'given frame_col_num: {} and header_col_range: {}'.format(
+          report_header, header_mask, frame_col_num, header_col_range))
+
+    if return_reader:
+      return report_header, report_reader
+    else:
+      return report_header
+
+  @staticmethod
+  def read_report_data(
+      report_reader, frame_col_num=1, timestamp_col_num=2,
+      data_col_range=(3, 7), data_point_fn=None, data_row_fn=None):
+    if frame_col_num and timestamp_col_num and data_col_range \
+        and data_point_fn and data_row_fn:
+      return {row[frame_col_num]: data_row_fn(
+        [data_point_fn(data_point) for data_point
+         in row[data_col_range[0]:data_col_range[1]]]) for row in report_reader}
+    else:
+      return {row[0]: [data_point for data_point in row[1:]]
+              for row in report_reader}
+
+  @staticmethod
+  def read_report(report_file_path, frame_col_num=1, timestamp_col_num=2, data_col_range=None,
+                  header_mask=None, data_point_fn=None, data_row_fn=None):
+    report_reader = IO.open_report(report_file_path)
+
+    report_header = IO.read_report_header(
+      report_reader, frame_col_num=frame_col_num,
+      header_col_range=data_col_range, header_mask=header_mask,
+      return_reader=True)
+
+    report_data = IO.read_report_data(
+      report_reader, frame_col_num=frame_col_num, data_col_range=data_col_range,
+      data_point_fn=data_point_fn, data_row_fn=data_row_fn)
+
+    return report_header, report_data
 
 # TODO: confirm that the csv can be opened after writing
   @staticmethod
