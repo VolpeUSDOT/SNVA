@@ -7,10 +7,15 @@ path = os.path
 
 
 class Feature:
-  def __init__(self, feature_id, class_id, class_name, start_timestamp,
-               end_timestamp, start_frame_number, end_frame_number):
+  def __init__(
+      self, feature_id, event_id, trip_id, class_id, class_name,
+      start_timestamp, end_timestamp, start_frame_number, end_frame_number):
     # the position of the feature in the source video relative to other features
     self.feature_id = feature_id
+    #
+    self.event_id = event_id
+    #
+    self.trip_id = trip_id
     # id of the class predicted by the video analyzer
     self.class_id = class_id
     # name of the class predicted by the video analyzer
@@ -30,6 +35,8 @@ class Feature:
 
   def __str__(self):
     print_string = '\tfeature_id: ' + str(self.feature_id) + '\n'
+    print_string += '\tevent_id: ' + str(self.event_id) + '\n'
+    print_string += '\ttrip_id: ' + str(self.trip_id) + '\n'
     print_string += '\tclass_id: ' + str(self.class_id) + '\n'
     print_string += '\tclass_name: ' + str(self.class_name) + '\n'
     print_string += '\tstart_timestamp: ' + str(self.start_timestamp) + '\n'
@@ -133,9 +140,10 @@ class Trip:
           # the beginning of the next feature has been reached.
           # create an object for the preceding feature.
           self.feature_sequence.append(Feature(
-            feature_id=feature_id, class_id=class_id,
-            class_name=self.class_names[class_id], start_timestamp=start_timestamp,
-            end_timestamp=end_timestamp, start_frame_number=start_frame_number,
+            feature_id=feature_id, event_id=None, trip_id=trip_id,
+            class_id=class_id, class_name=self.class_names[class_id],
+            start_timestamp=start_timestamp, end_timestamp=end_timestamp,
+            start_frame_number=start_frame_number,
             end_frame_number=end_frame_number))
 
           feature_id += 1
@@ -143,10 +151,10 @@ class Trip:
           start_timestamp = report_timestamps[i]
           start_frame_number = report_frame_numbers[i]
 
-  def events(
-      self, target_feature_class_id, preceding_feature_class_id,
-      following_feature_class_id, target_feature_class_name=None,
-      preceding_feature_class_name=None, following_feature_class_name=None):
+  def events(self, target_feature_class_id, preceding_feature_class_id,
+             following_feature_class_id, target_feature_class_name=None,
+             preceding_feature_class_name=None,
+             following_feature_class_name=None):
     if target_feature_class_id is None:
       if target_feature_class_name is None:
         raise ValueError('target_feature_class_id and target_feature_class_name'
@@ -154,19 +162,17 @@ class Trip:
       else:
         target_feature_class_id = self.class_ids[target_feature_class_name]
 
-    if preceding_feature_class_id is None \
-        and preceding_feature_class_name is not None:
-        preceding_feature_class_id = self.class_ids[
-          preceding_feature_class_name]
+    if preceding_feature_class_id is None and \
+            preceding_feature_class_name is not None:
+      preceding_feature_class_id = self.class_ids[preceding_feature_class_name]
 
     if target_feature_class_id == preceding_feature_class_id:
       raise ValueError('target_feature_class_id and preceding_feature_class_id'
                        ' cannot be equal')
 
-    if following_feature_class_id is None \
-        and following_feature_class_name is not None:
-        following_feature_class_id = self.class_ids[
-          following_feature_class_name]
+    if following_feature_class_id is None and \
+            following_feature_class_name is not None:
+      following_feature_class_id = self.class_ids[following_feature_class_name]
 
     if target_feature_class_id == following_feature_class_id:
       raise ValueError('target_feature_class_id and following_feature_class_id'
@@ -180,18 +186,9 @@ class Trip:
 
     if preceding_feature_class_id and following_feature_class_id:
       previous_preceding_feature = None
+      previous_following_feature = None
 
       for current_feature in self.feature_sequence:
-        if current_feature.class_id == preceding_feature_class_id:
-          previous_preceding_feature = current_feature
-  
-        if current_feature.class_id == following_feature_class_id:
-          previous_following_feature = current_feature
-
-          if previous_event \
-              and previous_event.following_feature is None:
-            previous_event.following_feature = previous_following_feature
-  
         if current_feature.class_id == target_feature_class_id:
           current_event = Event(event_id=event_id, trip_id=self.trip_id,
                                 target_feature=current_feature)
@@ -199,28 +196,53 @@ class Trip:
           # if two consecutive events share a common following/preceding
           # feature, and that feature is closer to the current event than the
           # previous event, reassign it to the current event.
-          if previous_event and previous_preceding_feature \
-              and previous_event.following_feature \
-                  == previous_preceding_feature:
-            previous_target_feature = previous_event.target_feature
+          if previous_preceding_feature:
+            if previous_preceding_feature.event_id:
+              previous_target_feature = events[
+                previous_preceding_feature.event_id].target_feature
 
-            previous_target_feature_distance = abs(
-              previous_target_feature.end_timestamp
-              - previous_preceding_feature.start_timestamp)
+              previous_target_feature_distance = \
+                previous_preceding_feature.start_frame_number - \
+                previous_target_feature.end_frame_number
 
-            current_feature_distance = abs(
-              current_feature.start_timestamp -
-              previous_preceding_feature.end_timestamp)
+              assert previous_target_feature_distance >= 0
 
-            if current_feature_distance < previous_target_feature_distance:
-              previous_event.following_feature = None
+              current_feature_distance = \
+                current_feature.start_frame_number - \
+                previous_preceding_feature.end_frame_number
+
+              assert current_feature_distance >= 0
+
+              if current_feature_distance < previous_target_feature_distance:
+                previous_event.following_feature = None
+                current_event.preceding_feature = previous_preceding_feature
+                previous_preceding_feature.event_id = event_id
+            else:
               current_event.preceding_feature = previous_preceding_feature
+              previous_preceding_feature.event_id = event_id
+
+            if previous_preceding_feature == previous_following_feature:
+              previous_following_feature = None
+
+            previous_preceding_feature = None
 
           events.append(current_event)
 
           event_id += 1
-  
+
           previous_event = current_event
+
+        if current_feature.class_id == preceding_feature_class_id:
+          previous_preceding_feature = current_feature
+
+        if current_feature.class_id == following_feature_class_id:
+          previous_following_feature = current_feature
+
+          if previous_event and \
+                  previous_event.following_feature is None:
+            previous_event.following_feature = previous_following_feature
+            previous_following_feature.event_id = previous_event.event_id
+            previous_following_feature = None
 
     return events
 
