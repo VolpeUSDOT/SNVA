@@ -145,57 +145,120 @@ class IO:
     return csv.reader(report_file)
 
   @staticmethod
-  def read_report_header(report_reader, frame_col_num=None,
-                         header_col_range=None, header_mask=None,
-                         return_reader=False):
+  def read_report_header(
+      report_reader, frame_col_num=None, timestamp_col_num=None, 
+      data_col_range=None, header_mask=None, return_data_col_range=False):
+    if data_col_range is None and header_mask is None:
+      raise ValueError('data_col_range and header_mask cannot both be None.')
 
-    report_header = next(report_reader)
+    csv_header = next(report_reader)
 
-    if frame_col_num and header_col_range:
-      report_header = [report_header[frame_col_num]] + \
-                      report_header[header_col_range[0]: header_col_range[1]]
+    report_header = []
+    
+    if frame_col_num:
+      report_header.append(csv_header[frame_col_num])
+    
+    if timestamp_col_num:
+      report_header.append(csv_header[timestamp_col_num])
+        
+    if len(report_header) == 0:
+      raise ValueError(
+        'frame_col_num and timestamp_col_num cannot both be None.')
+
+    if data_col_range is None:
+      data_col_indices = [csv_header.index(data_col_name)
+                          for data_col_name in header_mask[len(report_header):]]
+      data_col_range = (data_col_indices[0], data_col_indices[-1] + 1)
+
+    report_header.extend(csv_header[data_col_range[0]: data_col_range[1]])
 
     if header_mask and report_header != header_mask:
       raise ValueError(
-        'report header: {} was expected to match header mask: {}\n'
-        'given frame_col_num: {} and header_col_range: {}'.format(
-          report_header, header_mask, frame_col_num, header_col_range))
-
-    if return_reader:
-      return report_header, report_reader
+        'report header: {} was expected to match header mask: {}\ngiven '
+        'frame_col_num: {}, timestamp_col_num: {} and data_col_range: '
+        '{}'.format(report_header, header_mask, frame_col_num, 
+                    timestamp_col_num, data_col_range))
+    
+    if return_data_col_range:
+      return report_header, data_col_range
     else:
       return report_header
 
   @staticmethod
-  def read_report_data(
-      report_reader, frame_col_num=1, timestamp_col_num=2,
-      data_col_range=(3, 7), data_point_fn=None, data_row_fn=None):
-    if frame_col_num and timestamp_col_num and data_col_range \
-        and data_point_fn and data_row_fn:
-      return {row[frame_col_num]: data_row_fn(
-        [data_point_fn(data_point) for data_point
-         in row[data_col_range[0]:data_col_range[1]]]) for row in report_reader}
+  def read_report_data(report_reader, frame_col_num=None,
+                       timestamp_col_num=None, data_col_range=None):
+    if frame_col_num and timestamp_col_num and data_col_range:
+      frame_numbers = []
+      timestamps = []
+      probabilities = []
+
+      for row in report_reader:
+        frame_numbers.append(row[frame_col_num])
+        timestamps.append(row[timestamp_col_num])
+        probabilities.append(row[data_col_range[0]:data_col_range[1]])
+
+      report_data = {'frame_numbers': np.array(frame_numbers),
+                     'frame_timestamps': np.array(timestamps),
+                     'probabilities': np.array(probabilities)}
+    elif frame_col_num and data_col_range:
+      frame_numbers = []
+      probabilities = []
+
+      for row in report_reader:
+        frame_numbers.append(row[frame_col_num])
+        probabilities.append(row[data_col_range[0]:data_col_range[1]])
+
+      report_data = {'frame_numbers': np.array(frame_numbers),
+                     'probabilities': np.array(probabilities)}
+    elif timestamp_col_num and data_col_range:
+      timestamps = []
+      probabilities = []
+
+      for row in report_reader:
+        timestamps.append(row[timestamp_col_num])
+        probabilities.append(row[data_col_range[0]:data_col_range[1]])
+
+      report_data = {'frame_timestamps': np.array(timestamps),
+                     'probabilities': np.array(probabilities)}
+    elif data_col_range:
+      probabilities = []
+
+      for row in report_reader:
+        probabilities.append(row[data_col_range[0]:data_col_range[1]])
+
+      report_data = {'probabilities': np.array(probabilities)}
     else:
-      return {row[0]: [data_point for data_point in row[1:]]
-              for row in report_reader}
+      report_data = np.array([row for row in report_reader])
+
+    return report_data
 
   @staticmethod
-  def read_report(report_file_path, frame_col_num=1, timestamp_col_num=2, data_col_range=None,
-                  header_mask=None, data_point_fn=None, data_row_fn=None):
+  def read_report(report_file_path, frame_col_num=None, timestamp_col_num=None,
+                  data_col_range=None, header_mask=None, data_point_fn=None, 
+                  data_row_fn=None, return_data_col_range=False):
     report_reader = IO.open_report(report_file_path)
 
-    report_header = IO.read_report_header(
-      report_reader, frame_col_num=frame_col_num,
-      header_col_range=data_col_range, header_mask=header_mask,
-      return_reader=True)
+    if return_data_col_range:
+      report_header, data_col_range = IO.read_report_header(
+        report_reader, frame_col_num=frame_col_num,
+        timestamp_col_num=timestamp_col_num, data_col_range=data_col_range,
+        header_mask=header_mask, return_data_col_range=True)
+    else:
+      report_header = IO.read_report_header(
+        report_reader, frame_col_num=frame_col_num,
+        timestamp_col_num=timestamp_col_num, data_col_range=data_col_range,
+        header_mask=header_mask, return_data_col_range=False)
 
     report_data = IO.read_report_data(
-      report_reader, frame_col_num=frame_col_num, data_col_range=data_col_range,
-      data_point_fn=data_point_fn, data_row_fn=data_row_fn)
+      report_reader, frame_col_num=frame_col_num,
+      timestamp_col_num=timestamp_col_num, data_col_range=data_col_range)
 
-    return report_header, report_data
+    if return_data_col_range:
+      return report_header, report_data, data_col_range
+    else:
+      return report_header, report_data
 
-# TODO: confirm that the csv can be opened after writing
+  # TODO: confirm that the csv can be opened after writing
   @staticmethod
   def write_report(
       video_file_name, report_path, extract_timestamps, timestamp_strings,
