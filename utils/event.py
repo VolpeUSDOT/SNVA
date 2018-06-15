@@ -187,10 +187,10 @@ class Trip:
         start_timestamp = report_timestamps[i]
         start_frame_number = report_frame_numbers[i]
 
-  def find_events(self, target_feature_class_id, preceding_feature_class_id,
-             following_feature_class_id, target_feature_class_name=None,
-             preceding_feature_class_name=None,
-             following_feature_class_name=None):
+  def find_events(
+      self, target_feature_class_id, target_feature_class_name=None,
+      preceding_feature_class_id=None, preceding_feature_class_name=None,
+      following_feature_class_id=None, following_feature_class_name=None):
     if target_feature_class_id is None:
       if target_feature_class_name is None:
         raise ValueError('target_feature_class_id and target_feature_class_name'
@@ -279,6 +279,56 @@ class Trip:
             previous_event.following_feature = previous_following_feature
             previous_following_feature.event_id = previous_event.event_id
             previous_following_feature = None
+    elif not preceding_feature_class_id and following_feature_class_id:
+      for current_feature in self.feature_sequence:
+        if current_feature.class_id == target_feature_class_id:
+          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+                                target_feature=current_feature)
+
+          events.append(current_event)
+
+          event_id += 1
+
+          previous_event = current_event
+
+        if current_feature.class_id == following_feature_class_id:
+          previous_following_feature = current_feature
+
+          if previous_event and \
+                  previous_event.following_feature is None:
+            previous_event.following_feature = previous_following_feature
+            previous_following_feature.event_id = previous_event.event_id
+    elif preceding_feature_class_id and not following_feature_class_id:
+      previous_preceding_feature = None
+
+      for current_feature in self.feature_sequence:
+        if current_feature.class_id == target_feature_class_id:
+          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+                                target_feature=current_feature)
+
+          # if two consecutive events share a common following/preceding
+          # feature, and that feature is closer to the current event than the
+          # previous event, reassign it to the current event.
+          if previous_preceding_feature:
+            current_event.preceding_feature = previous_preceding_feature
+            previous_preceding_feature.event_id = event_id
+            previous_preceding_feature = None
+
+          events.append(current_event)
+
+          event_id += 1
+
+        if current_feature.class_id == preceding_feature_class_id:
+          previous_preceding_feature = current_feature
+    else:
+      for current_feature in self.feature_sequence:
+        if current_feature.class_id == target_feature_class_id:
+          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+                                target_feature=current_feature)
+
+          events.append(current_event)
+
+          event_id += 1
 
     return events
 
@@ -289,4 +339,5 @@ class Trip:
       preceding_feature_class_id=self.class_ids['warning_sign'],
       preceding_feature_class_name='warning_sign',
       following_feature_class_id=self.class_ids['warning_sign'],
-      following_feature_class_name='warning_sign')
+      following_feature_class_name='warning_sign'
+    )
