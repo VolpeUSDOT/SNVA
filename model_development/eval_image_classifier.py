@@ -33,7 +33,7 @@ import sys
 import time
 
 import tensorflow as tf
-from tensorflow.contrib import metrics
+from tensorflow import metrics
 from tensorflow.contrib import slim
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
@@ -210,7 +210,9 @@ def main(_):
       preprocessing_name,
       is_training=False)
 
-    eval_image_size = FLAGS.eval_image_size or network_fn.default_image_size
+    eval_image_size = FLAGS.eval_image_size or \
+                      nets_factory.get_network_default_image_size(
+                        FLAGS.model_name)
 
     # TODO: ask the dataset if it has statistics or this block can break
     if preprocessing_name == 'standardization':
@@ -257,17 +259,18 @@ def main(_):
     recall_name = 'Recall'
 
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
-      'Accuracy': metrics.streaming_accuracy(predictions, labels),
-      precision_name: metrics.streaming_precision(predictions, labels),
-      recall_name: metrics.streaming_recall(predictions, labels),
-      true_positives_name: metrics.streaming_true_positives(predictions, labels),
-      true_negatives_name: metrics.streaming_true_negatives(predictions, labels),
-      false_positives_name: metrics.streaming_false_positives(predictions, labels),
-      false_negatives_name: metrics.streaming_false_negatives(predictions, labels)
+      'Accuracy': metrics.accuracy(predictions, labels),
+      precision_name: metrics.precision(predictions, labels),
+      recall_name: metrics.recall(predictions, labels),
+      true_positives_name: metrics.true_positives(predictions, labels),
+      true_negatives_name: metrics.true_negatives(predictions, labels),
+      false_positives_name: metrics.false_positives(predictions, labels),
+      false_negatives_name: metrics.false_negatives(predictions, labels)
     })
 
-    names_to_values['Total_Misclassifications'] = tf.add(names_to_values[false_positives_name],
-                                                         names_to_values[false_negatives_name])
+    names_to_values['Total_Misclassifications'] = tf.add(
+      names_to_values[false_positives_name],
+      names_to_values[false_negatives_name])
 
     def safe_divide(numerator, denominator):
       """Divides two values, returning 0 if the denominator is <= 0.
