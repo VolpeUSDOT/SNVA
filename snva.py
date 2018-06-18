@@ -11,7 +11,8 @@ import socket
 import subprocess as sp
 from threading import Thread
 from time import sleep, time
-from utils import analysis
+from utils.analysis import VideoAnalyzer
+from utils.event import Trip
 from utils.io import IO
 from utils.timestamp import Timestamp
 
@@ -42,7 +43,14 @@ def configure_logger(log_level, log_queue):
   root_logger.addHandler(queue_handler)
 
 
-def get_valid_num_per_device_processes(device_type):
+def stringify_command(arg_list):
+  command_string = arg_list[0]
+  for elem in arg_list[1:]:
+    command_string += ' ' + elem
+  return 'command string: {}'.format(command_string)
+
+
+def get_valid_num_processes_per_device(device_type):
   valid_n_procs = [1]
   if device_type == 'cpu':
     n_cpus = os.cpu_count()
@@ -96,9 +104,9 @@ def should_extract_timestamps(frame_width, frame_height):
 
 
 def process_video(
-    video_file_path, output_dir_path, class_names, model_map, model_input_size,
-    device_id_queue, return_code_queue, log_queue, log_level, device_type,
-    device_count, ffmpeg_path, ffprobe_path):
+    video_file_path, output_dir_path, class_name_map, model_map,
+    model_input_size, device_id_queue, return_code_queue, log_queue, log_level,
+    device_type, device_count, ffmpeg_path, ffprobe_path):
   configure_logger(log_level, log_queue)
 
   child_interrupt_queue = Queue()
@@ -118,8 +126,17 @@ def process_video(
   logging.info('preparing to analyze {}'.format(video_file_path))
 
   try:
+    start = time()
+
     frame_width, frame_height, num_frames = IO.get_video_dimensions(
       video_file_path, ffprobe_path)
+
+    end = time() - start
+
+    processing_duration = IO.get_processing_duration(
+      end, 'read video dimensions in')
+
+    logging.info(processing_duration)
   except Exception as e:
     logging.error('encountered an unexpected error while fetching video '
                   'dimensions')
@@ -154,6 +171,9 @@ def process_video(
   logging.debug('Constructing ffmpeg command')
 
   ffmpeg_command = [ffmpeg_path, '-i', video_file_path]
+
+  if args.deinterlace:
+    ffmpeg_command.append('-deinterlace')
 
   if crop:
     ffmpeg_command.extend(['-vf', 'crop=w={}:h={}:x={}:y={}'.format(
@@ -272,10 +292,10 @@ def process_video(
         raise e
 
   def preprocessing_fn(image):
-    return analysis.preprocess_for_inception(image, model_input_size)
+    return VideoAnalyzer.preprocess_for_inception(image, model_input_size)
 
   # pre-allocate memory for prediction storage
-  num_classes = len(class_names)
+  num_classes = len(class_name_map)
   probability_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
 
   device_id = device_id_queue.get()
@@ -326,19 +346,18 @@ def process_video(
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
   try:
-    num_analyzed_frames = analysis.analyze_video(
+    num_analyzed_frames = VideoAnalyzer.analyze_video(
       video_frame_generator, video_frame_shape, args.batchsize,
       model_map['session_config'], model_map['input_node'],
       model_map['output_node'], preprocessing_fn, probability_array,
       device_type, device_count)
 
-    if num_analyzed_frames != num_frames:
+    if num_analyzed_frames != num_frames and child_interrupt_queue.full():
       raise AssertionError('num_analyzed_frames ({}) != num_frames ({})'.format(
         num_analyzed_frames, num_frames))
 
     release_device_id(device_id, device_id_queue)
 
-    # device_id = None
   except Exception as e:
     logging.error('encountered an unexpected error while analyzing {}'.format(
       video_file_name))
@@ -392,23 +411,72 @@ def process_video(
   try:
     start = time()
 
-    IO.write_report(video_file_name, output_dir_path, extract_timestamps,
-                    timestamp_strings, probability_array, class_names,
-                    args.smoothprobs, args.smoothingfactor, args.binarizeprobs)
+    IO.write_inference_report(
+      video_file_name, output_dir_path, probability_array, class_name_map,
+      timestamp_strings, args.smoothprobs, args.smoothingfactor,
+      args.binarizeprobs)
 
     end = time() - start
 
     processing_duration = IO.get_processing_duration(
-      end, 'generated reports in')
+      end, 'generated inference reports in')
     logging.info(processing_duration)
   except Exception as e:
-    logging.error('encountered an unexpected error while generating report.')
+    logging.error(
+      'encountered an unexpected error while generating inference report.')
     logging.error(e)
 
-    logging.debug('will exit with code: exception and value: write_report')
+    logging.debug(
+      'will exit with code: exception and value: write_inference_report')
     return_code_queue.put(
       {'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
-       'return_code': 'exception', 'return_value': 'write_report'})
+       'return_code': 'exception', 'return_value': 'write_inference_report'})
+
+    return_code_queue.close()
+
+    return
+
+  try:
+    start = time()
+
+    if args.smoothprobs:
+      probability_array = IO.smooth_probs(
+        probability_array, args.smoothingfactor)
+
+    frame_numbers = [i + 1 for i in range(len(probability_array))]
+
+    if extract_timestamps:
+      timestamp_strings = timestamp_strings.astype(np.uint32)
+
+    trip = Trip(
+      frame_numbers, timestamp_strings, probability_array, class_name_map)
+
+    work_zone_events = trip.find_work_zone_events()
+
+    if len(work_zone_events) > 0:
+      logging.info('{} work zone events were found in {}'.format(
+        len(work_zone_events), video_file_name))
+
+      IO.write_event_report(video_file_name, output_dir_path, work_zone_events)
+    else:
+      logging.info(
+        'No work zone events were found in {}'.format(video_file_name))
+
+    end = time() - start
+
+    processing_duration = IO.get_processing_duration(
+      end, 'generated event reports in')
+    logging.info(processing_duration)
+  except Exception as e:
+    logging.error(
+      'encountered an unexpected error while generating event report.')
+    logging.error(e)
+
+    logging.debug(
+      'will exit with code: exception and value: write_event_report')
+    return_code_queue.put(
+      {'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
+       'return_code': 'exception', 'return_value': 'write_event_report'})
 
     return_code_queue.close()
 
@@ -480,10 +548,10 @@ def main():
 
   if path.isdir(args.inputpath):
     video_dir_path = args.inputpath
-    video_file_names = IO.read_video_file_names(video_dir_path)
+    video_file_names = set(IO.read_video_file_names(video_dir_path))
   elif path.isfile(args.inputpath):
     video_dir_path, video_file_name = path.split(args.inputpath)
-    video_file_names = [video_file_name]
+    video_file_names = set([video_file_name])
   else:
     raise ValueError('The video file/folder specified at the path {} could '
                      'not be found.'.format(args.inputpath))
@@ -532,18 +600,37 @@ def main():
   if not path.isdir(output_dir_path):
     os.makedirs(output_dir_path)
 
-  if args.excludepreviouslyprocessed and path.isdir(output_dir_path):
-    report_file_names = os.listdir(output_dir_path)
+  if args.excludepreviouslyprocessed:
+    inference_report_dir_path = path.join(output_dir_path, 'inference_reports')
 
-    if len(report_file_names) > 0:
-      video_ext = path.splitext(video_file_names[0])[1]
-      report_ext = path.splitext(report_file_names[0])[1]
+    if args.writeinferencereports and path.isdir(inference_report_dir_path):
+      inference_report_file_names = os.listdir(inference_report_dir_path)
+      inference_report_file_names = [path.splitext(name)[0]
+                                     for name in inference_report_file_names]
+    else:
+      inference_report_file_names = None
+    print('inference_report_file_names: {}'.format(inference_report_file_names))
+    event_report_dir_path = path.join(output_dir_path, 'event_reports')
 
-      previously_processed_video_file_names = [
-        name.replace(report_ext, video_ext) for name in report_file_names]
+    if args.writeeventreports and path.isdir(event_report_dir_path):
+      event_report_file_names = os.listdir(event_report_dir_path)
+      event_report_file_names = [path.splitext(name)[0]
+                                 for name in event_report_file_names]
+    else:
+      event_report_file_names = None
+    print('event_report_file_names: {}'.format(event_report_file_names))
 
-      video_file_names = [name for name in video_file_names if name
-                          not in previously_processed_video_file_names]
+    file_names_to_exclude = set()
+
+    for video_file_name in video_file_names:
+      truncated_file_name = path.splitext(video_file_name)[0]
+      print('truncated_file_name: {}'.format(truncated_file_name))
+      if (event_report_file_names and truncated_file_name
+          in event_report_file_names) or (inference_report_file_names and
+              truncated_file_name in inference_report_file_names):
+        file_names_to_exclude.add(video_file_name)
+
+    video_file_names -= file_names_to_exclude
 
   if args.ionodenamesfilepath is None \
       or not path.isfile(args.ionodenamesfilepath):
@@ -571,20 +658,20 @@ def main():
   logging.info('Found {} physical {} device(s).'.format(
     device_id_list_len, device_type))
 
-  valid_num_processes_list = get_valid_num_per_device_processes(device_type)
+  valid_num_processes_list = get_valid_num_processes_per_device(device_type)
 
-  if args.numperdeviceprocesses not in valid_num_processes_list:
+  if args.numprocessesperdevice not in valid_num_processes_list:
       raise ValueError(
         'The the number of processes to assign to each {} device is expected '
         'to be in the set {}.'.format(device_type, valid_num_processes_list))
 
   for i in range(device_id_list_len,
-                 device_id_list_len * args.numperdeviceprocesses):
+                 device_id_list_len * args.numprocessesperdevice):
     device_id_list.append(str(i))
     device_id_list_len += 1
 
   logging.info('Generated an additional {} logical {} device(s).'.format(
-    int(device_id_list_len - (device_id_list_len / args.numperdeviceprocesses)),
+    int(device_id_list_len - (device_id_list_len / args.numprocessesperdevice)),
     device_type))
 
   # child processes will dequeue and enqueue device names
@@ -593,15 +680,13 @@ def main():
   for device_id in device_id_list:
     device_id_queue.put(device_id)
 
-  label_map = IO.read_class_names(class_names_path)
-
-  class_name_list = list(label_map.values())
+  class_name_map = IO.read_class_names(class_names_path)
 
   logging.debug('loading model at path: {}'.format(model_file_path))
 
-  model_map = analysis.load_model(
+  model_map = VideoAnalyzer.load_model(
     model_file_path, io_node_names_path, device_type,
-    args.gpumemoryfraction / args.numperdeviceprocesses)
+    args.gpumemoryfraction / args.numprocessesperdevice)
 
   return_code_map = {}
 
@@ -630,7 +715,7 @@ def main():
     child_process = Process(
       target=process_video,
       name='ChildProcess-{}'.format(path.splitext(video_file_name)[0]),
-      args=(video_file_path, output_dir_path, class_name_list, model_map,
+      args=(video_file_path, output_dir_path, class_name_map, model_map,
             model_input_size, device_id_queue, return_code_queue, log_queue,
             log_level, device_type, device_id_list_len, ffmpeg_path,
             ffprobe_path))
@@ -760,6 +845,9 @@ if __name__ == '__main__':
                       help='x-component of top-left corner of crop.')
   parser.add_argument('--cropy', '-cy', type=int, default=0,
                       help='y-component of top-left corner of crop.')
+  parser.add_argument('--deinterlace', '-d', action='store_true',
+                      help='Apply de-interlacing to video frames during '
+                           'extraction.')
   parser.add_argument('--excludepreviouslyprocessed', '-epp',
                       action='store_true',
                       help='Skip processing of videos for which reports '
@@ -769,6 +857,8 @@ if __name__ == '__main__':
                            ' strings for inclusion in the output CSV.')
   parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                       help='% of GPU memory available to this process.')
+  parser.add_argument('--inputpath', '-ip', required=True,
+                      help='Path to video file(s).')
   parser.add_argument('--ionodenamesfilepath', '-ifp',
                       help='Path to the io tensor names text file.')
   parser.add_argument('--loglevel', '-ll', default='info',
@@ -786,7 +876,7 @@ if __name__ == '__main__':
                       help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
-  parser.add_argument('--numperdeviceprocesses', '-npdp', type=int, default=1,
+  parser.add_argument('--numprocessesperdevice', '-npdp', type=int, default=1,
                       help='The number of instances of inference to perform on '
                            'each device.')
   parser.add_argument('--protobuffilename', '-pbfn', default='model.pb',
@@ -810,8 +900,10 @@ if __name__ == '__main__':
   parser.add_argument('--timestampy', '-ty', type=int, default=340,
                       help='y-component of top-left corner of timestamp '
                            '(before cropping).')
-  parser.add_argument('--inputpath', '-ip', required=True,
-                      help='Path to video file(s).')
+  parser.add_argument('--writeeventreports', '-wer', type=bool,
+                      default=True, help='')
+  parser.add_argument('--writeinferencereports', '-wir', type=bool,
+                      default=False, help='')
 
   args = parser.parse_args()
 

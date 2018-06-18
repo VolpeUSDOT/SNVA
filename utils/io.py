@@ -45,6 +45,10 @@ class IO:
       fn.lower().endswith(ext) for ext in included_extenstions)])
 
   @staticmethod
+  def _div_odd(n):
+    return n // 2, n // 2 + 1
+
+  @staticmethod
   def get_processing_duration(end_time, msg):
     minutes, seconds = divmod(end_time, 60)
     hours, minutes = divmod(minutes, 60)
@@ -53,13 +57,6 @@ class IO:
     milliseconds = int(round(end_time * 1000))
     return '{} {:02d}:{:02d}:{:05.2f} ({:d} ms)'.format(
       msg, hours, minutes, seconds, milliseconds)
-
-  @staticmethod
-  def stringify_command(arg_list):
-    command_string = arg_list[0]
-    for elem in arg_list[1:]:
-      command_string += ' ' + elem
-    return 'command string: {}'.format(command_string)
 
   @staticmethod
   def _read_meta_file(file_path):
@@ -84,10 +81,6 @@ class IO:
            int(json_map['streams'][0]['nb_frames'])
 
   @staticmethod
-  def _div_odd(n):
-    return n // 2, n // 2 + 1
-
-  @staticmethod
   def _get_gauss_weight_and_window(smoothing_factor):
     window = smoothing_factor * 2 - 1
     weight = np.ndarray((window,))
@@ -109,7 +102,7 @@ class IO:
     return smoothed_probs
 
   @staticmethod
-  def _smooth_probs(class_probs, smoothing_factor):
+  def smooth_probs(class_probs, smoothing_factor):
     weight, window = IO._get_gauss_weight_and_window(smoothing_factor)
     weight_sum = np.sum(weight)
     indices = np.arange(class_probs.shape[0] - window)
@@ -125,7 +118,6 @@ class IO:
   @staticmethod
   def _expand_class_names(class_names, appendage):
     return class_names + [class_name + appendage for class_name in class_names]
-
 
   @staticmethod
   def _binarize_probs(class_probs):
@@ -233,9 +225,9 @@ class IO:
     return report_data
 
   @staticmethod
-  def read_report(report_file_path, frame_col_num=None, timestamp_col_num=None,
-                  data_col_range=None, header_mask=None, data_point_fn=None, 
-                  data_row_fn=None, return_data_col_range=False):
+  def read_report(
+      report_file_path, frame_col_num=None, timestamp_col_num=None,
+      data_col_range=None, header_mask=None, return_data_col_range=False):
     report_reader = IO.open_report(report_file_path)
 
     if return_data_col_range:
@@ -258,41 +250,69 @@ class IO:
     else:
       return report_header, report_data
 
+  @staticmethod
+  def write_csv(file_path, header, rows):
+    with open(file_path, 'w', newline='') as file:
+      csv_writer = csv.writer(file)
+      csv_writer.writerow(header)
+      csv_writer.writerows(rows)
+
   # TODO: confirm that the csv can be opened after writing
   @staticmethod
-  def write_report(
-      video_file_name, report_path, extract_timestamps, timestamp_strings,
-      class_probs, class_names, smooth_probs, smoothing_factor, binarize_probs):
+  def write_inference_report(
+      report_file_name, report_dir_path, class_probs, class_name_map,
+      timestamp_strings=None, smooth_probs=False, smoothing_factor=0,
+      binarize_probs=False):
     class_names = ['{}_probability'.format(class_name)
-                   for class_name in class_names]
-    
+                   for class_name in class_name_map.values()]
+
     if smooth_probs and smoothing_factor > 1:
       class_names = IO._expand_class_names(class_names, '_smoothed')
-      smoothed_probs = IO._smooth_probs(class_probs, smoothing_factor)
+      smoothed_probs = IO.smooth_probs(class_probs, smoothing_factor)
       class_probs = np.concatenate((class_probs, smoothed_probs), axis=1)
-    
+
     if binarize_probs:
       class_names = IO._expand_class_names(class_names, '_binarized')
       binarized_probs = IO._binarize_probs(class_probs)
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
-    
-    if extract_timestamps:
+
+    if timestamp_strings is not None:
       header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
-      rows = [[video_file_name, '{:d}'.format(i + 1), timestamp_strings[i]]
+      rows = [[report_file_name, '{:d}'.format(i + 1), timestamp_strings[i]]
               + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
     else:
       header = ['file_name', 'frame_number'] + class_names
-      rows = [[video_file_name, '{:d}'.format(i+1)]
+      rows = [[report_file_name, '{:d}'.format(i + 1)]
               + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
-    
-    if not path.exists(report_path):
-      os.makedirs(report_path)
-    
-    report_file_path = path.join(report_path, video_file_name + '.csv')
-    
-    with open(report_file_path, 'w', newline='') as report_file:
-      csv_writer = csv.writer(report_file)
-      csv_writer.writerow(header)
-      csv_writer.writerows(rows)
+
+    report_dir_path = path.join(report_dir_path, 'inference_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    IO.write_csv(report_file_path, header, rows)
+
+  # TODO: confirm that the csv can be opened after writing
+  @staticmethod
+  def write_event_report(report_file_name, report_dir_path, events):
+    report_dir_path = path.join(report_dir_path, 'event_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    header = ['file_name', 'sequence_number', 'start_frame_number',
+              'end_frame_number', 'start_timestamp', 'end_timestamp']
+
+    rows = [[report_file_name, event.event_id + 1, event.start_frame_number,
+             event.end_frame_number, event.start_timestamp, event.end_timestamp]
+            for event in events]
+
+    IO.write_csv(report_file_path, header, rows)

@@ -9,14 +9,13 @@ class Feature:
   #TODO manage broken timestamps, particularly w.r.t. duration calculation
   def __init__(
       self, feature_id, class_id, class_name, start_timestamp, end_timestamp,
-      start_frame_number, end_frame_number, trip_id=None, event_id=None):
+      start_frame_number, end_frame_number, event_id=None):
     """Create a new 'Feature' object.
     
     Args:
       feature_id: The position of the feature in the source video relative to
         other features
       event_id: The id of the event to which this feature was assigned
-      trip_id: The id of the trip in which this feature occurred
       class_id: The id of the class predicted by the video analyzer
       class_name: The name of the class predicted by the video analyzer
       start_timestamp: The timestamp extracted from the first frame in which the
@@ -35,19 +34,23 @@ class Feature:
     self.end_timestamp = end_timestamp
     self.start_frame_number = start_frame_number
     self.end_frame_number = end_frame_number
-    self.trip_id = trip_id
     self.event_id = event_id
 
     # the number of milliseconds over which the feature occurs
-    self.duration = self.end_timestamp - self.start_timestamp
+    if self.end_timestamp and self.start_timestamp:
+      self.duration = self.end_timestamp - self.start_timestamp
+    else:
+      self.duration = None
 
     # the number of consecutive frames over which the feature occurs
-    self.length = self.end_frame_number - self.start_frame_number
+    if self.end_frame_number and self.start_frame_number:
+      self.length = self.end_frame_number - self.start_frame_number
+    else:
+      self.length = None
 
   def __str__(self):
     print_string = '\tfeature_id: ' + str(self.feature_id) + '\n'
     print_string += '\tevent_id: ' + str(self.event_id) + '\n'
-    print_string += '\ttrip_id: ' + str(self.trip_id) + '\n'
     print_string += '\tclass_id: ' + str(self.class_id) + '\n'
     print_string += '\tclass_name: ' + str(self.class_name) + '\n'
     print_string += '\tstart_timestamp: ' + str(self.start_timestamp) + '\n'
@@ -62,14 +65,13 @@ class Feature:
 
 
 class Event:
-  def __init__(self, event_id, trip_id, target_feature,
+  def __init__(self, event_id, target_feature,
                preceding_feature=None, following_feature=None):
     """Create a new 'Event' object.
     
     Args:
       event_id: int. The position of the event in the source video relative to
         other events.
-      trip_id: int. The id number read from the input CSV file name.
       target_feature: Feature. The feature constituting the event of interest.
       preceding_feature: Feature. An auxiliary feature strictly different in
         type from the target feature that should be included in the event if it
@@ -79,8 +81,8 @@ class Event:
         occurs just after the target feature in the source video.
     """
     self.event_id = event_id
-    self.trip_id = trip_id
     self.target_feature = target_feature
+    self.class_name = self.target_feature.class_name
     self.target_feature.event_id = self.event_id
     self.start_timestamp = self.target_feature.start_timestamp
     self.end_timestamp = self.target_feature.end_timestamp
@@ -132,58 +134,48 @@ class Event:
 
 
 class Trip:
-  def __init__(self, trip_id, report_file_path,
-               class_names_file_path, smooth_probs=False, smoothing_factor=16):
-    # the id number read from the input CSV file name
-    self.trip_id = trip_id
-
-    self.class_names = IO.read_class_names(class_names_file_path)
+  def __init__(self, report_frame_numbers, report_timestamps, report_probs,
+               class_name_map):
+    self.class_names = class_name_map
     self.class_ids = {value: key for key, value in self.class_names.items()}
 
-    class_header_names = [class_name + '_probability'
-                          for class_name in self.class_names.values()]
-
-    header_mask = ['frame_number', 'frame_timestamp']
-    header_mask.extend(class_header_names)
-
-    report_header, report_data, data_col_range = IO.read_report(
-      report_file_path, frame_col_num=1, timestamp_col_num=2,
-      header_mask=header_mask, return_data_col_range=True)
-
-    report_probs = report_data['probabilities']
-    report_probs = report_probs.astype(np.float32)
-
-    if smooth_probs:
-      report_probs = IO._smooth_probs(report_probs, smoothing_factor)
     report_class_ids = np.argmax(report_probs, axis=1)
-
-    report_frame_numbers = report_data['frame_numbers']
-    report_frame_numbers = report_frame_numbers.astype(np.int32)
-
-    report_timestamps = report_data['frame_timestamps']
-    report_timestamps = report_timestamps.astype(np.int32)
 
     self.feature_sequence = []
 
     feature_id = 0
     class_id = report_class_ids[0]
-    start_timestamp = report_timestamps[0]
+
+    if report_timestamps is not None:
+      start_timestamp = report_timestamps[0]
+    else:
+      start_timestamp = None
+
     start_frame_number = report_frame_numbers[0]
 
     for i in range(len(report_class_ids)):
       if report_class_ids[i] != class_id:
-        end_timestamp = report_timestamps[i - 1]
+        if report_timestamps is not None:
+          end_timestamp = report_timestamps[i - 1]
+        else:
+          end_timestamp = None
+
         end_frame_number = report_frame_numbers[i - 1]
 
         # the beginning of the next feature has been reached.
         # create an object for the preceding feature.
         self.feature_sequence.append(Feature(
           feature_id, class_id, self.class_names[class_id], start_timestamp,
-          end_timestamp, start_frame_number, end_frame_number, trip_id))
+          end_timestamp, start_frame_number, end_frame_number))
 
         feature_id += 1
         class_id = report_class_ids[i]
-        start_timestamp = report_timestamps[i]
+
+        if report_timestamps is not None:
+          start_timestamp = report_timestamps[i]
+        else:
+          start_timestamp = None
+
         start_frame_number = report_frame_numbers[i]
 
   def find_events(
@@ -225,7 +217,7 @@ class Trip:
 
       for current_feature in self.feature_sequence:
         if current_feature.class_id == target_feature_class_id:
-          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+          current_event = Event(event_id=event_id,
                                 target_feature=current_feature)
 
           # if two consecutive events share a common following/preceding
@@ -281,7 +273,7 @@ class Trip:
     elif not preceding_feature_class_id and following_feature_class_id:
       for current_feature in self.feature_sequence:
         if current_feature.class_id == target_feature_class_id:
-          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+          current_event = Event(event_id=event_id,
                                 target_feature=current_feature)
 
           events.append(current_event)
@@ -302,7 +294,7 @@ class Trip:
 
       for current_feature in self.feature_sequence:
         if current_feature.class_id == target_feature_class_id:
-          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+          current_event = Event(event_id=event_id,
                                 target_feature=current_feature)
 
           # if two consecutive events share a common following/preceding
@@ -322,7 +314,7 @@ class Trip:
     else:
       for current_feature in self.feature_sequence:
         if current_feature.class_id == target_feature_class_id:
-          current_event = Event(event_id=event_id, trip_id=self.trip_id,
+          current_event = Event(event_id=event_id,
                                 target_feature=current_feature)
 
           events.append(current_event)
@@ -338,5 +330,38 @@ class Trip:
       preceding_feature_class_id=self.class_ids['warning_sign'],
       preceding_feature_class_name='warning_sign',
       following_feature_class_id=self.class_ids['warning_sign'],
-      following_feature_class_name='warning_sign'
-    )
+      following_feature_class_name='warning_sign')
+
+
+class TripFromReportFile(Trip):
+  def __init__(self, report_file_path, class_names_file_path,
+               smooth_probs=False, smoothing_factor=16):
+    class_name_map = IO.read_class_names(class_names_file_path)
+
+    class_header_names = [class_name + '_probability'
+                          for class_name in class_name_map.values()]
+
+    header_mask = ['frame_number', 'frame_timestamp']
+    header_mask.extend(class_header_names)
+
+    report_header, report_data, data_col_range = IO.read_report(
+      report_file_path, frame_col_num=1, timestamp_col_num=2,
+      header_mask=header_mask, return_data_col_range=True)
+
+    report_frame_numbers = report_data['frame_numbers']
+    report_frame_numbers = report_frame_numbers.astype(np.int32)
+
+    try:
+      report_timestamps = report_data['frame_timestamps']
+      report_timestamps = report_timestamps.astype(np.int32)
+    except:
+      report_timestamps = None
+
+    report_probs = report_data['probabilities']
+    report_probs = report_probs.astype(np.float32)
+
+    if smooth_probs:
+      report_probs = IO.smooth_probs(report_probs, smoothing_factor)
+
+    super().__init__(
+      report_frame_numbers, report_timestamps, report_probs, class_name_map)
