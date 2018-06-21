@@ -332,7 +332,7 @@ def process_video(
     pass
 
   if device_type == 'gpu':
-    mapped_device_id = str(int(device_id) % 2)
+    mapped_device_id = str(int(device_id) % device_count)
 
     logging.debug('mapped logical device_id {} to physical device_id {}'.format(
       device_id, mapped_device_id))
