@@ -116,7 +116,7 @@ def process_video(
 
     # TODO: cancel timestamp/report generation when an interrupt is signalled
     logging.debug('instructing inference pipeline to halt.')
-    child_interrupt_queue.put('_')
+    child_interrupt_queue.put_nowait('_')
 
   signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -205,7 +205,7 @@ def process_video(
   if extract_timestamps:
     timestamp_array = np.ndarray((args.timestampheight * num_frames,
                                   args.timestampmaxwidth, args.numchannels),
-                                 dtype='uint8')
+                                 dtype=np.uint8)
 
   video_frame_shape = (frame_height, frame_width, args.numchannels)
 
@@ -500,7 +500,7 @@ def main():
   def interrupt_handler(signal_number, _):
     logging.warning('Main process received interrupt signal '
                     '{}.'.format(signal_number))
-    main_interrupt_queue.put('_')
+    main_interrupt_queue.put_nowait('_')
 
     if total_num_video_to_process is None \
         or total_num_video_to_process == len(video_file_names):
@@ -508,7 +508,7 @@ def main():
       # Signal the logging thread to finish up
       logging.debug('signaling logger thread to end service.')
 
-      log_queue.put(None)
+      log_queue.put_nowait(None)
 
       logger_thread.join()
 
