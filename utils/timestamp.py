@@ -1,8 +1,5 @@
 import logging
 import numpy as np
-import os
-
-path = os.path
 
 
 class Timestamp:
@@ -197,6 +194,7 @@ class Timestamp:
     # (16 * nd, 16 * nt)
     timestamp_image_array = np.transpose(timestamp_image_array)
 
+    # 32-bit ints/uints should be fine given no trip exceeds 24 days in length
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
     # TODO confirm that the lengths match and that no gaps exist between digits
@@ -257,6 +255,7 @@ class Timestamp:
 
     digits = digits.astype(np.unicode_)
 
+    #
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
     # TODO: confirm that counts are monotonically non-decreasing,
@@ -299,8 +298,6 @@ class Timestamp:
     return timestamp_string_array
 
   def stringify_timestamps(self, timestamp_image_array):
-    process_id = os.getpid()
-
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
 
     try:
@@ -320,10 +317,9 @@ class Timestamp:
     #
     #   return timestamp_string_array
     except Exception as e:
-      logging.debug('Process {} encountered an exception while converting '
-                    'timestamp images to strings one-at-a-time.'.format(
-        process_id))
-      logging.debug('Process {} will raise exception to caller')
+      logging.debug('encountered an exception while converting '
+                    'timestamp images to strings one-at-a-time.')
+      logging.debug('will raise exception to caller')
 
       raise e
 

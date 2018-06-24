@@ -363,5 +363,5 @@ class TripFromReportFile(Trip):
     if smooth_probs:
       report_probs = IO.smooth_probs(report_probs, smoothing_factor)
 
-    super().__init__(
+    Trip.__init__(self,
       report_frame_numbers, report_timestamps, report_probs, class_name_map)

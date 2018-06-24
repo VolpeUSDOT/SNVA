@@ -8,7 +8,6 @@ import platform
 from queue import Empty
 import signal
 import socket
-import subprocess as sp
 from threading import Thread
 from time import sleep, time
 from utils.analysis import VideoAnalyzer
@@ -104,9 +103,10 @@ def should_extract_timestamps(frame_width, frame_height):
 
 
 def process_video(
-    video_file_path, output_dir_path, class_name_map, model_map,
+    video_file_path, output_dir_path, class_name_map,
     model_input_size, device_id_queue, return_code_queue, log_queue, log_level,
-    device_type, device_count, ffmpeg_path, ffprobe_path):
+    device_type, device_count, ffmpeg_path, ffprobe_path, model_path,
+    node_name_map, gpu_memory_fraction):
   configure_logger(log_level, log_queue)
 
   child_interrupt_queue = Queue()
@@ -150,6 +150,7 @@ def process_video(
        'return_code': 'exception', 'return_value': 'get_video_dimensions'})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
 
@@ -165,6 +166,7 @@ def process_video(
        'return_code': 'exception', 'return_value': 'should_crop'})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
 
@@ -199,107 +201,15 @@ def process_video(
        'return_code': 'exception', 'return_value': 'should_extract_timestamps'})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
 
-  if extract_timestamps:
-    timestamp_array = np.ndarray((args.timestampheight * num_frames,
-                                  args.timestampmaxwidth, args.numchannels),
-                                 dtype=np.uint8)
-
-  video_frame_shape = (frame_height, frame_width, args.numchannels)
+  video_frame_shape = [frame_height, frame_width, args.numchannels]
 
   logging.debug('video_frame_shape == {}'.format(video_frame_shape))
 
-  video_frame_string_len = frame_height * frame_width * args.numchannels
-
   video_frame_pipe_pid = None
-
-  # feed the tf.data input pipeline one image at a time and, while we're at it,
-  # extract timestamp overlay crops for later mapping to strings.
-  def video_frame_generator():
-    if extract_timestamps:
-      i = 0
-
-      tx = args.timestampx
-      ty = args.timestampy
-      th = args.timestampheight
-      tw = args.timestampmaxwidth
-
-      if crop:
-        tx -= args.cropx
-        ty -= args.cropy
-
-    logging.debug('opening video frame pipe')
-
-    base_two_exp = 2
-
-    while base_two_exp < video_frame_string_len:
-      base_two_exp *= 2
-
-    video_frame_pipe = sp.Popen(ffmpeg_command, stdout=sp.PIPE, stderr=sp.PIPE,
-                                bufsize=args.batchsize * base_two_exp)
-
-    video_frame_pipe_pid = video_frame_pipe.pid
-
-    logging.debug('video frame pipe opened with pid: {}'.format(
-      video_frame_pipe_pid))
-
-    while True:
-      try:
-        try:
-          _ = child_interrupt_queue.get_nowait()
-          logging.warning('closing video frame pipe following interrupt signal')
-          video_frame_pipe.stdout.close()
-          video_frame_pipe.stderr.close()
-          video_frame_pipe.terminate()
-          video_frame_pipe = None
-          return
-        except:
-          pass
-
-        video_frame_string = video_frame_pipe.stdout.read(
-          video_frame_string_len)
-
-        if not video_frame_string:
-          logging.debug('closing video frame pipe following end of stream')
-          video_frame_pipe.stdout.close()
-          video_frame_pipe.stderr.close()
-          video_frame_pipe.terminate()
-          video_frame_pipe = None
-          return
-
-        video_frame_array = np.fromstring(video_frame_string, dtype=np.uint8)
-        video_frame_array = np.reshape(video_frame_array, video_frame_shape)
-
-        if extract_timestamps:
-          timestamp_array[th * i:th * (i + 1)] = \
-            video_frame_array[ty:ty + th, tx:tx + tw]
-          i += 1
-
-        yield video_frame_array
-      except Exception as e:
-        logging.error(
-          'met an unexpected error after processing {} frames.'.format(i))
-        logging.error(e)
-        logging.error(
-          'ffmpeg reported:\n{}'.format(video_frame_pipe.stderr.readlines()))
-        logging.debug('closing video frame pipe following raised exception')
-        video_frame_pipe.stdout.close()
-        video_frame_pipe.stderr.close()
-        video_frame_pipe.terminate()
-        logging.debug('raising exception to caller.')
-        raise e
-
-  def preprocessing_fn(image):
-    return VideoAnalyzer.preprocess_for_inception(image, model_input_size)
-
-  # pre-allocate memory for prediction storage
-  num_classes = len(class_name_map)
-  probability_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
-
-  device_id = device_id_queue.get()
-  logging.debug('acquired {} device with id {}'.format(device_type, device_id))
 
   def release_device_id(device_id, device_id_queue):
     try:
@@ -315,6 +225,19 @@ def process_video(
     device_id_queue.put(device_id)
     device_id_queue.close()
 
+  result_queue = Queue(1)
+
+  analyzer = VideoAnalyzer(
+    video_frame_shape, num_frames, len(class_name_map), args.batchsize,
+    model_input_size, model_path, device_type, device_count, os.cpu_count(),
+    node_name_map, gpu_memory_fraction, extract_timestamps, args.timestampx,
+    args.timestampy, args.timestampheight, args.timestampmaxwidth, crop,
+    args.cropx, args.cropy, ffmpeg_command, child_interrupt_queue, result_queue,
+    video_file_name)
+
+  device_id = device_id_queue.get()
+  logging.debug('acquired {} device with id {}'.format(device_type, device_id))
+
   try:
     _ = child_interrupt_queue.get_nowait()
 
@@ -326,6 +249,7 @@ def process_video(
        'return_code': 'interrupt', 'return_value': None})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
   except:
@@ -346,11 +270,21 @@ def process_video(
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
   try:
-    num_analyzed_frames = VideoAnalyzer.analyze_video(
-      video_frame_generator, video_frame_shape, args.batchsize,
-      model_map['session_config'], model_map['input_node'],
-      model_map['output_node'], preprocessing_fn, probability_array,
-      device_type, device_count)
+    start = time()
+
+    analyzer.start()
+
+    num_analyzed_frames, probability_array, timestamp_array = result_queue.get()
+
+    analyzer.join()
+
+    end = time() - start
+
+    processing_duration = IO.get_processing_duration(
+      end, 'processed {} frames in'.format(num_analyzed_frames))
+    logging.info(processing_duration)
+
+    result_queue.close()
 
     if num_analyzed_frames != num_frames and child_interrupt_queue.full():
       raise AssertionError('num_analyzed_frames ({}) != num_frames ({})'.format(
@@ -371,6 +305,7 @@ def process_video(
       'child_pid': os.getpid(), 'video_frame_pipe_pid': video_frame_pipe_pid,
       'return_code': 'exception', 'return_value': 'analyze_video'})
     return_code_queue.close()
+    log_queue.close()
 
     return
 
@@ -401,6 +336,7 @@ def process_video(
          'return_code': 'exception', 'return_value': 'stringify_timestamps'})
 
       return_code_queue.close()
+      log_queue.close()
 
       return
   else:
@@ -433,6 +369,7 @@ def process_video(
        'return_code': 'exception', 'return_value': 'write_inference_report'})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
 
@@ -446,7 +383,7 @@ def process_video(
     frame_numbers = [i + 1 for i in range(len(probability_array))]
 
     if extract_timestamps:
-      timestamp_strings = timestamp_strings.astype(np.uint32)
+      timestamp_strings = timestamp_strings.astype(np.int32)
 
     trip = Trip(
       frame_numbers, timestamp_strings, probability_array, class_name_map)
@@ -479,6 +416,7 @@ def process_video(
        'return_code': 'exception', 'return_value': 'write_event_report'})
 
     return_code_queue.close()
+    log_queue.close()
 
     return
 
@@ -489,6 +427,7 @@ def process_video(
      'return_code': 'success', 'return_value': num_analyzed_frames})
 
   return_code_queue.close()
+  log_queue.close()
 
 
 def main():
@@ -551,7 +490,7 @@ def main():
     video_file_names = set(IO.read_video_file_names(video_dir_path))
   elif path.isfile(args.inputpath):
     video_dir_path, video_file_name = path.split(args.inputpath)
-    video_file_names = set([video_file_name])
+    video_file_names = {video_file_name}
   else:
     raise ValueError('The video file/folder specified at the path {} could '
                      'not be found.'.format(args.inputpath))
@@ -607,24 +546,25 @@ def main():
       inference_report_file_names = os.listdir(inference_report_dir_path)
       inference_report_file_names = [path.splitext(name)[0]
                                      for name in inference_report_file_names]
+      print('previously generated inference reports: {}'.format(
+        inference_report_file_names))
     else:
       inference_report_file_names = None
-    print('inference_report_file_names: {}'.format(inference_report_file_names))
     event_report_dir_path = path.join(output_dir_path, 'event_reports')
 
     if args.writeeventreports and path.isdir(event_report_dir_path):
       event_report_file_names = os.listdir(event_report_dir_path)
       event_report_file_names = [path.splitext(name)[0]
                                  for name in event_report_file_names]
+      print('previously generated event reports: {}'.format(
+        event_report_file_names))
     else:
       event_report_file_names = None
-    print('event_report_file_names: {}'.format(event_report_file_names))
 
     file_names_to_exclude = set()
 
     for video_file_name in video_file_names:
       truncated_file_name = path.splitext(video_file_name)[0]
-      print('truncated_file_name: {}'.format(truncated_file_name))
       if (event_report_file_names and truncated_file_name
           in event_report_file_names) or (inference_report_file_names and
               truncated_file_name in inference_report_file_names):
@@ -638,6 +578,8 @@ def main():
   else:
     io_node_names_path = args.ionodenamesfilepath
   logging.debug('io tensors path set to: {}'.format(io_node_names_path))
+
+  node_name_map = IO.read_node_names(io_node_names_path)
 
   if args.classnamesfilepath is None \
       or not path.isfile(args.classnamesfilepath):
@@ -684,10 +626,6 @@ def main():
 
   logging.debug('loading model at path: {}'.format(model_file_path))
 
-  model_map = VideoAnalyzer.load_model(
-    model_file_path, io_node_names_path, device_type,
-    args.gpumemoryfraction / args.numprocessesperdevice)
-
   return_code_map = {}
 
   total_num_video_to_process = len(video_file_names)
@@ -713,12 +651,12 @@ def main():
     logging.debug('creating new child process.')
 
     child_process = Process(
-      target=process_video,
-      name='ChildProcess-{}'.format(path.splitext(video_file_name)[0]),
-      args=(video_file_path, output_dir_path, class_name_map, model_map,
+      target=process_video, name=path.splitext(video_file_name)[0],
+      args=(video_file_path, output_dir_path, class_name_map,
             model_input_size, device_id_queue, return_code_queue, log_queue,
             log_level, device_type, device_id_list_len, ffmpeg_path,
-            ffprobe_path))
+            ffprobe_path, model_file_path, node_name_map,
+            args.gpumemoryfraction / args.numprocessesperdevice))
 
     logging.debug('starting child process.')
 
@@ -907,9 +845,9 @@ if __name__ == '__main__':
 
   args = parser.parse_args()
 
-  snva_version_string = 'v0.1'
+  snva_version_string = 'v0.1.1'
 
-  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
   try:
     snva_home = os.environ['SNVA_HOME']
