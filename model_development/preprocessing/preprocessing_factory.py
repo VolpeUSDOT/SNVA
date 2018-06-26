@@ -57,7 +57,7 @@ def get_preprocessing(name, is_training=False):
     'inception_v1': inception_preprocessing,
     'inception_v2': inception_preprocessing,
     'inception_v3': inception_preprocessing,
-    'inception_v3_025': inception_preprocessing,
+    'inception_v3_nchw': inception_preprocessing,
     'inception_v4': inception_preprocessing,
     'inception_resnet_v2': inception_preprocessing,
     'lenet': lenet_preprocessing,
