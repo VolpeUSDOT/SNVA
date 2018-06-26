@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import os
 from utils.io import IO
@@ -65,8 +66,8 @@ class Feature:
 
 
 class Event:
-  def __init__(self, event_id, target_feature,
-               preceding_feature=None, following_feature=None):
+  def __init__(self, event_id, target_feature_list, preceding_feature=None,
+               following_feature=None):
     """Create a new 'Event' object.
     
     Args:
@@ -81,13 +82,18 @@ class Event:
         occurs just after the target feature in the source video.
     """
     self.event_id = event_id
-    self.target_feature = target_feature
-    self.class_name = self.target_feature.class_name
-    self.target_feature.event_id = self.event_id
-    self.start_timestamp = self.target_feature.start_timestamp
-    self.end_timestamp = self.target_feature.end_timestamp
-    self.start_frame_number = self.target_feature.start_frame_number
-    self.end_frame_number = self.target_feature.end_frame_number
+
+    self.target_feature_list = target_feature_list
+
+    for target_feature in self.target_feature_list:
+      target_feature.event_id = self.event_id
+
+    self.start_timestamp = self.target_feature_list[0].start_timestamp
+    self.end_timestamp = self.target_feature_list[-1].end_timestamp
+
+    self.start_frame_number = self.target_feature_list[0].start_frame_number
+    self.end_frame_number = self.target_feature_list[-1].end_frame_number
+
     self._preceding_feature = preceding_feature
     self._following_feature = following_feature
   
@@ -114,8 +120,8 @@ class Event:
       self.end_timestamps = self.following_feature.end_timestamp
       self.end_frame_number = self.following_feature.end_frame_number
     else:
-      self.end_timestamps = self.target_feature.end_timestamp
-      self.end_frame_number = self.target_feature.end_frame_number
+      self.end_timestamps = self.target_feature_list[-1].end_timestamp
+      self.end_frame_number = self.target_feature_list[-1].end_frame_number
 
   def __str__(self):
     print_string = 'SHRP2 NDS Video Event\n\n'
@@ -124,13 +130,82 @@ class Event:
       print_string += 'Preceding Feature:\n{}\n\n'.format(
         self.preceding_feature)
 
-    print_string += 'Target Feature:\n{}\n\n'.format(self.target_feature)
+    print_string += 'Target Features:\n{}\n\n'.format(self.target_feature_list)
 
     if self.following_feature:
       print_string += 'Following Feature:\n{}\n\n'.format(
         self.following_feature)
 
     return print_string
+
+
+# class Event:
+#   def __init__(self, event_id, target_feature,
+#                preceding_feature=None, following_feature=None):
+#     """Create a new 'Event' object.
+#
+#     Args:
+#       event_id: int. The position of the event in the source video relative to
+#         other events.
+#       target_feature: Feature. The feature constituting the event of interest.
+#       preceding_feature: Feature. An auxiliary feature strictly different in
+#         type from the target feature that should be included in the event if it
+#         occurs just before the target feature in the source video.
+#       following_feature: Feature. An auxiliary feature strictly different in
+#         type from the target feature that should be included in the event if it
+#         occurs just after the target feature in the source video.
+#     """
+#     self.event_id = event_id
+#     self.target_feature = target_feature
+#     self.class_name = self.target_feature.class_name
+#     self.target_feature.event_id = self.event_id
+#     self.start_timestamp = self.target_feature.start_timestamp
+#     self.end_timestamp = self.target_feature.end_timestamp
+#     self.start_frame_number = self.target_feature.start_frame_number
+#     self.end_frame_number = self.target_feature.end_frame_number
+#     self._preceding_feature = preceding_feature
+#     self._following_feature = following_feature
+#
+#   @property
+#   def preceding_feature(self):
+#     return self._preceding_feature
+#
+#   @preceding_feature.setter
+#   def preceding_feature(self, preceding_feature):
+#     self._preceding_feature = preceding_feature
+#     self.start_timestamp = self.preceding_feature.start_timestamp
+#     self.start_frame_number = self.preceding_feature.start_frame_number
+#
+#   @property
+#   def following_feature(self):
+#     return self._following_feature
+#
+#   @following_feature.setter
+#   def following_feature(self, following_feature):
+#     self._following_feature = following_feature
+#     # if this event's following feature is being reassigned to a later event,
+#     # the 'following_feature' argument will be None
+#     if self.following_feature:
+#       self.end_timestamps = self.following_feature.end_timestamp
+#       self.end_frame_number = self.following_feature.end_frame_number
+#     else:
+#       self.end_timestamps = self.target_feature.end_timestamp
+#       self.end_frame_number = self.target_feature.end_frame_number
+#
+#   def __str__(self):
+#     print_string = 'SHRP2 NDS Video Event\n\n'
+#
+#     if self.preceding_feature:
+#       print_string += 'Preceding Feature:\n{}\n\n'.format(
+#         self.preceding_feature)
+#
+#     print_string += 'Target Feature:\n{}\n\n'.format(self.target_feature)
+#
+#     if self.following_feature:
+#       print_string += 'Following Feature:\n{}\n\n'.format(
+#         self.following_feature)
+#
+#     return print_string
 
 
 class Trip:
@@ -211,14 +286,31 @@ class Trip:
 
     event_id = 0
 
+    i = 0
+
     if preceding_feature_class_id and following_feature_class_id:
       previous_preceding_feature = None
       previous_following_feature = None
 
-      for current_feature in self.feature_sequence:
+      while i < len(self.feature_sequence):
+        current_feature = self.feature_sequence[i]
+        print(i)
+        print(current_feature)
         if current_feature.class_id == target_feature_class_id:
+          target_feature_list = [current_feature]
+          i += 1
+          while i < len(self.feature_sequence) and current_feature.class_id not in [preceding_feature_class_id, following_feature_class_id]:
+            current_feature = self.feature_sequence[i]
+            print(i)
+            print(current_feature)
+            if current_feature.class_id == target_feature_class_id:
+              target_feature_list.append(current_feature)
+              i += 1
+
           current_event = Event(event_id=event_id,
-                                target_feature=current_feature)
+                                target_feature_list=target_feature_list)
+          logging.debug('created event with target_feature_list = {}'.format(
+            target_feature_list))
 
           # if two consecutive events share a common following/preceding
           # feature, and that feature is closer to the current event than the
@@ -226,7 +318,7 @@ class Trip:
           if previous_preceding_feature:
             if previous_preceding_feature.event_id:
               previous_target_feature = events[
-                previous_preceding_feature.event_id].target_feature
+                previous_preceding_feature.event_id].target_feature_list[-1]
 
               previous_target_feature_distance = \
                 previous_preceding_feature.start_frame_number - \
@@ -235,7 +327,7 @@ class Trip:
               assert previous_target_feature_distance >= 0
 
               current_feature_distance = \
-                current_feature.start_frame_number - \
+                current_event.target_feature_list[0].start_frame_number - \
                 previous_preceding_feature.end_frame_number
 
               assert current_feature_distance >= 0
@@ -271,10 +363,19 @@ class Trip:
             previous_following_feature.event_id = previous_event.event_id
             previous_following_feature = None
     elif not preceding_feature_class_id and following_feature_class_id:
-      for current_feature in self.feature_sequence:
+      while i < len(self.feature_sequence):
         if current_feature.class_id == target_feature_class_id:
+          target_feature_list = [current_feature]
+          i += 1
+          while i < len(self.feature_sequence) and current_feature.class_id != following_feature_class_id:
+            current_feature = self.feature_sequence[i]
+            if current_feature.class_id == target_feature_class_id:
+              target_feature_list.append(current_feature)
+              i += 1
           current_event = Event(event_id=event_id,
-                                target_feature=current_feature)
+                                target_feature_list=target_feature_list)
+          logging.debug('created event with target_feature_list = {}'.format(
+            target_feature_list))
 
           events.append(current_event)
 
@@ -292,10 +393,19 @@ class Trip:
     elif preceding_feature_class_id and not following_feature_class_id:
       previous_preceding_feature = None
 
-      for current_feature in self.feature_sequence:
+      while i < len(self.feature_sequence):
         if current_feature.class_id == target_feature_class_id:
+          target_feature_list = [current_feature]
+          i += 1
+          while i < len(self.feature_sequence) and current_feature.class_id != preceding_feature_class_id:
+            current_feature = self.feature_sequence[i]
+            if current_feature.class_id == target_feature_class_id:
+              target_feature_list.append(current_feature)
+              i += 1
           current_event = Event(event_id=event_id,
-                                target_feature=current_feature)
+                                target_feature_list=target_feature_list)
+          logging.debug('created event with target_feature_list = {}'.format(
+            target_feature_list))
 
           # if two consecutive events share a common following/preceding
           # feature, and that feature is closer to the current event than the
@@ -312,16 +422,169 @@ class Trip:
         if current_feature.class_id == preceding_feature_class_id:
           previous_preceding_feature = current_feature
     else:
-      for current_feature in self.feature_sequence:
+      while i < len(self.feature_sequence):
         if current_feature.class_id == target_feature_class_id:
+          target_feature_list = [current_feature]
+          i += 1
+          while i < len(self.feature_sequence):
+            current_feature = self.feature_sequence[i]
+            if current_feature.class_id == target_feature_class_id:
+              target_feature_list.append(current_feature)
+              i += 1
           current_event = Event(event_id=event_id,
-                                target_feature=current_feature)
-
+                                target_feature_list=target_feature_list)
+          logging.debug('created event with target_feature_list = {}'.format(
+            target_feature_list))
           events.append(current_event)
 
           event_id += 1
 
     return events
+
+  # def find_events(
+  #     self, target_feature_class_id, target_feature_class_name=None,
+  #     preceding_feature_class_id=None, preceding_feature_class_name=None,
+  #     following_feature_class_id=None, following_feature_class_name=None):
+  #   if target_feature_class_id is None:
+  #     if target_feature_class_name is None:
+  #       raise ValueError('target_feature_class_id and target_feature_class_name'
+  #                        ' cannot both be None')
+  #     else:
+  #       target_feature_class_id = self.class_ids[target_feature_class_name]
+  #
+  #   if preceding_feature_class_id is None and \
+  #           preceding_feature_class_name is not None:
+  #     preceding_feature_class_id = self.class_ids[preceding_feature_class_name]
+  #
+  #   if target_feature_class_id == preceding_feature_class_id:
+  #     raise ValueError('target_feature_class_id and preceding_feature_class_id'
+  #                      ' cannot be equal')
+  #
+  #   if following_feature_class_id is None and \
+  #           following_feature_class_name is not None:
+  #     following_feature_class_id = self.class_ids[following_feature_class_name]
+  #
+  #   if target_feature_class_id == following_feature_class_id:
+  #     raise ValueError('target_feature_class_id and following_feature_class_id'
+  #                      ' cannot be equal')
+  #
+  #   events = []
+  #
+  #   previous_event = None
+  #
+  #   event_id = 0
+  #
+  #   if preceding_feature_class_id and following_feature_class_id:
+  #     previous_preceding_feature = None
+  #     previous_following_feature = None
+  #
+  #     for current_feature in self.feature_sequence:
+  #       if current_feature.class_id == target_feature_class_id:
+  #         current_event = Event(event_id=event_id,
+  #                               target_feature=current_feature)
+  #
+  #         # if two consecutive events share a common following/preceding
+  #         # feature, and that feature is closer to the current event than the
+  #         # previous event, reassign it to the current event.
+  #         if previous_preceding_feature:
+  #           if previous_preceding_feature.event_id:
+  #             previous_target_feature = events[
+  #               previous_preceding_feature.event_id].target_feature
+  #
+  #             previous_target_feature_distance = \
+  #               previous_preceding_feature.start_frame_number - \
+  #               previous_target_feature.end_frame_number
+  #
+  #             assert previous_target_feature_distance >= 0
+  #
+  #             current_feature_distance = \
+  #               current_feature.start_frame_number - \
+  #               previous_preceding_feature.end_frame_number
+  #
+  #             assert current_feature_distance >= 0
+  #
+  #             if current_feature_distance < previous_target_feature_distance:
+  #               previous_event.following_feature = None
+  #               current_event.preceding_feature = previous_preceding_feature
+  #               previous_preceding_feature.event_id = event_id
+  #           else:
+  #             current_event.preceding_feature = previous_preceding_feature
+  #             previous_preceding_feature.event_id = event_id
+  #
+  #           if previous_preceding_feature == previous_following_feature:
+  #             previous_following_feature = None
+  #
+  #           previous_preceding_feature = None
+  #
+  #         events.append(current_event)
+  #
+  #         event_id += 1
+  #
+  #         previous_event = current_event
+  #
+  #       if current_feature.class_id == preceding_feature_class_id:
+  #         previous_preceding_feature = current_feature
+  #
+  #       if current_feature.class_id == following_feature_class_id:
+  #         previous_following_feature = current_feature
+  #
+  #         if previous_event and \
+  #                 previous_event.following_feature is None:
+  #           previous_event.following_feature = previous_following_feature
+  #           previous_following_feature.event_id = previous_event.event_id
+  #           previous_following_feature = None
+  #   elif not preceding_feature_class_id and following_feature_class_id:
+  #     for current_feature in self.feature_sequence:
+  #       if current_feature.class_id == target_feature_class_id:
+  #         current_event = Event(event_id=event_id,
+  #                               target_feature=current_feature)
+  #
+  #         events.append(current_event)
+  #
+  #         event_id += 1
+  #
+  #         previous_event = current_event
+  #
+  #       if current_feature.class_id == following_feature_class_id:
+  #         previous_following_feature = current_feature
+  #
+  #         if previous_event and \
+  #                 previous_event.following_feature is None:
+  #           previous_event.following_feature = previous_following_feature
+  #           previous_following_feature.event_id = previous_event.event_id
+  #   elif preceding_feature_class_id and not following_feature_class_id:
+  #     previous_preceding_feature = None
+  #
+  #     for current_feature in self.feature_sequence:
+  #       if current_feature.class_id == target_feature_class_id:
+  #         current_event = Event(event_id=event_id,
+  #                               target_feature=current_feature)
+  #
+  #         # if two consecutive events share a common following/preceding
+  #         # feature, and that feature is closer to the current event than the
+  #         # previous event, reassign it to the current event.
+  #         if previous_preceding_feature:
+  #           current_event.preceding_feature = previous_preceding_feature
+  #           previous_preceding_feature.event_id = event_id
+  #           previous_preceding_feature = None
+  #
+  #         events.append(current_event)
+  #
+  #         event_id += 1
+  #
+  #       if current_feature.class_id == preceding_feature_class_id:
+  #         previous_preceding_feature = current_feature
+  #   else:
+  #     for current_feature in self.feature_sequence:
+  #       if current_feature.class_id == target_feature_class_id:
+  #         current_event = Event(event_id=event_id,
+  #                               target_feature=current_feature)
+  #
+  #         events.append(current_event)
+  #
+  #         event_id += 1
+  #
+  #   return events
 
   def find_work_zone_events(self):
     return self.find_events(
@@ -363,5 +626,5 @@ class TripFromReportFile(Trip):
     if smooth_probs:
       report_probs = IO.smooth_probs(report_probs, smoothing_factor)
 
-    super().__init__(
+    Trip.__init__(self,
       report_frame_numbers, report_timestamps, report_probs, class_name_map)

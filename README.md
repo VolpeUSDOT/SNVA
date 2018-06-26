@@ -51,6 +51,9 @@ python3 snva.py
   --modelname mobilenet_v2 --batchsize 128
 ```
 
+```shell
+python snva.py --modelname mobilenet_v2 --inputpath /media/data_0/snva_0/Raw_Data/fhwa/shrp2_nds/Videos_Not_Included_In_Round_1 --outputpath shrp2_nds/reports --logpath shrp2_nds/logs --batchsize 128 --loglevel debug --smoothprobs --extracttimestamps --writeinferencereports True --crop
+```
 
 ## To run using NVIDIA-Docker on Ubuntu:
 
@@ -108,7 +111,7 @@ Flag | Short Flag | Properties | Description
 
 If a timestamp cannot be interpreted, a -1 will be written in its place in the output CSV. Timestamps that are misinterpreted will be written erroneously. This is an outstanding TODO.
 
-While inference speed has been observed to monotonically increase with batch size, it is important to not exceed the GPU's memory capacity. The SNVA app does not currently manage memory utilization. It is best to discover the optimal batch size by starting to run for a breif period at a relatively low batch size, then iteratively incrementing the batch size while monitoring GPU memory utilization (e.g. using the nvidia-smi CLI app or NVIDIA X Server Settings GUI app). GPU memory is set to be dynamically allocated, so one should monitor its usage over time to increase the chance of observing peak utilization.
+While inference speed has been observed to monotonically increase with batch size, it is important to not exceed the GPU's memory capacity. The SNVA app does not currently manage memory utilization. It is best to discover the optimal batch size by starting to run for a breif period at a relatively low batch size, then iteratively incrementing the batch size while monitoring GPU memory utilization (e.g. using the NVIDIA X Server Settings GUI app or nvidia-smi CLI app: nvidia-smi --query-compute-apps=process_name,pid,used_gpu_memory --format=csv). GPU memory is set to be dynamically allocated, so one should monitor its usage over time to increase the chance of observing peak utilization.
 
 When terminating the app using ctrl-c, there may be a delay while the app terminates gracefully.
 
