@@ -1,129 +1,201 @@
 import logging
-import os
+from multiprocessing import Process
+import numpy as np
+from subprocess import PIPE, Popen
 import tensorflow as tf
-from time import time
-from utils.io import IO
 
 
-class VideoAnalyzer:
-  @staticmethod
-  def load_model(
-      model_path, io_node_names_path, device_type, gpu_memory_fraction):
+class VideoAnalyzer(Process):
+  def __init__(
+      self, frame_shape, num_frames, num_classes, batch_size, model_input_size,
+      model_path, device_type, device_count, cpu_count, node_names_map,
+      gpu_memory_fraction, extract_timestamps, timestamp_x, timestamp_y,
+      timestamp_height, timestamp_max_width, crop, crop_x, crop_y, crop_width,
+      crop_height, ffmpeg_command, child_interrupt_queue, result_queue, name):
+    super(VideoAnalyzer, self).__init__(name=name)
+
+    #### TF session variables ####
     graph_def = tf.GraphDef()
 
     with open(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
 
-    node_names_map = IO.read_node_names(io_node_names_path)
-
-    input_node, output_node = tf.import_graph_def(
+    self.input_node, self.output_node = tf.import_graph_def(
       graph_def, return_elements=[node_names_map['input_node_name'],
                                   node_names_map['output_node_name']])
 
-    if device_type == 'gpu':
+    self.device_type = device_type
+
+    if self.device_type == 'gpu':
       gpu_options = tf.GPUOptions(
-        allow_growth=True, per_process_gpu_memory_fraction=gpu_memory_fraction)
-      session_config = tf.ConfigProto(
-        allow_soft_placement=True, gpu_options=gpu_options)
+        allow_growth=True,
+        per_process_gpu_memory_fraction=gpu_memory_fraction)
+
+      self.session_config = tf.ConfigProto(allow_soft_placement=True,
+                                           gpu_options=gpu_options)
     else:
-      session_config = None
+      self.session_config = None
 
-    return {'session_config': session_config,
-            'input_node': input_node,
-            'output_node': output_node}
+    #### frame generator variables ####
+    self.frame_shape = frame_shape
+    self.crop = crop
 
-  @staticmethod
-  def preprocess_for_inception(image, image_size):
+    if self.crop:
+      self.crop_x = crop_x
+      self.crop_y = crop_y
+      self.crop_width = crop_width
+      self.crop_height = crop_height
+
+      self.tensor_shape = [
+        self.crop_height, self.crop_width, self.frame_shape[-1]]
+    else:
+      self.tensor_shape = self.frame_shape
+
+    self.extract_timestamps = extract_timestamps
+
+    if self.extract_timestamps:
+      self.ti = 0
+
+      self.tx = timestamp_x
+      self.ty = timestamp_y
+      self.th = timestamp_height
+      self.tw = timestamp_max_width
+
+      self.timestamp_array = np.ndarray(
+        (self.th * num_frames, self.tw, self.frame_shape[-1]), dtype=np.uint8)
+    else:
+      self.timestamp_array = None
+
+    self.model_input_size = model_input_size
+    self.device_count = device_count
+    self.cpu_count = cpu_count
+    self.batch_size = batch_size
+    self.ffmpeg_command = ffmpeg_command
+
+    self.prob_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
+
+    self.child_interrupt_queue = child_interrupt_queue
+    self.result_queue = result_queue
+
+  # feed the tf.data input pipeline one image at a time and, while we're at it,
+  # extract timestamp overlay crops for later mapping to strings.
+  def _generate_frames(self):
+    logging.debug('opening video frame pipe')
+
+    frame_string_len = 1
+    for dim in self.frame_shape:
+      frame_string_len *= dim
+    buffer_scale = 2
+    while buffer_scale < frame_string_len:
+      buffer_scale *= 2
+    frame_pipe = Popen(self.ffmpeg_command, stdout=PIPE, stderr=PIPE,
+                       bufsize=self.batch_size * buffer_scale)
+  
+    logging.debug('video frame pipe created with pid: {}'.format(
+      frame_pipe.pid))
+
+    while True:
+      try:
+        try:
+          _ = self.child_interrupt_queue.get_nowait()
+          logging.warning('closing video frame pipe following interrupt signal')
+          frame_pipe.stdout.close()
+          frame_pipe.stderr.close()
+          frame_pipe.terminate()
+          return
+        except:
+          pass
+
+        frame_string = frame_pipe.stdout.read(frame_string_len)
+
+        if not frame_string:
+          logging.debug('closing video frame pipe following end of stream')
+          frame_pipe.stdout.close()
+          frame_pipe.stderr.close()
+          frame_pipe.terminate()
+          return
+
+        frame_array = np.fromstring(frame_string, dtype=np.uint8)
+        frame_array = np.reshape(frame_array, self.frame_shape)
+
+        if self.extract_timestamps:
+          self.timestamp_array[self.th * self.ti:self.th * (self.ti + 1)] = \
+            frame_array[self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
+          self.ti += 1
+
+        if self.crop:
+          frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
+                                    self.crop_x:self.crop_x + self.crop_width]
+
+        yield frame_array
+      except Exception as e:
+        logging.error(
+          'met an unexpected error after processing {} frames.'.format(self.ti))
+        logging.error(e)
+        logging.error(
+          'ffmpeg reported:\n{}'.format(frame_pipe.stderr.readlines()))
+        logging.debug('closing video frame pipe following raised exception')
+        frame_pipe.stdout.close()
+        frame_pipe.stderr.close()
+        frame_pipe.terminate()
+        logging.debug('raising exception to caller.')
+        raise e
+
+  def _preprocess_frames(self, image):
     if image.dtype != tf.float32:
       image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-    if image.shape[0] != image_size or image.shape[1] != image_size:
+    if image.shape[0] != self.model_input_size or \
+            image.shape[1] != self.model_input_size:
       image = tf.expand_dims(image, 0)
       image = tf.image.resize_bilinear(
-        image, [image_size, image_size], align_corners=False)
+        image, [self.model_input_size, self.model_input_size],
+        align_corners=False)
       image = tf.squeeze(image, [0])
     image = tf.subtract(image, 0.5)
     image = tf.multiply(image, 2.0)
 
     return image
 
-
   # assumed user specification of numperdeviceprocesses has been validated,
   # to be <= cpu cores when in --cpuonly mode
-  @staticmethod
-  def _get_num_parallel_calls(device_type, device_count):
-    n_cpus = os.cpu_count()
-
-    if device_type == 'gpu':
-      return int(n_cpus / device_count)
+  def _get_num_parallel_calls(self):
+    if self.device_type == 'gpu':
+      return int(self.cpu_count / self.device_count)
     else:
-      if device_count == 1:
-        return n_cpus - 1
-      elif device_count == n_cpus:
-        return n_cpus
+      if self.device_count == 1:
+        return self.cpu_count - 1
+      elif self.device_count == self.cpu_count:
+        return self.cpu_count
       else:
-        return int((n_cpus - device_count) / device_count)
+        return int((self.cpu_count - self.device_count) / self.device_count)
 
-  @staticmethod
-  def analyze_video(video_frame_generator, video_frame_shape, batch_size,
-                    session_config, input_node, output_node, preprocessing_fn,
-                    prob_array, device_type, device_count):
-    video_frame_dataset = tf.data.Dataset.from_generator(
-      video_frame_generator, tf.uint8, tf.TensorShape(list(video_frame_shape)))
+  def run(self):
+    logging.info('started inference.')
+    logging.debug('TF input frame shape == {}'.format(self.tensor_shape))
 
-    video_frame_dataset = video_frame_dataset.map(
-      preprocessing_fn, VideoAnalyzer._get_num_parallel_calls(device_type, device_count))
+    count = 0
 
-    video_frame_dataset = video_frame_dataset.batch(batch_size)
+    with tf.device('/cpu:0') if self.device_type == 'cpu' else \
+        tf.device(None):
+      with tf.Session(config=self.session_config) as session:
+        frame_dataset = tf.data.Dataset.from_generator(
+          self._generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
+        frame_dataset = frame_dataset.map(self._preprocess_frames,
+                                          self._get_num_parallel_calls())
+        frame_dataset = frame_dataset.batch(self.batch_size)
+        frame_dataset = frame_dataset.prefetch(self.batch_size)
+        next_batch = frame_dataset.make_one_shot_iterator().get_next()
 
-    video_frame_dataset = video_frame_dataset.prefetch(batch_size)
+        while True:
+          try:
+            frame_batch = session.run(next_batch)
+            probs = session.run(self.output_node,
+                                {self.input_node: frame_batch})
+            self.prob_array[count:count + probs.shape[0]] = probs
+            count += probs.shape[0]
+          except tf.errors.OutOfRangeError:
+            logging.info('completed inference.')
+            break
 
-    next_batch = video_frame_dataset.make_one_shot_iterator().get_next()
-
-    logging.debug('constructed image dataset pipeline')
-
-    attempts = 0
-
-    while attempts < 3:
-      try:
-        logging.info('started inference.')
-
-        start = time()
-
-        with tf.device('/cpu:0') if device_type == 'cpu' else tf.device(None):
-          with tf.Session(config=session_config) as session:
-            total_num_probs = 0
-
-            while True:
-              try:
-                video_frame_batch = session.run(next_batch)
-                probs = session.run(output_node, {input_node: video_frame_batch})
-                num_probs = probs.shape[0]
-                prob_array[total_num_probs:total_num_probs + num_probs] = probs
-                total_num_probs += num_probs
-              except tf.errors.OutOfRangeError:
-                logging.info('completed inference.')
-                break
-
-        end = time() - start
-
-        processing_duration = IO.get_processing_duration(
-          end, 'processed {} frames in'.format(total_num_probs))
-        logging.info(processing_duration)
-
-        return total_num_probs
-      # TODO: permanently update batch size in main so future runs aren't delayed.
-      # in the limit, we should only detect OOM once and update a shared batch
-      # size variable to benefit all future videos within the current app run.
-      except tf.errors.ResourceExhaustedError as ree:
-        logging.warning('encountered a resource exhausted error.')
-        logging.warning(ree)
-        attempts += 1
-
-        # If an error occurs, retry up to two times
-        if attempts < 3:
-          batch_size = int(batch_size / 2)
-          logging.debug('will re-attempt inference with a new batch size of '
-                        '{}'.format(batch_size))
-        else:
-          logging.error('will not re-attempt inference.')
-          break
+    self.result_queue.put((count, self.prob_array, self.timestamp_array))
+    self.result_queue.close()
