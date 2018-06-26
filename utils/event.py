@@ -294,18 +294,19 @@ class Trip:
 
       while i < len(self.feature_sequence):
         current_feature = self.feature_sequence[i]
-        print(i)
-        print(current_feature)
+        i += 1
         if current_feature.class_id == target_feature_class_id:
+          print(i)
+          print(current_feature)
           target_feature_list = [current_feature]
-          i += 1
-          while i < len(self.feature_sequence) and current_feature.class_id not in [preceding_feature_class_id, following_feature_class_id]:
+          while i < len(self.feature_sequence) and current_feature.class_id \
+              not in [preceding_feature_class_id, following_feature_class_id]:
             current_feature = self.feature_sequence[i]
+            i += 1
             print(i)
             print(current_feature)
             if current_feature.class_id == target_feature_class_id:
               target_feature_list.append(current_feature)
-              i += 1
 
           current_event = Event(event_id=event_id,
                                 target_feature_list=target_feature_list)
@@ -367,7 +368,8 @@ class Trip:
         if current_feature.class_id == target_feature_class_id:
           target_feature_list = [current_feature]
           i += 1
-          while i < len(self.feature_sequence) and current_feature.class_id != following_feature_class_id:
+          while i < len(self.feature_sequence) \
+              and current_feature.class_id != following_feature_class_id:
             current_feature = self.feature_sequence[i]
             if current_feature.class_id == target_feature_class_id:
               target_feature_list.append(current_feature)
@@ -397,7 +399,8 @@ class Trip:
         if current_feature.class_id == target_feature_class_id:
           target_feature_list = [current_feature]
           i += 1
-          while i < len(self.feature_sequence) and current_feature.class_id != preceding_feature_class_id:
+          while i < len(self.feature_sequence) \
+              and current_feature.class_id != preceding_feature_class_id:
             current_feature = self.feature_sequence[i]
             if current_feature.class_id == target_feature_class_id:
               target_feature_list.append(current_feature)
