@@ -716,12 +716,11 @@ def main():
         child_logger_thread = child_logger_map[video_file_name]
         logging.debug(
           'joining logger thread for child process {}'.format(child_pid))
-        child_logger_thread.join()
+        child_logger_thread.join(timeout=15)
 
         child_process = child_process_map[video_file_name]
-        logging.debug(
-          'joining child process {}'.format(child_pid))
-        child_process.join(timeout=60)
+        logging.debug('joining child process {}'.format(child_pid))
+        child_process.join(timeout=15)
 
         # # if child_logger_thread has exited, it is safe to kill the child process
         try:
@@ -785,7 +784,6 @@ def main():
     end, 'snva {} processed a total of {} videos and {} frames in: '.format(
       snva_version_string, total_num_processed_videos,
       total_num_processed_frames))
-
   logging.info(processing_duration)
 
   logging.info('exiting snva {} main process'.format(snva_version_string))

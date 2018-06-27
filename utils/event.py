@@ -117,10 +117,10 @@ class Event:
     # if this event's following feature is being reassigned to a later event,
     # the 'following_feature' argument will be None
     if self.following_feature:
-      self.end_timestamps = self.following_feature.end_timestamp
+      self.end_timestamp = self.following_feature.end_timestamp
       self.end_frame_number = self.following_feature.end_frame_number
     else:
-      self.end_timestamps = self.target_feature_list[-1].end_timestamp
+      self.end_timestamp = self.target_feature_list[-1].end_timestamp
       self.end_frame_number = self.target_feature_list[-1].end_frame_number
 
   def __str__(self):
@@ -210,7 +210,7 @@ class Event:
 
 class Trip:
   def __init__(self, report_frame_numbers, report_timestamps, report_probs,
-               class_name_map):
+               class_name_map, non_event_weight_scale=0.2):
     self.class_names = class_name_map
     self.class_ids = {value: key for key, value in self.class_names.items()}
 
@@ -253,6 +253,9 @@ class Trip:
 
         start_frame_number = report_frame_numbers[i]
 
+    self.weight_scale = non_event_weight_scale
+
+  # TODO: fix overlapping auxiliary feature bug
   def find_events(
       self, target_feature_class_id, target_feature_class_name=None,
       preceding_feature_class_id=None, preceding_feature_class_name=None,
@@ -288,6 +291,8 @@ class Trip:
 
     i = 0
 
+    weight = 0.0
+
     if preceding_feature_class_id and following_feature_class_id:
       previous_preceding_feature = None
       previous_following_feature = None
@@ -297,17 +302,34 @@ class Trip:
         i += 1
         if current_feature.class_id == target_feature_class_id:
           target_feature_list = [current_feature]
+          logging.debug('increasing weight from {} to {}'.format(
+            weight, weight + current_feature.length))
+          weight += current_feature.length
+
           while i < len(self.feature_sequence) and current_feature.class_id \
               not in [preceding_feature_class_id, following_feature_class_id]:
             current_feature = self.feature_sequence[i]
             i += 1
             if current_feature.class_id == target_feature_class_id:
               target_feature_list.append(current_feature)
+              logging.debug('increasing weight from {} to {}'.format(
+                weight, weight + current_feature.length))
+              weight += current_feature.length
+            else:
+              logging.debug('decreasing weight from {} to {}'.format(
+                weight, weight - self.weight_scale * current_feature.length))
+              weight -= self.weight_scale * current_feature.length
+
+            if weight <= 0:
+              logging.debug('event detection complete')
+              break
 
           current_event = Event(event_id=event_id,
                                 target_feature_list=target_feature_list)
           logging.debug('created event with target_feature_list = {}'.format(
             target_feature_list))
+
+          weight = 0
 
           # if two consecutive events share a common following/preceding
           # feature, and that feature is closer to the current event than the
