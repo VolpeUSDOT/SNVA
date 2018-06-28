@@ -197,6 +197,8 @@ class Timestamp:
     # 32-bit ints/uints should be fine given no trip exceeds 24 days in length
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
+    current_timestamp_length = 0
+
     # TODO confirm that the lengths match and that no gaps exist between digits
     # TODO: quality controll all unreadable timestamps, not just blank ones
     for i in range(num_timestamps):
@@ -212,19 +214,35 @@ class Timestamp:
         _all = np.all(_equal, axis=(2, 3))
         # ((10,), (nd,))
         digits, positions = np.nonzero(_all)
-        if len(digits) > 0:
-          sorted_positions = np.argsort(positions)
-          digits = digits[sorted_positions]
-          digits = digits.astype(np.unicode_)
-          timestamp_string_array[i] = ''.join(digits)
+
+        digits_len = len(digits)
+
+        if digits_len > 0:
+          if digits_len >= current_timestamp_length:
+            current_timestamp_length = digits_len
+
+            sorted_positions = np.argsort(positions)
+            digits = digits[sorted_positions]
+            digits = digits.astype(np.unicode_)
+            timestamp_string_array[i] = ''.join(digits)
+          else:
+            # TODO synthetically generate the timestamp here and set the quality control bit
+            timestamp_string_array[i] = 0
         else:
           timestamp_string_array[i] = 0
       except Exception as e:
         # TODO log error message when a timestamp image cannot be interpreted
-        logging.debug('the {}th timestamp could not be interpreted'.format(i))
+        logging.debug(
+          'the {}th timestamp could not be interpreted or synthesized'.format(i))
         logging.error(e)
 
     timestamp_errors = timestamp_string_array == 0
+
+    if len(timestamp_errors) > 0:
+      logging.warning(
+        'Some timestamp strings were observed to have lengths shorter than '
+        'timestamps preceding them and had to be symthetically regenerated.')
+
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
     timestamp_string_array[timestamp_errors] = '-1'  # for quality control
 
@@ -255,7 +273,6 @@ class Timestamp:
 
     digits = digits.astype(np.unicode_)
 
-    #
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
 
     # TODO: confirm that counts are monotonically non-decreasing,
@@ -265,10 +282,30 @@ class Timestamp:
     unique_counts, unique_count_indices, unique_count_counts = np.unique(
       counts, return_index=True, return_counts=True)
 
+    logging.debug('unique_counts: {}'.format(unique_counts))
+    logging.debug('unique_count_indices: {}'.format(unique_count_indices))
+    logging.debug('unique_count_counts: {}'.format(unique_count_counts))
+
+    if np.sum(unique_count_counts) != num_timestamps:
+      raise ValueError(
+        'The cumulative sum of frames having a common number of digits should '
+        'be equal to the total number of frames regardless of digit length')
+
+    # the unique count indices should be monotonically increasing
+    for i in range(1, len(unique_count_indices)):
+      if unique_count_indices[i] < unique_count_indices[i - 1]:
+        raise ValueError(
+          'Timestamp string lengths should be monotonically non-decreasing, but'
+          ' a timestamp of length {} at array index {} follows a timestamp of '
+          'length {} at array index {}'.format(
+            unique_counts[i - 1], unique_count_indices[i - 1],
+            unique_counts[i], unique_count_indices[i]))
+
     r_idx = 0
 
     for i in range(unique_counts.shape[0]):
       unique_count = unique_counts[i]
+
       unique_count_count = unique_count_counts[i]
 
       l_idx = r_idx
@@ -301,21 +338,21 @@ class Timestamp:
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
 
     try:
-      timestamp_string_array = self._stringify_timestamps_per_frame(
+      timestamp_string_array = self._stringify_timestamps(
         timestamp_image_array, num_timestamps)
       return timestamp_string_array
-    # except Exception as e:
-    #   logging.warning('Process {} encountered an exception while converting '
-    #                   'timestamp images to strings en masse'.format(process_id))
-    #   logging.warning(e)
-    #   logging.warning('Process {} will re-attempt conversions one-at-a-time')
-    #
-    # try:
-    #   # slower, but will isolate and gracefully handle individual failures
-    #   timestamp_string_array = self._stringify_timestamps_per_frame(
-    #     timestamp_image_array, num_timestamps)
-    #
-    #   return timestamp_string_array
+    except Exception as e:
+      logging.warning('encountered an exception while converting timestamp '
+                      'images to strings en masse')
+      logging.warning(e)
+      logging.warning('will re-attempt conversions one-at-a-time')
+
+    try:
+      # slower, but will isolate and gracefully handle individual failures
+      timestamp_string_array = self._stringify_timestamps_per_frame(
+        timestamp_image_array, num_timestamps)
+
+      return timestamp_string_array
     except Exception as e:
       logging.debug('encountered an exception while converting '
                     'timestamp images to strings one-at-a-time.')
