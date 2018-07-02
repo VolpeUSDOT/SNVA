@@ -123,10 +123,14 @@ def process_video(
     model_path, node_name_map, gpu_memory_fraction):
   configure_logger(log_level, log_queue)
 
+  interrupt_queue = Queue()
+
   child_interrupt_queue = Queue()
 
   def interrupt_handler(signal_number, _):
     logging.warning('received interrupt signal {}.'.format(signal_number))
+
+    interrupt_queue.put_nowait('_')
 
     # TODO: cancel timestamp/report generation when an interrupt is signalled
     logging.debug('instructing inference pipeline to halt.')
@@ -162,8 +166,7 @@ def process_video(
     log_queue.close()
 
     return_code_queue.put(
-      {'child_pid': os.getpid(), 'frame_pipe_pid': None,
-       'return_code': 'exception', 'return_value': 'get_video_dimensions'})
+      {'return_code': 'exception', 'return_value': 'get_video_dimensions'})
     return_code_queue.close()
 
     return
@@ -178,8 +181,7 @@ def process_video(
     log_queue.close()
 
     return_code_queue.put(
-      {'child_pid': os.getpid(), 'frame_pipe_pid': None,
-       'return_code': 'exception', 'return_value': 'should_crop'})
+      {'return_code': 'exception', 'return_value': 'should_crop'})
     return_code_queue.close()
 
     return
@@ -206,8 +208,7 @@ def process_video(
     log_queue.close()
 
     return_code_queue.put(
-      {'child_pid': os.getpid(), 'frame_pipe_pid': None,
-       'return_code': 'exception', 'return_value': 'should_extract_timestamps'})
+      {'return_code': 'exception', 'return_value': 'should_extract_timestamps'})
     return_code_queue.close()
 
     return
@@ -248,12 +249,12 @@ def process_video(
 
     release_device_id(device_id, device_id_queue)
 
-    logging.debug('will exit with code: interrupt and value: None')
+    logging.debug('will exit with code: interrupt and value: process_video')
     log_queue.put(None)
     log_queue.close()
 
-    return_code_queue.put({'child_pid': os.getpid(), 'return_code': 'interrupt',
-                           'return_value': None})
+    return_code_queue.put({'return_code': 'interrupt',
+                           'return_value': 'process_video'})
     return_code_queue.close()
 
     return
@@ -291,22 +292,53 @@ def process_video(
       end, 'processed {} frames in'.format(num_analyzed_frames))
     logging.info(processing_duration)
 
-    analyzer.join(timeout=60)
-    # TODO: resolve issue with children stalling. Terminating children
-    # prematurely can lead to their logs not being written
+    analyzer.join(timeout=15)
+
     try:
       os.kill(analyzer.pid, signal.SIGTERM)
-      logging.debug('analyzer process {} remained alive following return and '
-                    'had to be killed'.format(analyzer.pid))
+      logging.debug('analyzer process {} remained alive following join timeout '
+                    'and had to be killed'.format(analyzer.pid))
     except:
       pass
 
-    if num_analyzed_frames != num_frames and child_interrupt_queue.full():
-      raise AssertionError('num_analyzed_frames ({}) != num_frames ({})'.format(
-        num_analyzed_frames, num_frames))
+    if num_analyzed_frames != num_frames:
+      if interrupt_queue.empty():
+        raise AssertionError('num_analyzed_frames ({}) != num_frames '
+                             '({})'.format(num_analyzed_frames, num_frames))
+      else:
+        raise InterruptedError('num_analyzed_frames ({}) != num_frames '
+                               '({})'.format(num_analyzed_frames, num_frames))
+
+    release_device_id(device_id, device_id_queue)
+  except InterruptedError as ae:
+    logging.error(ae)
 
     release_device_id(device_id, device_id_queue)
 
+    logging.debug('will exit with code: interrupt and value: analyze_video')
+    log_queue.put(None)
+    log_queue.close()
+
+    return_code_queue.put({'return_code': 'interrupt',
+                           'return_value': 'analyze_video'})
+    return_code_queue.close()
+
+    return
+  except AssertionError as ae:
+    logging.error(ae)
+
+    release_device_id(device_id, device_id_queue)
+
+    logging.debug(
+      'will exit with code: assertion error and value: analyze_video')
+    log_queue.put(None)
+    log_queue.close()
+
+    return_code_queue.put({'return_code': 'assertion error',
+                           'return_value': 'analyze_video'})
+    return_code_queue.close()
+
+    return
   except Exception as e:
     logging.error('encountered an unexpected error while analyzing {}'.format(
       video_file_name))
@@ -319,7 +351,7 @@ def process_video(
     log_queue.put(None)
     log_queue.close()
 
-    return_code_queue.put({'child_pid': os.getpid(), 'return_code': 'exception',
+    return_code_queue.put({'return_code': 'exception',
                            'return_value': 'analyze_video'})
     return_code_queue.close()
 
@@ -333,6 +365,13 @@ def process_video(
 
       timestamp_object = Timestamp(args.timestampheight, args.timestampmaxwidth)
       timestamp_strings = timestamp_object.stringify_timestamps(timestamp_array)
+
+      negative_ones = timestamp_strings == '-1'
+
+      if len(negative_ones) > 0:
+        logging.debug('setting timestamp_strings to None so that the event '
+                      'detector will ignore them until QA is fully implemented')
+        timestamp_strings = None
 
       end = time() - start
 
@@ -350,8 +389,7 @@ def process_video(
       log_queue.put(None)
       log_queue.close()
 
-      return_code_queue.put({'child_pid': os.getpid(),
-                             'return_code': 'exception',
+      return_code_queue.put({'return_code': 'exception',
                              'return_value': 'stringify_timestamps'})
       return_code_queue.close()
 
@@ -384,7 +422,7 @@ def process_video(
     log_queue.put(None)
     log_queue.close()
 
-    return_code_queue.put({'child_pid': os.getpid(), 'return_code': 'exception',
+    return_code_queue.put({'return_code': 'exception',
                            'return_value': 'write_inference_report'})
     return_code_queue.close()
 
@@ -399,7 +437,7 @@ def process_video(
 
     frame_numbers = [i + 1 for i in range(len(probability_array))]
 
-    if extract_timestamps:
+    if timestamp_strings is not None:
       timestamp_strings = timestamp_strings.astype(np.int32)
 
     trip = Trip(
@@ -431,7 +469,7 @@ def process_video(
     log_queue.put(None)
     log_queue.close()
 
-    return_code_queue.put({'child_pid': os.getpid(), 'return_code': 'exception',
+    return_code_queue.put({'return_code': 'exception',
                            'return_value': 'write_event_report'})
     return_code_queue.close()
 
@@ -442,7 +480,7 @@ def process_video(
   log_queue.put(None)
   log_queue.close()
 
-  return_code_queue.put({'child_pid': os.getpid(), 'return_code': 'success',
+  return_code_queue.put({'return_code': 'success',
                          'return_value': num_analyzed_frames})
   return_code_queue.close()
 
@@ -452,7 +490,6 @@ def main():
 
   total_num_video_to_process = None
 
-  # TODO: manage muliple sequential interrupt signals
   def interrupt_handler(signal_number, _):
     logging.warning('Main process received interrupt signal '
                     '{}.'.format(signal_number))
@@ -643,8 +680,8 @@ def main():
 
   logging.debug('loading model at path: {}'.format(model_file_path))
 
-  return_code_map = {}
-  child_logger_map = {}
+  return_code_queue_map = {}
+  child_logger_thread_map = {}
   child_process_map = {}
 
   total_num_video_to_process = len(video_file_names)
@@ -655,7 +692,7 @@ def main():
   logging.info('Processing {} videos in directory: {} using {}'.format(
     total_num_video_to_process, video_dir_path, args.modelname))
 
-  def call_process_video(video_file_name):
+  def start_video_processor(video_file_name):
     # Before popping the next video off of the list and creating a process to
     # scan it, check to see if fewer than logical_device_count + 1 processes are
     # active. If not, Wait for a child process to release its semaphore
@@ -665,7 +702,7 @@ def main():
 
     return_code_queue = Queue()
 
-    return_code_map[video_file_name] = return_code_queue
+    return_code_queue_map[video_file_name] = return_code_queue
 
     logging.debug('creating new child process.')
 
@@ -676,7 +713,7 @@ def main():
 
     child_logger_thread.start()
 
-    child_logger_map[video_file_name] = child_logger_thread
+    child_logger_thread_map[video_file_name] = child_logger_thread
 
     gpu_memory_fraction = args.gpumemoryfraction / args.numprocessesperdevice
 
@@ -694,44 +731,58 @@ def main():
 
     child_process_map[video_file_name] = child_process
 
-  def close_completed_child_processes(
-      total_num_processed_videos, total_num_processed_frames):
-    for video_file_name in list(return_code_map.keys()):
-      return_code_queue = return_code_map[video_file_name]
+  def close_completed_video_processors(total_num_processed_videos,
+                                       total_num_processed_frames):
+    for video_file_name in list(return_code_queue_map.keys()):
+      return_code_queue = return_code_queue_map[video_file_name]
 
       try:
-        return_code_dictionary = return_code_queue.get_nowait()
+        return_code_map = return_code_queue.get_nowait()
 
-        child_pid = return_code_dictionary['child_pid']
-        return_code = return_code_dictionary['return_code']
-        return_value = return_code_dictionary['return_value']
+        return_code = return_code_map['return_code']
+        return_value = return_code_map['return_value']
 
-        logging.debug('child process {} returned with exit code {} and exit '
-                      'value {}'.format(child_pid, return_code, return_value))
+        child_process = child_process_map[video_file_name]
+
+        logging.debug(
+          'child process {} returned with exit code {} and exit value '
+          '{}'.format(child_process.pid, return_code, return_value))
 
         if return_code == 'success':
           total_num_processed_videos += 1
           total_num_processed_frames += return_value
 
-        child_logger_thread = child_logger_map[video_file_name]
-        logging.debug(
-          'joining logger thread for child process {}'.format(child_pid))
+        child_logger_thread = child_logger_thread_map[video_file_name]
+        
+        logging.debug('joining logger thread for child process {}'.format(
+          child_process.pid))
+        
         child_logger_thread.join(timeout=15)
-
-        child_process = child_process_map[video_file_name]
-        logging.debug('joining child process {}'.format(child_pid))
+        
+        if child_logger_thread.is_alive():
+          logging.warning(
+            'logger thread for child process {} remained alive following join '
+            'timeout'.format(child_process.pid))
+        
+        logging.debug('joining child process {}'.format(child_process.pid))
+        
         child_process.join(timeout=15)
 
-        # # if child_logger_thread has exited, it is safe to kill the child process
+        # if the child process has not yet terminated, kill the child process at
+        # the risk of losing any log message not yet buffered by the main logger
         try:
-          os.kill(child_pid, signal.SIGTERM)
-          logging.debug('child process {} remained alive following return and '
-                        'had to be killed'.format(child_pid))
+          os.kill(child_process.pid, signal.SIGTERM)
+          logging.warning(
+            'child process {} remained alive following join timeout and had to '
+            'be killed'.format(child_process.pid))
         except:
           pass
-
+        
         return_code_queue.close()
-        return_code_map.pop(video_file_name)
+        
+        return_code_queue_map.pop(video_file_name)
+        child_logger_thread_map.pop(video_file_name)
+        child_process_map.pop(video_file_name)
       except Empty:
         pass
 
@@ -741,9 +792,9 @@ def main():
 
   while len(video_file_names) > 0:
     # block if logical_device_count + 1 child processes are active
-    while len(return_code_map) > logical_device_count:
+    while len(return_code_queue_map) > logical_device_count:
       total_num_processed_videos, total_num_processed_frames = \
-        close_completed_child_processes(
+        close_completed_video_processors(
         total_num_processed_videos, total_num_processed_frames)
 
     try:
@@ -757,23 +808,23 @@ def main():
     video_file_name = video_file_names.pop()
 
     try:
-      call_process_video(video_file_name)
+      start_video_processor(video_file_name)
     except Exception as e:
       logging.error('an unknown error has occured while processing '
                     '{}'.format(video_file_name))
       logging.error(e)
 
-  while len(return_code_map) > 0:
+  while len(return_code_queue_map) > 0:
     logging.debug('waiting for the final {} child processes to '
-                  'terminate'.format(len(return_code_map)))
+                  'terminate'.format(len(return_code_queue_map)))
 
     total_num_processed_videos, total_num_processed_frames = \
-      close_completed_child_processes(total_num_processed_videos,
-                                      total_num_processed_frames)
+      close_completed_video_processors(total_num_processed_videos,
+                                       total_num_processed_frames)
 
     # by now, the last device_id_queue_len videos are being processed,
     # so we can afford to poll for their completion infrequently
-    if len(return_code_map) > 0:
+    if len(return_code_queue_map) > 0:
       sleep_duration = 10
       logging.debug('sleeping for {} seconds'.format(sleep_duration))
       sleep(sleep_duration)
@@ -903,7 +954,6 @@ if __name__ == '__main__':
       raise ValueError('The specified logpath {} is expected to be a '
                        'directory, not a file.'.format(logs_dir_path))
   else:
-    logging.debug("Creating log directory {}".format(logs_dir_path))
     os.makedirs(logs_dir_path)
 
   try:
@@ -914,7 +964,7 @@ if __name__ == '__main__':
   log_file_path = path.join(logs_dir_path, log_file_name)
 
   log_handlers = [TimedRotatingFileHandler(
-    filename=log_file_path, when='midnight', encoding='utf-8')]
+    filename=log_file_path, when='H', interval=4, encoding='utf-8')]
 
   valid_log_modes = ['verbose', 'silent']
 
@@ -924,15 +974,13 @@ if __name__ == '__main__':
     raise ValueError(
       'The specified logmode is not in the set {}.'.format(valid_log_modes))
 
-  log_format = '%(asctime)s:%(processName)s:%(process)d:' \
-               '%(levelname)s:%(module)s:%(funcName)s:%(message)s'
+  log_format = '%(asctime)s:%(processName)s:%(process)d:%(levelname)s:' \
+               '%(module)s:%(funcName)s:%(message)s'
 
   logging.basicConfig(level=log_level, format=log_format, handlers=log_handlers)
 
-  # Create a queue to handle log requests from multiple processes
   log_queue = Queue()
 
-  # Start our listener process (use of threads creates deadlock issues)
   logger_thread = Thread(target=logger_fn, args=(log_queue,))
 
   logger_thread.start()

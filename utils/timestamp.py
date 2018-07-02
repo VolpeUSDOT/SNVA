@@ -224,9 +224,10 @@ class Timestamp:
             sorted_positions = np.argsort(positions)
             digits = digits[sorted_positions]
             digits = digits.astype(np.unicode_)
+
             timestamp_string_array[i] = ''.join(digits)
           else:
-            # TODO synthetically generate the timestamp here and set the quality control bit
+            # TODO synthetically generate timestamp and set quality control bit
             timestamp_string_array[i] = 0
         else:
           timestamp_string_array[i] = 0
@@ -241,7 +242,8 @@ class Timestamp:
     if len(timestamp_errors) > 0:
       logging.warning(
         'Some timestamp strings were observed to have lengths shorter than '
-        'timestamps preceding them and had to be symthetically regenerated.')
+      #   'timestamps preceding them and had to be symthetically regenerated.')
+        'timestamps preceding them and had to be replaced with QA value -1.')
 
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
     timestamp_string_array[timestamp_errors] = '-1'  # for quality control
@@ -259,9 +261,9 @@ class Timestamp:
     timestamp_image_array = np.transpose(
       timestamp_image_array, (0, 2, 1))
     # (nt, nd, 16, 16)
-    timestamp_image_array = np.reshape(timestamp_image_array,
-                                       (num_timestamps, self.num_digits,
-                                        self.height, self.height))
+    timestamp_image_array = np.reshape(
+      timestamp_image_array,
+      (num_timestamps, self.num_digits, self.height, self.height))
     # (nt, 1, nd, 16, 16)
     timestamp_image_array = np.expand_dims(timestamp_image_array, 1)
     # (nt, 10, nd, 16, 16)
@@ -281,10 +283,6 @@ class Timestamp:
 
     unique_counts, unique_count_indices, unique_count_counts = np.unique(
       counts, return_index=True, return_counts=True)
-
-    logging.debug('unique_counts: {}'.format(unique_counts))
-    logging.debug('unique_count_indices: {}'.format(unique_count_indices))
-    logging.debug('unique_count_counts: {}'.format(unique_count_counts))
 
     if np.sum(unique_count_counts) != num_timestamps:
       raise ValueError(
