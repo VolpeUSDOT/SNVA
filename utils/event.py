@@ -302,6 +302,7 @@ class Trip:
         i += 1
         if current_feature.class_id == target_feature_class_id:
           target_feature_list = [current_feature]
+          longest_target_feature_gap = 0
           logging.debug('increasing weight from {} to {}'.format(
             weight, weight + current_feature.length))
           weight += current_feature.length
@@ -311,6 +312,11 @@ class Trip:
             current_feature = self.feature_sequence[i]
             i += 1
             if current_feature.class_id == target_feature_class_id:
+              current_feature_gap = current_feature.start_frame_number - \
+                      target_feature_list[-1].end_frame_number
+              if longest_target_feature_gap < current_feature_gap:
+                longest_target_feature_gap = current_feature_gap
+
               target_feature_list.append(current_feature)
               logging.debug('increasing weight from {} to {}'.format(
                 weight, weight + current_feature.length))
@@ -335,34 +341,37 @@ class Trip:
           # feature, and that feature is closer to the current event than the
           # previous event, reassign it to the current event.
           if previous_preceding_feature:
-            if previous_preceding_feature.event_id:
-              previous_target_feature = events[
-                previous_preceding_feature.event_id].target_feature_list[-1]
+            if current_event.start_frame_number - \
+                previous_preceding_feature.end_frame_number < \
+                longest_target_feature_gap * 10:
+              if previous_preceding_feature.event_id:
+                previous_target_feature = events[
+                  previous_preceding_feature.event_id].target_feature_list[-1]
 
-              previous_target_feature_distance = \
-                previous_preceding_feature.start_frame_number - \
-                previous_target_feature.end_frame_number
+                previous_target_feature_distance = \
+                  previous_preceding_feature.start_frame_number - \
+                  previous_target_feature.end_frame_number
 
-              assert previous_target_feature_distance >= 0
+                assert previous_target_feature_distance >= 0
 
-              current_feature_distance = \
-                current_event.target_feature_list[0].start_frame_number - \
-                previous_preceding_feature.end_frame_number
+                current_feature_distance = \
+                  current_event.target_feature_list[0].start_frame_number - \
+                  previous_preceding_feature.end_frame_number
 
-              assert current_feature_distance >= 0
+                assert current_feature_distance >= 0
 
-              if current_feature_distance < previous_target_feature_distance:
-                previous_event.following_feature = None
+                if current_feature_distance < previous_target_feature_distance:
+                  previous_event.following_feature = None
+                  current_event.preceding_feature = previous_preceding_feature
+                  previous_preceding_feature.event_id = event_id
+              else:
                 current_event.preceding_feature = previous_preceding_feature
                 previous_preceding_feature.event_id = event_id
-            else:
-              current_event.preceding_feature = previous_preceding_feature
-              previous_preceding_feature.event_id = event_id
 
-            if previous_preceding_feature == previous_following_feature:
-              previous_following_feature = None
+              if previous_preceding_feature == previous_following_feature:
+                previous_following_feature = None
 
-            previous_preceding_feature = None
+              previous_preceding_feature = None
 
           events.append(current_event)
 

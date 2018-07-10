@@ -20,7 +20,7 @@ path = os.path
 
 # Logger thread: listens for updates to log queue and writes them as they arrive
 # Terminates after we add None to the queue
-def logger_fn(log_queue):
+def main_logger_fn(log_queue):
   while True:
     try:
       message = log_queue.get()
@@ -242,6 +242,7 @@ def process_video(
     child_interrupt_queue, result_queue, video_file_name)
 
   device_id = device_id_queue.get()
+
   logging.debug('acquired {} device with id {}'.format(device_type, device_id))
 
   try:
@@ -263,13 +264,11 @@ def process_video(
 
   if device_type == 'gpu':
     mapped_device_id = str(int(device_id) % physical_device_count)
-
     logging.debug('mapped logical device_id {} to physical device_id {}'.format(
       device_id, mapped_device_id))
 
     logging.debug('setting CUDA_VISIBLE_DEVICES environment variable to '
                   '{}.'.format(mapped_device_id))
-
     os.environ['CUDA_VISIBLE_DEVICES'] = mapped_device_id
   else:
     logging.debug('Setting CUDA_VISIBLE_DEVICES environment variable to None.')
@@ -286,10 +285,12 @@ def process_video(
 
     result_queue.close()
 
-    end = time() - start
+    end = time()
+
+    analysis_duration = end - start
 
     processing_duration = IO.get_processing_duration(
-      end, 'processed {} frames in'.format(num_analyzed_frames))
+      analysis_duration, 'processed {} frames in'.format(num_analyzed_frames))
     logging.info(processing_duration)
 
     analyzer.join(timeout=15)
@@ -301,6 +302,8 @@ def process_video(
     except:
       pass
 
+    release_device_id(device_id, device_id_queue)
+
     if num_analyzed_frames != num_frames:
       if interrupt_queue.empty():
         raise AssertionError('num_analyzed_frames ({}) != num_frames '
@@ -308,8 +311,6 @@ def process_video(
       else:
         raise InterruptedError('num_analyzed_frames ({}) != num_frames '
                                '({})'.format(num_analyzed_frames, num_frames))
-
-    release_device_id(device_id, device_id_queue)
   except InterruptedError as ae:
     logging.error(ae)
 
@@ -365,13 +366,6 @@ def process_video(
 
       timestamp_object = Timestamp(args.timestampheight, args.timestampmaxwidth)
       timestamp_strings = timestamp_object.stringify_timestamps(timestamp_array)
-
-      negative_ones = timestamp_strings == '-1'
-
-      if len(negative_ones) > 0:
-        logging.debug('setting timestamp_strings to None so that the event '
-                      'detector will ignore them until QA is fully implemented')
-        timestamp_strings = None
 
       end = time() - start
 
@@ -481,7 +475,8 @@ def process_video(
   log_queue.close()
 
   return_code_queue.put({'return_code': 'success',
-                         'return_value': num_analyzed_frames})
+                         'return_value': num_analyzed_frames,
+                         'analysis_duration': analysis_duration})
   return_code_queue.close()
 
 
@@ -688,6 +683,7 @@ def main():
 
   total_num_processed_videos = 0
   total_num_processed_frames = 0
+  total_analysis_duration = 0
 
   logging.info('Processing {} videos in directory: {} using {}'.format(
     total_num_video_to_process, video_dir_path, args.modelname))
@@ -731,8 +727,9 @@ def main():
 
     child_process_map[video_file_name] = child_process
 
-  def close_completed_video_processors(total_num_processed_videos,
-                                       total_num_processed_frames):
+  def close_completed_video_processors(
+      total_num_processed_videos, total_num_processed_frames,
+      total_analysis_duration):
     for video_file_name in list(return_code_queue_map.keys()):
       return_code_queue = return_code_queue_map[video_file_name]
 
@@ -751,6 +748,7 @@ def main():
         if return_code == 'success':
           total_num_processed_videos += 1
           total_num_processed_frames += return_value
+          total_analysis_duration += return_code_map['analysis_duration']
 
         child_logger_thread = child_logger_thread_map[video_file_name]
         
@@ -786,16 +784,18 @@ def main():
       except Empty:
         pass
 
-    return total_num_processed_videos, total_num_processed_frames
+    return total_num_processed_videos, total_num_processed_frames, \
+           total_analysis_duration
 
   start = time()
 
   while len(video_file_names) > 0:
     # block if logical_device_count + 1 child processes are active
     while len(return_code_queue_map) > logical_device_count:
-      total_num_processed_videos, total_num_processed_frames = \
-        close_completed_video_processors(
-        total_num_processed_videos, total_num_processed_frames)
+      total_num_processed_videos, total_num_processed_frames, \
+      total_analysis_duration = close_completed_video_processors(
+        total_num_processed_videos, total_num_processed_frames,
+        total_analysis_duration)
 
     try:
       _ = main_interrupt_queue.get_nowait()
@@ -818,9 +818,10 @@ def main():
     logging.debug('waiting for the final {} child processes to '
                   'terminate'.format(len(return_code_queue_map)))
 
-    total_num_processed_videos, total_num_processed_frames = \
-      close_completed_video_processors(total_num_processed_videos,
-                                       total_num_processed_frames)
+    total_num_processed_videos, total_num_processed_frames, \
+    total_analysis_duration = close_completed_video_processors(
+      total_num_processed_videos, total_num_processed_frames,
+      total_analysis_duration)
 
     # by now, the last device_id_queue_len videos are being processed,
     # so we can afford to poll for their completion infrequently
@@ -832,10 +833,13 @@ def main():
   end = time() - start
 
   processing_duration = IO.get_processing_duration(
-    end, 'snva {} processed a total of {} videos and {} frames in: '.format(
+    end, 'snva {} processed a total of {} videos and {} frames in:'.format(
       snva_version_string, total_num_processed_videos,
       total_num_processed_frames))
   logging.info(processing_duration)
+
+  logging.info('Video analysis alone spanned a cumulative {:.02f} seconds'.format(
+      total_analysis_duration))
 
   logging.info('exiting snva {} main process'.format(snva_version_string))
 
@@ -926,7 +930,7 @@ if __name__ == '__main__':
 
   snva_version_string = 'v0.1.1'
 
-  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
   try:
     snva_home = os.environ['SNVA_HOME']
@@ -981,7 +985,7 @@ if __name__ == '__main__':
 
   log_queue = Queue()
 
-  logger_thread = Thread(target=logger_fn, args=(log_queue,))
+  logger_thread = Thread(target=main_logger_fn, args=(log_queue,))
 
   logger_thread.start()
 
@@ -989,7 +993,10 @@ if __name__ == '__main__':
 
   main_interrupt_queue = Queue()
 
-  main()
+  try:
+    main()
+  except Exception as e:
+    logging.error(e)
 
   logging.debug('signaling logger thread to end service.')
   log_queue.put(None)

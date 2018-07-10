@@ -8,11 +8,14 @@ import tensorflow as tf
 class VideoAnalyzer(Process):
   def __init__(
       self, frame_shape, num_frames, num_classes, batch_size, model_input_size,
-      model_path, device_type, device_count, cpu_count, node_names_map,
-      gpu_memory_fraction, extract_timestamps, timestamp_x, timestamp_y,
-      timestamp_height, timestamp_max_width, crop, crop_x, crop_y, crop_width,
-      crop_height, ffmpeg_command, child_interrupt_queue, result_queue, name):
+      model_path, device_type, num_processes_per_device, cpu_count,
+      node_names_map, gpu_memory_fraction, extract_timestamps, timestamp_x,
+      timestamp_y, timestamp_height, timestamp_max_width, crop, crop_x, crop_y,
+      crop_width, crop_height, ffmpeg_command, child_interrupt_queue,
+      result_queue, name):
     super(VideoAnalyzer, self).__init__(name=name)
+
+    logging.getLogger('tensorflow').setLevel(logging.getLogger().level)
 
     #### TF session variables ####
     graph_def = tf.GraphDef()
@@ -25,7 +28,7 @@ class VideoAnalyzer(Process):
                                   node_names_map['output_node_name']])
 
     self.device_type = device_type
-
+    
     if self.device_type == 'gpu':
       gpu_options = tf.GPUOptions(
         allow_growth=True,
@@ -67,7 +70,7 @@ class VideoAnalyzer(Process):
       self.timestamp_array = None
 
     self.model_input_size = model_input_size
-    self.device_count = device_count
+    self.num_processes_per_device = num_processes_per_device
     self.cpu_count = cpu_count
     self.batch_size = batch_size
     self.ffmpeg_command = ffmpeg_command
@@ -160,14 +163,15 @@ class VideoAnalyzer(Process):
   # to be <= cpu cores when in --cpuonly mode
   def _get_num_parallel_calls(self):
     if self.device_type == 'gpu':
-      return int(self.cpu_count / self.device_count)
+      return int(self.cpu_count / self.num_processes_per_device)
     else:
-      if self.device_count == 1:
+      if self.num_processes_per_device == 1:
         return self.cpu_count - 1
-      elif self.device_count == self.cpu_count:
+      elif self.num_processes_per_device == self.cpu_count:
         return self.cpu_count
       else:
-        return int((self.cpu_count - self.device_count) / self.device_count)
+        return int((self.cpu_count - self.num_processes_per_device) / 
+                   self.num_processes_per_device)
 
   def run(self):
     logging.info('started inference.')
