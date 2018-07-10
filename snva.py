@@ -897,7 +897,7 @@ if __name__ == '__main__':
                       help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
-  parser.add_argument('--numprocessesperdevice', '-npdp', type=int, default=1,
+  parser.add_argument('--numprocessesperdevice', '-nppd', type=int, default=1,
                       help='The number of instances of inference to perform on '
                            'each device.')
   parser.add_argument('--protobuffilename', '-pbfn', default='model.pb',
@@ -922,9 +922,9 @@ if __name__ == '__main__':
                       help='y-component of top-left corner of timestamp '
                            '(before cropping).')
   parser.add_argument('--writeeventreports', '-wer', type=bool,
-                      default=True, help='')
+                      default=True, help='Output a CVS file for each video containing one or more feature events')
   parser.add_argument('--writeinferencereports', '-wir', type=bool,
-                      default=False, help='')
+                      default=False, help='For every video, output a CSV file containing a probability distribution over class labels, a timestamp, and a frame number for each frame')
 
   args = parser.parse_args()
 
