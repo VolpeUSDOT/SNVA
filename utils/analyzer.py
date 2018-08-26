@@ -15,8 +15,6 @@ class VideoAnalyzer(Process):
       result_queue, name):
     super(VideoAnalyzer, self).__init__(name=name)
 
-    logging.getLogger('tensorflow').setLevel(logging.getLogger().level)
-
     #### TF session variables ####
     graph_def = tf.GraphDef()
 
@@ -80,42 +78,46 @@ class VideoAnalyzer(Process):
     self.child_interrupt_queue = child_interrupt_queue
     self.result_queue = result_queue
 
-  # feed the tf.data input pipeline one image at a time and, while we're at it,
-  # extract timestamp overlay crops for later mapping to strings.
-  def _generate_frames(self):
     logging.debug('opening video frame pipe')
 
-    frame_string_len = 1
-    for dim in self.frame_shape:
-      frame_string_len *= dim
-    buffer_scale = 2
-    while buffer_scale < frame_string_len:
-      buffer_scale *= 2
-    frame_pipe = Popen(self.ffmpeg_command, stdout=PIPE, stderr=PIPE,
-                       bufsize=self.batch_size * buffer_scale)
-  
-    logging.debug('video frame pipe created with pid: {}'.format(
-      frame_pipe.pid))
+    self.frame_string_len = 1
 
+    for dim in self.frame_shape:
+      self.frame_string_len *= dim
+
+    buffer_scale = 2
+
+    while buffer_scale < self.frame_string_len:
+      buffer_scale *= 2
+
+    self.frame_pipe = Popen(self.ffmpeg_command, stdout=PIPE, stderr=PIPE,
+                            bufsize=2 * self.batch_size * buffer_scale)
+
+    logging.debug('video frame pipe created with pid: {}'.format(
+      self.frame_pipe.pid))
+
+  # feed the tf.data input pipeline one image at a time and, while we're at it,
+  # extract timestamp overlay crops for later mapping to strings.
+  def generate_frames(self):
     while True:
       try:
         try:
           _ = self.child_interrupt_queue.get_nowait()
           logging.warning('closing video frame pipe following interrupt signal')
-          frame_pipe.stdout.close()
-          frame_pipe.stderr.close()
-          frame_pipe.terminate()
+          self.frame_pipe.stdout.close()
+          self.frame_pipe.stderr.close()
+          self.frame_pipe.terminate()
           return
         except:
           pass
 
-        frame_string = frame_pipe.stdout.read(frame_string_len)
+        frame_string = self.frame_pipe.stdout.read(self.frame_string_len)
 
         if not frame_string:
           logging.debug('closing video frame pipe following end of stream')
-          frame_pipe.stdout.close()
-          frame_pipe.stderr.close()
-          frame_pipe.terminate()
+          self.frame_pipe.stdout.close()
+          self.frame_pipe.stderr.close()
+          self.frame_pipe.terminate()
           return
 
         frame_array = np.fromstring(frame_string, dtype=np.uint8)
@@ -136,11 +138,11 @@ class VideoAnalyzer(Process):
           'met an unexpected error after processing {} frames.'.format(self.ti))
         logging.error(e)
         logging.error(
-          'ffmpeg reported:\n{}'.format(frame_pipe.stderr.readlines()))
+          'ffmpeg reported:\n{}'.format(self.frame_pipe.stderr.readlines()))
         logging.debug('closing video frame pipe following raised exception')
-        frame_pipe.stdout.close()
-        frame_pipe.stderr.close()
-        frame_pipe.terminate()
+        self.frame_pipe.stdout.close()
+        self.frame_pipe.stderr.close()
+        self.frame_pipe.terminate()
         logging.debug('raising exception to caller.')
         raise e
 
@@ -183,7 +185,7 @@ class VideoAnalyzer(Process):
         tf.device(None):
       with tf.Session(config=self.session_config) as session:
         frame_dataset = tf.data.Dataset.from_generator(
-          self._generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
+          self.generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
         frame_dataset = frame_dataset.map(self._preprocess_frames,
                                           self._get_num_parallel_calls())
         frame_dataset = frame_dataset.batch(self.batch_size)
@@ -203,3 +205,10 @@ class VideoAnalyzer(Process):
 
     self.result_queue.put((count, self.prob_array, self.timestamp_array))
     self.result_queue.close()
+
+  def __del__(self):
+    if self.frame_pipe.returncode is None:
+      logging.debug(
+        'video frame pipe with pid {} remained alive after being instructed to '
+        'temrinate and had to be killed'.format(self.frame_pipe.pid))
+      self.frame_pipe.kill()
