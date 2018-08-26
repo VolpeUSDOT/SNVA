@@ -521,7 +521,7 @@ if __name__ == '__main__':
 
   args = parser.parse_args()
 
-  snva_version_string = 'v0.1.1'
+  snva_version_string = 'v0.1.2'
 
   os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
