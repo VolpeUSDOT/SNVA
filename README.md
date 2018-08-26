@@ -1,4 +1,4 @@
-# SHRP2 NDS Video Analytics (SNVA)
+# SHRP2 NDS Video Analytics (SNVA) v0.1.1
 
 This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim).
 
@@ -118,6 +118,7 @@ Flag | Short Flag | Properties | Description
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
 --logmode|-lm|default=verbose|If verbose, log to file and console. If silent, log to file only
 --logpath|-l|default=logs|Path to the directory where log files are stored
+--logmaxbytes|-lmb|type=int|default=2**23|File size in bytes at which the log rolls over
 --modelsdirpath|-mdp|default=models/work_zone_scene_detection|Path to the parent directory of model directories
 --modelname|-mn|required=True|The square input dimensions of the neural net
 --numchannels|-nc|type=int, default=3|The fourth dimension of image batches
