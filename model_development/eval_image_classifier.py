@@ -122,6 +122,9 @@ tf.app.flags.DEFINE_string(
   'mode=all to evaluate all checkpoints after training'
   'Defaults to None.')
 
+tf.app.flags.DEFINE_string(
+  'data_format', None, 'NCHW is suggested for GPU use. Defaults to NWHC.')
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -135,6 +138,9 @@ def interrupt_handler(signal_number, _):
 def main(_):
   if not FLAGS.dataset_dir:
     raise ValueError('You must supply the dataset directory using --dataset_dir')
+
+  if not (FLAGS.data_format == 'NHWC' or FLAGS.data_format == 'NCHW'):
+    raise ValueError('Acceptable arguments for --data_format are NHWC and NCHW')
 
   if FLAGS.mode == 'periodic' or FLAGS.mode == 'all':
     if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
@@ -189,7 +195,8 @@ def main(_):
     network_fn = nets_factory.get_network_fn(
       FLAGS.model_name,
       num_classes=(dataset.num_classes - FLAGS.labels_offset),
-      is_training=False)
+      is_training=False,
+      data_format=FLAGS.data_format)
 
     ##############################################################
     # Create a dataset provider that loads data from the dataset #
