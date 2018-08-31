@@ -202,6 +202,7 @@ class Timestamp:
     previous_timestamp_was_missing = False
     total_true_num_unreadable_timestamps = 0
     total_observed_num_unreadable_timestamps = 0
+    total_num_unreadable_sequences = 0
 
     for i in range(num_timestamps):
       try:
@@ -234,10 +235,6 @@ class Timestamp:
 
               # we don't subtract 1 from current_range_left_index because frame
               # numbers are indexed starting at 1, not 0
-              logging.debug('timestamps between frames {} and {} could not be '
-                            'read. attempting to synthesize replacements.'
-                            .format(current_range_left_index + 1, i))
-
               earlier_readable_timestamp = timestamp_string_array[
                 current_range_left_index]
 
@@ -263,22 +260,14 @@ class Timestamp:
 
                 num_66_occurrences += 1
 
-
               true_num_unreadable_timestamps = \
                 num_66_occurrences + num_67_occurrences
 
-              logging.debug('predicted a gap of {} between readable frames and'
-                            ' observed {}, meaning {} frames were dropped'
-                            ''.format(observed_num_unreadable_timestamps,
-                                      true_num_unreadable_timestamps,
-                                      true_num_unreadable_timestamps -
-                                      observed_num_unreadable_timestamps))
+              total_true_num_unreadable_timestamps += true_num_unreadable_timestamps
+              total_observed_num_unreadable_timestamps += observed_num_unreadable_timestamps
 
               # if no frames are inferred to be missing
               if observed_num_unreadable_timestamps == true_num_unreadable_timestamps:
-                assert milliseconds_between_readable_timestamps == \
-                       66 * num_66_occurrences + 67 * num_67_occurrences
-
                 timesteps = [66 for _ in range(num_66_occurrences)]
                 timesteps.extend([67 for _ in range(num_67_occurrences)])
 
@@ -286,16 +275,17 @@ class Timestamp:
 
                 np.random.shuffle(timesteps)
 
-                timestamp_addition = 0
+                cumulative_timesteps = 0
 
                 for j in range(observed_num_unreadable_timestamps - 1):
-                  timestamp_addition += timesteps[j]
+                  cumulative_timesteps += timesteps[j]
                   timestamp_string_array[current_range_left_index + 1 + j] = \
-                    earlier_readable_timestamp + timestamp_addition
+                    earlier_readable_timestamp + cumulative_timesteps
                   quality_assurance_array[current_range_left_index + 1 + j] = 1
               else:  # if at least one frame is inferred to be missing
                 for j in range(observed_num_unreadable_timestamps - 1):
                   timestamp_string_array[current_range_left_index + 1 + j] = 0
+                total_num_unreadable_sequences += 1
           else:
             timestamp_string_array[i] = 0
 
@@ -323,6 +313,13 @@ class Timestamp:
         logging.debug('the {}th timestamp could not be interpreted or '
                       'synthesized'.format(i))
         logging.error(e)
+
+    logging.debug(
+      '{} frames predicted to be missing across {} instances of observed signal'
+      ' loss'.format(total_true_num_unreadable_timestamps -
+                     total_observed_num_unreadable_timestamps,
+                     total_num_unreadable_sequences))
+
     # handle case where last timestamp is missing
     timestamp_errors = timestamp_string_array == 0
 
@@ -336,12 +333,6 @@ class Timestamp:
     quality_assurance_array[timestamp_errors] = 2
 
     quality_assurance_array = quality_assurance_array.astype(np.unicode_)
-
-    logging.debug('total_true_num_unreadable_timestamps: ^{}'.format(
-      total_true_num_unreadable_timestamps))
-
-    logging.debug('total_observed_num_unreadable_timestamps: ^{}'.format(
-      total_observed_num_unreadable_timestamps))
 
     return timestamp_string_array, quality_assurance_array
 
