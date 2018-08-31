@@ -318,7 +318,8 @@ def process_video(
       start = time()
 
       timestamp_object = Timestamp(timestamp_height, timestamp_max_width)
-      timestamp_strings = timestamp_object.stringify_timestamps(timestamp_array)
+      timestamp_strings, qa_flags = \
+        timestamp_object.stringify_timestamps(timestamp_array)
 
       end = time() - start
 
@@ -343,6 +344,7 @@ def process_video(
       return
   else:
     timestamp_strings = None
+    qa_flags = None
 
   logging.debug('attempting to generate reports')
 
@@ -351,7 +353,8 @@ def process_video(
 
     IO.write_inference_report(
       video_file_name, output_dir_path, probability_array, class_name_map,
-      timestamp_strings, do_smooth_probs, smoothing_factor, do_binarize_probs)
+      timestamp_strings, qa_flags, do_smooth_probs, smoothing_factor,
+      do_binarize_probs)
 
     end = time() - start
 
@@ -386,8 +389,8 @@ def process_video(
     if timestamp_strings is not None:
       timestamp_strings = timestamp_strings.astype(np.int32)
 
-    trip = Trip(
-      frame_numbers, timestamp_strings, probability_array, class_name_map)
+    trip = Trip(frame_numbers, timestamp_strings, qa_flags, probability_array,
+                class_name_map)
 
     work_zone_events = trip.find_work_zone_events()
 

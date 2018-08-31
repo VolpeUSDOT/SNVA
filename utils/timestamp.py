@@ -194,11 +194,15 @@ class Timestamp:
 
     # 32-bit ints/uints should be fine given no trip exceeds 24 days in length
     timestamp_string_array = np.ndarray((num_timestamps,), dtype=np.uint32)
+    quality_assurance_array = np.zeros((num_timestamps,), dtype=np.uint8)
 
     current_timestamp_length = 0
 
-    # TODO confirm that the lengths match and that no gaps exist between digits
-    # TODO: quality controll all unreadable timestamps, not just blank ones
+    current_range_left_index = None
+    previous_timestamp_was_missing = False
+    total_true_num_unreadable_timestamps = 0
+    total_observed_num_unreadable_timestamps = 0
+
     for i in range(num_timestamps):
       try:
         timestamp_image = timestamp_image_array[
@@ -224,29 +228,122 @@ class Timestamp:
             digits = digits.astype(np.unicode_)
 
             timestamp_string_array[i] = ''.join(digits)
+
+            if previous_timestamp_was_missing:
+              previous_timestamp_was_missing = False
+
+              # we don't subtract 1 from current_range_left_index because frame
+              # numbers are indexed starting at 1, not 0
+              logging.debug('timestamps between frames {} and {} could not be '
+                            'read. attempting to synthesize replacements.'
+                            .format(current_range_left_index + 1, i))
+
+              earlier_readable_timestamp = timestamp_string_array[
+                current_range_left_index]
+
+              later_readable_timestamp = timestamp_string_array[i]
+
+              observed_num_unreadable_timestamps = i - current_range_left_index
+
+              milliseconds_between_readable_timestamps = \
+                later_readable_timestamp - earlier_readable_timestamp
+
+              mod_67_remainder = milliseconds_between_readable_timestamps % 67
+
+              div_67_whole = int(
+                milliseconds_between_readable_timestamps / 67)
+
+              if mod_67_remainder == 0:
+                num_66_occurrences = 0
+                num_67_occurrences = div_67_whole
+              else:
+                num_66_occurrences = 66 - mod_67_remainder
+
+                num_67_occurrences = div_67_whole - num_66_occurrences
+
+                num_66_occurrences += 1
+
+
+              true_num_unreadable_timestamps = \
+                num_66_occurrences + num_67_occurrences
+
+              logging.debug('predicted a gap of {} between readable frames but'
+                            ' observed {}, meaning {} frames were dropped'
+                            ''.format(observed_num_unreadable_timestamps,
+                                      true_num_unreadable_timestamps,
+                                      true_num_unreadable_timestamps -
+                                      observed_num_unreadable_timestamps))
+
+              # if no frames are inferred to be missing
+              if observed_num_unreadable_timestamps == true_num_unreadable_timestamps:
+                assert milliseconds_between_readable_timestamps == \
+                       66 * num_66_occurrences + 67 * num_67_occurrences
+
+                timesteps = [66 for _ in range(num_66_occurrences)]
+                timesteps.extend([67 for _ in range(num_67_occurrences)])
+
+                timesteps = np.array(timesteps)
+
+                np.random.shuffle(timesteps)
+
+                timestamp_addition = 0
+
+                for j in range(observed_num_unreadable_timestamps - 1):
+                  timestamp_addition += timesteps[j]
+                  timestamp_string_array[current_range_left_index + 1 + j] = \
+                    earlier_readable_timestamp + timestamp_addition
+                  quality_assurance_array[current_range_left_index + 1 + j] = 1
+              else:  # if at least one frame is inferred to be missing
+                for j in range(observed_num_unreadable_timestamps - 1):
+                  timestamp_string_array[current_range_left_index + 1 + j] = 0
           else:
-            # TODO synthetically generate timestamp and set quality control bit
             timestamp_string_array[i] = 0
+
+            if not previous_timestamp_was_missing:
+              previous_timestamp_was_missing = True
+
+              if i > 0:
+                current_range_left_index = i - 1
+              else:
+                logging.error('Unable to synthesize replacements for sequence '
+                              'of unreadable timestamps starting with frame 0')
         else:
           timestamp_string_array[i] = 0
+
+          if not previous_timestamp_was_missing:
+            previous_timestamp_was_missing = True
+
+            if i > 0:
+              current_range_left_index = i - 1
+              logging.error('setting current_range_left_index to {}'.format(i))
+            else:
+              logging.error('Unable to synthesize replacements for sequence of '
+                            'unreadable timestamps starting with frame 0')
       except Exception as e:
-        # TODO log error message when a timestamp image cannot be interpreted
         logging.debug('the {}th timestamp could not be interpreted or '
                       'synthesized'.format(i))
         logging.error(e)
-
+    # handle case where last timestamp is missing
     timestamp_errors = timestamp_string_array == 0
 
     if len(timestamp_errors) > 0:
       logging.warning(
-        'Some timestamp strings were observed to have lengths shorter than '
-      #   'timestamps preceding them and had to be symthetically regenerated.')
-        'timestamps preceding them and had to be replaced with QA value -1.')
+        '{} timestamps could not be read nor synthesized and will'
+        ' be placeheld using the QA value -1.'.format(len(timestamp_errors)))
 
     timestamp_string_array = timestamp_string_array.astype(np.unicode_)
     timestamp_string_array[timestamp_errors] = '-1'  # for quality control
+    quality_assurance_array[timestamp_errors] = 2
 
-    return timestamp_string_array
+    quality_assurance_array = quality_assurance_array.astype(np.unicode_)
+
+    logging.debug('total_true_num_unreadable_timestamps: ^{}'.format(
+      total_true_num_unreadable_timestamps))
+
+    logging.debug('total_observed_num_unreadable_timestamps: ^{}'.format(
+      total_observed_num_unreadable_timestamps))
+
+    return timestamp_string_array, quality_assurance_array
 
   # (16 * nt, 16 * nd, nc)
   def _stringify_timestamps(self, timestamp_image_array, num_timestamps):
@@ -325,15 +422,16 @@ class Timestamp:
         timestamp_string_array[j] = ''.join(
           count_len_digits[j - unique_count_idx])
 
-    return timestamp_string_array
+    return timestamp_string_array, np.zeros((num_timestamps,), dtype=np.uint8)
 
   def stringify_timestamps(self, timestamp_image_array):
     num_timestamps = int(timestamp_image_array.shape[0] / self.height)
 
     try:
-      timestamp_string_array = self._stringify_timestamps(
-        timestamp_image_array, num_timestamps)
-      return timestamp_string_array
+      timestamp_string_array, quality_assurance_array = \
+        self._stringify_timestamps(
+          timestamp_image_array, num_timestamps)
+      return timestamp_string_array, quality_assurance_array
     except Exception as e:
       logging.warning('encountered an exception while converting timestamp '
                       'images to strings en masse')
@@ -342,10 +440,11 @@ class Timestamp:
 
     try:
       # slower, but will isolate and gracefully handle individual failures
-      timestamp_string_array = self._stringify_timestamps_per_frame(
-        timestamp_image_array, num_timestamps)
+      timestamp_string_array, quality_assurance_array = \
+        self._stringify_timestamps_per_frame(
+          timestamp_image_array, num_timestamps)
 
-      return timestamp_string_array
+      return timestamp_string_array, quality_assurance_array
     except Exception as e:
       logging.debug('encountered an exception while converting '
                     'timestamp images to strings one-at-a-time.')
