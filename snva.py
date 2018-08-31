@@ -74,7 +74,7 @@ def main():
     main_interrupt_queue.put_nowait('_')
 
     if total_num_video_to_process is None \
-        or total_num_video_to_process == len(video_file_names):
+        or total_num_video_to_process == len(video_file_paths):
 
       # Signal the logging thread to finish up
       logging.debug('signaling logger thread to end service.')
@@ -117,12 +117,17 @@ def main():
 
   logging.debug('FFPROBE path set to: {}'.format(ffprobe_path))
 
+  # TODO validate all video file paths in the provided text file if args.inputpath is a text file
   if path.isdir(args.inputpath):
-    video_dir_path = args.inputpath
-    video_file_names = set(IO.read_video_file_names(video_dir_path))
+    video_file_names = set(IO.read_video_file_names(args.inputpath))
+    video_file_paths = [path.join(args.inputpath, video_file_name)
+                        for video_file_name in video_file_names]
   elif path.isfile(args.inputpath):
-    video_dir_path, video_file_name = path.split(args.inputpath)
-    video_file_names = {video_file_name}
+    if args.inputpath[-3] == 'txt':
+      with open(args.inputpath, newline='') as input_file:
+        video_file_paths = input_file.readlines()
+    else:
+      video_file_paths = [args.inputpath]
   else:
     raise ValueError('The video file/folder specified at the path {} could '
                      'not be found.'.format(args.inputpath))
@@ -193,16 +198,17 @@ def main():
     else:
       event_report_file_names = None
 
-    file_names_to_exclude = set()
+    file_paths_to_exclude = set()
 
-    for video_file_name in video_file_names:
-      truncated_file_name = path.splitext(video_file_name)[0]
-      if (event_report_file_names and truncated_file_name
-          in event_report_file_names) or (inference_report_file_names and
-              truncated_file_name in inference_report_file_names):
-        file_names_to_exclude.add(video_file_name)
+    for video_file_path in video_file_paths:
+      video_file_name = path.splitext(path.split(video_file_path)[1])[0]
+      if (event_report_file_names and video_file_name 
+      in event_report_file_names) \
+          or (inference_report_file_names and video_file_name 
+          in inference_report_file_names):
+        file_paths_to_exclude.add(video_file_path)
 
-    video_file_names -= file_names_to_exclude
+    video_file_paths -= file_paths_to_exclude
 
   if args.ionodenamesfilepath is None \
       or not path.isfile(args.ionodenamesfilepath):
@@ -262,22 +268,22 @@ def main():
   child_logger_thread_map = {}
   child_process_map = {}
 
-  total_num_video_to_process = len(video_file_names)
+  total_num_video_to_process = len(video_file_paths)
 
   total_num_processed_videos = 0
   total_num_processed_frames = 0
   total_analysis_duration = 0
 
-  logging.info('Processing {} videos in directory: {} using {}'.format(
-    total_num_video_to_process, video_dir_path, args.modelname))
+  logging.info('Processing {} videos using {}'.format(
+    total_num_video_to_process, args.modelname))
 
-  def start_video_processor(video_file_name):
+  def start_video_processor(video_file_path):
     # Before popping the next video off of the list and creating a process to
     # scan it, check to see if fewer than logical_device_count + 1 processes are
     # active. If not, Wait for a child process to release its semaphore
     # acquisition. If so, acquire the semaphore, pop the next video name,
     # create the next child process, and pass the semaphore to it
-    video_file_path = path.join(video_dir_path, video_file_name)
+    video_dir_path, video_file_name = path.split(video_file_path)
 
     return_code_queue = Queue()
 
@@ -376,7 +382,7 @@ def main():
 
   start = time()
 
-  while len(video_file_names) > 0:
+  while len(video_file_paths) > 0:
     # block if logical_device_count + 1 child processes are active
     while len(return_code_queue_map) > logical_device_count:
       total_num_processed_videos, total_num_processed_frames, \
@@ -392,13 +398,13 @@ def main():
     except:
       pass
 
-    video_file_name = video_file_names.pop()
+    video_file_path = video_file_paths.pop()
 
     try:
-      start_video_processor(video_file_name)
+      start_video_processor(video_file_path)
     except Exception as e:
       logging.error('an unknown error has occured while processing '
-                    '{}'.format(video_file_name))
+                    '{}'.format(video_file_path))
       logging.error(e)
 
   while len(return_code_queue_map) > 0:

@@ -138,7 +138,7 @@ class IO:
 
   @staticmethod
   def read_report_header(
-      report_reader, frame_col_num=None, timestamp_col_num=None, 
+      report_reader, frame_col_num=None, timestamp_col_num=None, qa_flag_col_num=None,
       data_col_range=None, header_mask=None, return_data_col_range=False):
     if data_col_range is None and header_mask is None:
       raise ValueError('data_col_range and header_mask cannot both be None.')
@@ -152,6 +152,9 @@ class IO:
     
     if timestamp_col_num:
       report_header.append(csv_header[timestamp_col_num])
+
+    if qa_flag_col_num:
+      report_header.append(csv_header[qa_flag_col_num])
         
     if len(report_header) == 0:
       raise ValueError(
@@ -177,8 +180,9 @@ class IO:
       return report_header
 
   @staticmethod
-  def read_report_data(report_reader, frame_col_num=None,
-                       timestamp_col_num=None, data_col_range=None):
+  def read_report_data(
+      report_reader, frame_col_num=None, timestamp_col_num=None,
+      qa_flag_col_num=None, data_col_range=None):
     if frame_col_num and timestamp_col_num and data_col_range:
       frame_numbers = []
       timestamps = []
@@ -225,25 +229,28 @@ class IO:
     return report_data
 
   @staticmethod
-  def read_report(
-      report_file_path, frame_col_num=None, timestamp_col_num=None,
-      data_col_range=None, header_mask=None, return_data_col_range=False):
+  def read_report(report_file_path, frame_col_num=None, timestamp_col_num=None,
+                  qa_flag_col_num=None, data_col_range=None, header_mask=None,
+                  return_data_col_range=False):
     report_reader = IO.open_report(report_file_path)
 
     if return_data_col_range:
       report_header, data_col_range = IO.read_report_header(
         report_reader, frame_col_num=frame_col_num,
-        timestamp_col_num=timestamp_col_num, data_col_range=data_col_range,
-        header_mask=header_mask, return_data_col_range=True)
+        timestamp_col_num=timestamp_col_num, qa_flag_col_num=qa_flag_col_num,
+        data_col_range=data_col_range, header_mask=header_mask,
+        return_data_col_range=True)
     else:
       report_header = IO.read_report_header(
         report_reader, frame_col_num=frame_col_num,
-        timestamp_col_num=timestamp_col_num, data_col_range=data_col_range,
-        header_mask=header_mask, return_data_col_range=False)
+        timestamp_col_num=timestamp_col_num, qa_flag_col_num=qa_flag_col_num,
+        data_col_range=data_col_range, header_mask=header_mask,
+        return_data_col_range=False)
 
     report_data = IO.read_report_data(
       report_reader, frame_col_num=frame_col_num,
-      timestamp_col_num=timestamp_col_num, data_col_range=data_col_range)
+      timestamp_col_num=timestamp_col_num, qa_flag_col_num=qa_flag_col_num,
+      data_col_range=data_col_range)
 
     if return_data_col_range:
       return report_header, report_data, data_col_range
@@ -261,8 +268,8 @@ class IO:
   @staticmethod
   def write_inference_report(
       report_file_name, report_dir_path, class_probs, class_name_map,
-      timestamp_strings=None, smooth_probs=False, smoothing_factor=0,
-      binarize_probs=False):
+      timestamp_strings=None, qa_flags=None, smooth_probs=False,
+      smoothing_factor=0, binarize_probs=False):
     class_names = ['{}_probability'.format(class_name)
                    for class_name in class_name_map.values()]
 
@@ -277,9 +284,10 @@ class IO:
       class_probs = np.concatenate((class_probs, binarized_probs), axis=1)
 
     if timestamp_strings is not None:
-      header = ['file_name', 'frame_number', 'frame_timestamp'] + class_names
-      rows = [[report_file_name, '{:d}'.format(i + 1), timestamp_strings[i]]
-              + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
+      header = ['file_name', 'frame_number', 'frame_timestamp', 'qa_flag'] + \
+               class_names
+      rows = [[report_file_name, '{:d}'.format(i + 1), timestamp_strings[i],
+               qa_flags[i]] + ['{0:.4f}'.format(cls) for cls in class_probs[i]]
               for i in range(len(class_probs))]
     else:
       header = ['file_name', 'frame_number'] + class_names
