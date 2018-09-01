@@ -488,7 +488,7 @@ if __name__ == '__main__':
   parser.add_argument('--modelsdirpath', '-mdp',
                       default='models/work_zone_scene_detection',
                       help='Path to the parent directory of model directories.')
-  parser.add_argument('--modelname', '-mn', required=True,
+  parser.add_argument('--modelname', '-mn', default='inception_v3',
                       help='The square input dimensions of the neural net.')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
