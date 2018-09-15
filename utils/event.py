@@ -1,4 +1,3 @@
-import logging
 import numpy as np
 import os
 from utils.io import IO
@@ -137,7 +136,8 @@ class Event:
 
 class Trip:
   def __init__(self, report_frame_numbers, report_timestamps, qa_flags,
-               report_probs, class_name_map, non_event_weight_scale=0.05):
+               report_probs, class_name_map, non_event_weight_scale=0.05,
+               minimum_event_length=100):
     self.class_names = class_name_map
     self.class_ids = {value: key for key, value in self.class_names.items()}
 
@@ -175,9 +175,8 @@ class Trip:
           end_timestamp, start_timestamp_qa_flag, end_timestamp_qa_flag,
           start_frame_number, end_frame_number))
 
-        # logging.debug('added feature:\n{}'.format(self.feature_sequence[-1]))
-
         feature_id += 1
+
         class_id = report_class_ids[i]
 
         if report_timestamps is not None:
@@ -210,12 +209,12 @@ class Trip:
           start_frame_number, end_frame_number))
 
     self.weight_scale = non_event_weight_scale
+    self.minimum_event_length = minimum_event_length
 
   def find_events(
       self, target_feature_class_ids, target_feature_class_names=None,
       preceding_feature_class_id=None, preceding_feature_class_name=None,
-      following_feature_class_id=None, following_feature_class_name=None,
-      minimum_event_length=100):
+      following_feature_class_id=None, following_feature_class_name=None):
     if target_feature_class_ids is None:
       if target_feature_class_names is None:
         raise ValueError('target_feature_class_ids and target_'
@@ -260,8 +259,6 @@ class Trip:
         if current_feature.class_id in target_feature_class_ids:
           target_feature_list = [current_feature]
           longest_target_feature_gap = 0
-          # logging.debug('increasing weight from {} to {}'.format(
-          #   weight, weight + current_feature.length))
           weight += current_feature.length
 
           while i < len(self.feature_sequence) and current_feature.class_id \
@@ -275,67 +272,62 @@ class Trip:
                 longest_target_feature_gap = current_feature_gap
 
               target_feature_list.append(current_feature)
-              # logging.debug('increasing weight from {} to {}'.format(
-              #   weight, weight + current_feature.length))
               weight += current_feature.length
             else:
-              # logging.debug('decreasing weight from {} to {}'.format(
-              #   weight, weight - self.weight_scale * current_feature.length))
               weight -= self.weight_scale * current_feature.length
 
             if weight <= 0:
-              logging.debug('event detection complete')
               break
 
           # if a detected event begins or ends in a frame from which the timestamp
           # could not be read or syntehsized, just ignore the event.
-          # if not (target_feature_list[0].start_timestamp == -1
-          #         or target_feature_list[-1].end_timestamp == -1):
-          current_event = Event(event_id=event_id,
-                                target_feature_list=target_feature_list)
+          if target_feature_list[0].start_timestamp != -1 \
+              or target_feature_list[-1].end_timestamp != -1:
+            current_event = Event(event_id=event_id,
+                                  target_feature_list=target_feature_list)
 
-          weight = 0
+            if current_event.length >= self.minimum_event_length:
+              weight = 0
 
-          # if two consecutive events share a common following/preceding
-          # feature, and that feature is closer to the current event than the
-          # previous event, reassign it to the current event.
-          if previous_preceding_feature:
-            if current_event.start_frame_number - \
-                previous_preceding_feature.end_frame_number < \
-                longest_target_feature_gap * 10:
-              if previous_preceding_feature.event_id:
-                previous_target_feature = events[
-                  previous_preceding_feature.event_id].target_feature_list[-1]
+              # if two consecutive events share a common following/preceding
+              # feature, and that feature is closer to the current event than the
+              # previous event, reassign it to the current event.
+              if previous_preceding_feature:
+                if current_event.start_frame_number - \
+                    previous_preceding_feature.end_frame_number < \
+                    longest_target_feature_gap * 10:
+                  if previous_preceding_feature.event_id:
+                    previous_target_feature = events[
+                      previous_preceding_feature.event_id].target_feature_list[-1]
 
-                previous_target_feature_distance = \
-                  previous_preceding_feature.start_frame_number - \
-                  previous_target_feature.end_frame_number
+                    previous_target_feature_distance = \
+                      previous_preceding_feature.start_frame_number - \
+                      previous_target_feature.end_frame_number
 
-                assert previous_target_feature_distance >= 0
+                    assert previous_target_feature_distance >= 0
 
-                current_feature_distance = \
-                  current_event.target_feature_list[0].start_frame_number - \
-                  previous_preceding_feature.end_frame_number
+                    current_feature_distance = \
+                      current_event.target_feature_list[0].start_frame_number - \
+                      previous_preceding_feature.end_frame_number
 
-                assert current_feature_distance >= 0
+                    assert current_feature_distance >= 0
 
-                if current_feature_distance < previous_target_feature_distance:
-                  previous_event.following_feature = None
-                  current_event.preceding_feature = previous_preceding_feature
-                  previous_preceding_feature.event_id = event_id
-              else:
-                current_event.preceding_feature = previous_preceding_feature
-                previous_preceding_feature.event_id = event_id
+                    if current_feature_distance < previous_target_feature_distance:
+                      previous_event.following_feature = None
+                      current_event.preceding_feature = previous_preceding_feature
+                      previous_preceding_feature.event_id = event_id
+                  else:
+                    current_event.preceding_feature = previous_preceding_feature
+                    previous_preceding_feature.event_id = event_id
 
-              if previous_preceding_feature == previous_following_feature:
-                previous_following_feature = None
+                  if previous_preceding_feature == previous_following_feature:
+                    previous_following_feature = None
 
-              previous_preceding_feature = None
+                  previous_preceding_feature = None
 
-          if current_event.length >= minimum_event_length:
-            events.append(current_event)
-            event_id += 1
-            previous_event = current_event
+              events.append(current_event)
+              event_id += 1
+              previous_event = current_event
 
         if current_feature.class_id == preceding_feature_class_id:
           previous_preceding_feature = current_feature
@@ -364,10 +356,8 @@ class Trip:
 
           current_event = Event(event_id=event_id,
                                 target_feature_list=target_feature_list)
-          logging.debug('created event with target_feature_list = {}'.format(
-            target_feature_list))
 
-          if current_event.length >= minimum_event_length:
+          if current_event.length >= self.minimum_event_length:
             events.append(current_event)
             event_id += 1
             previous_event = current_event
@@ -399,8 +389,6 @@ class Trip:
 
           current_event = Event(event_id=event_id,
                                 target_feature_list=target_feature_list)
-          logging.debug('created event with target_feature_list = {}'.format(
-            target_feature_list))
 
           # if two consecutive events share a common following/preceding
           # feature, and that feature is closer to the current event than the
@@ -410,7 +398,7 @@ class Trip:
             previous_preceding_feature.event_id = event_id
             previous_preceding_feature = None
 
-          if current_event.length >= minimum_event_length:
+          if current_event.length >= self.minimum_event_length:
             events.append(current_event)
             event_id += 1
 
@@ -423,8 +411,6 @@ class Trip:
         if current_feature.class_id in target_feature_class_ids:
           target_feature_list = [current_feature]
           longest_target_feature_gap = 0
-          # logging.debug('increasing weight from {} to {}'.format(
-          #   weight, weight + current_feature.length))
           weight += current_feature.length
 
           while i < len(self.feature_sequence):
@@ -437,25 +423,19 @@ class Trip:
                 longest_target_feature_gap = current_feature_gap
 
               target_feature_list.append(current_feature)
-              # logging.debug('increasing weight from {} to {}'.format(
-              #   weight, weight + current_feature.length))
               weight += current_feature.length
             else:
-              # logging.debug('decreasing weight from {} to {}'.format(
-              #   weight, weight - self.weight_scale * current_feature.length))
               weight -= self.weight_scale * current_feature.length
 
             if weight <= 0:
-              logging.debug('event detection complete')
               break
 
           current_event = Event(event_id=event_id,
                                 target_feature_list=target_feature_list)
 
           weight = 0
-          # logging.debug('created event with target_feature_list = {}'.format(
-          #   target_feature_list))
-          if current_event.length >= minimum_event_length:
+
+          if current_event.length >= self.minimum_event_length:
             events.append(current_event)
             event_id += 1
 
