@@ -62,7 +62,7 @@ python snva.py
   --writeinferencereports True
 ```
 
-## To run using NVIDIA-Docker on Ubuntu (for a directory of videos):
+## To run using NVIDIA-Docker on Ubuntu (for a text file listing absolute paths to videos):
 
 ```shell
 sudo nvidia-docker run \
@@ -77,6 +77,21 @@ sudo nvidia-docker run \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
   --inputlistrootdirpath /common/root/path/on/the/host \
+  --inputpath /media/input --outputpath /media/output --logspath /media/logs \
+  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
+  --crop --writeinferencereports True
+```
+## To run using NVIDIA-Docker on Ubuntu (for a directory of videos):
+
+```shell
+sudo nvidia-docker run \
+  --mount type=bind, \
+    src=/path/to/your/desired/video_file/source/directory,dst=/media/input \
+  --mount type=bind, \
+    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
+  --mount type=bind, \
+    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
+  volpeusdot/snva \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
   --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
   --crop --writeinferencereports True
