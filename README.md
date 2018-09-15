@@ -67,12 +67,16 @@ python snva.py
 ```shell
 sudo nvidia-docker run \
   --mount type=bind, \
-    src=/path/to/your/desired/video_file/source/directory,dst=/media/input \
+    src=/path/to/your/desired/video/source/file/or/directory,dst=/media/input \
+  --mount type=bind, \
+    src=/path/to/a/common/root/video/directory/when/inputpath/is/a/text/file, \
+    dst=/media/root \
   --mount type=bind, \
     src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
   --mount type=bind, \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
+  --inputlistrootdirpath /common/root/path/on/the/host \
   --inputpath /media/input --outputpath /media/output --logspath /media/logs \
   --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
   --crop --writeinferencereports True
@@ -113,7 +117,8 @@ Flag | Short Flag | Properties | Description
 --excludepreviouslyprocessed|-epp|action=store_true|Skip processing of videos for which reports already exist in outputpath
 --extracttimestamps|-et|action=store_true|Crop timestamps out of video frames and map them to strings for inclusion in the output CSV
 --gpumemoryfraction|-gmf|type=float, default=0.9|% of GPU memory available to this process
---inputpath|-ip|required=True|Path to video file(s)
+--inputpath|-ip|required=True|Path to a single video file, a folder containing video files, or a text file that lists absolute video file paths
+--inputlistrootdirpath|-ilrdp|Path to the common root directory shared by video file paths listed in the text file specified using --inputpath
 --ionodenamesfilepath|-ifp|Path to the io tensor names text file
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
 --logmode|-lm|default=verbose|If verbose, log to file and console. If silent, log to file only

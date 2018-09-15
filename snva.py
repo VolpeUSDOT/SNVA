@@ -123,9 +123,24 @@ def main():
     video_file_paths = [path.join(args.inputpath, video_file_name)
                         for video_file_name in video_file_names]
   elif path.isfile(args.inputpath):
-    if args.inputpath[-3] == 'txt':
+    if args.inputpath[-3:] == 'txt':
+      if args.inputlistrootdirpath is None:
+        raise ValueError('--inputlistrootdirpath must be specified when using a'
+                         ' text file as the input.')
       with open(args.inputpath, newline='') as input_file:
-        video_file_paths = input_file.readlines()
+        video_file_paths = []
+
+        for line in input_file.readlines():
+          line = line.rstrip()
+          video_file_path = line.lstrip(args.inputlistrootdirpath)
+          video_file_path = path.join('/media/root', video_file_path)
+
+          if path.isfile(video_file_path):
+            video_file_paths.append(video_file_path)
+          else:
+            logging.warning('The video file at host path {} could not be found '
+                            'at mapped path {} and will not be processed'.
+              format(line, video_file_path))
     else:
       video_file_paths = [args.inputpath]
   else:
@@ -472,7 +487,13 @@ if __name__ == '__main__':
   parser.add_argument('--gpumemoryfraction', '-gmf', type=float, default=0.9,
                       help='% of GPU memory available to this process.')
   parser.add_argument('--inputpath', '-ip', required=True,
-                      help='Path to video file(s).')
+                      help='Path to a single video file, a folder containing '
+                           'video files, or a text file that lists absolute '
+                           'video file paths.')
+  parser.add_argument('--inputlistrootdirpath', '-ilrdp',
+                      help='Path to the common root directory shared by video '
+                           'file paths listed in the text file specified using '
+                           '--inputpath.')
   parser.add_argument('--ionodenamesfilepath', '-ifp',
                       help='Path to the io tensor names text file.')
   parser.add_argument('--loglevel', '-ll', default='info',
