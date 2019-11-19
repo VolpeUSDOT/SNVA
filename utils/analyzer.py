@@ -4,6 +4,11 @@ import numpy as np
 from subprocess import PIPE, Popen
 import tensorflow as tf
 
+# Script uses tf2.0 compatability library
+# Need to move to 2.0 proper, guide is here: https://www.tensorflow.org/guide/migrate
+
+# enable eager execution throughout
+#tf.compat.v1.enable_eager_execution()
 
 class VideoAnalyzer(Process):
   def __init__(
@@ -14,9 +19,9 @@ class VideoAnalyzer(Process):
       crop_width, crop_height, ffmpeg_command, child_interrupt_queue,
       result_queue, name):
     super(VideoAnalyzer, self).__init__(name=name)
-
+    
     #### TF session variables ####
-    graph_def = tf.GraphDef()
+    graph_def = tf.compat.v1.GraphDef()
 
     with open(model_path, 'rb') as file:
       graph_def.ParseFromString(file.read())
@@ -28,11 +33,11 @@ class VideoAnalyzer(Process):
     self.device_type = device_type
     
     if self.device_type == 'gpu':
-      gpu_options = tf.GPUOptions(
+      gpu_options = tf.compat.v1.GPUOptions(
         allow_growth=True,
         per_process_gpu_memory_fraction=gpu_memory_fraction)
 
-      self.session_config = tf.ConfigProto(allow_soft_placement=True,
+      self.session_config = tf.compat.v1.ConfigProto(allow_soft_placement=True,
                                            gpu_options=gpu_options)
     else:
       self.session_config = None
@@ -152,7 +157,7 @@ class VideoAnalyzer(Process):
     if image.shape[0] != self.model_input_size or \
             image.shape[1] != self.model_input_size:
       image = tf.expand_dims(image, 0)
-      image = tf.image.resize_bilinear(
+      image = tf.compat.v1.image.resize_bilinear(
         image, [self.model_input_size, self.model_input_size],
         align_corners=False)
       image = tf.squeeze(image, [0])
@@ -175,6 +180,8 @@ class VideoAnalyzer(Process):
         return int((self.cpu_count - self.num_processes_per_device) / 
                    self.num_processes_per_device)
 
+  # tf function decorator seems to be necessary for eager evaluation
+  #@tf.function
   def run(self):
     logging.info('started inference.')
     logging.debug('TF input frame shape == {}'.format(self.tensor_shape))
@@ -183,15 +190,17 @@ class VideoAnalyzer(Process):
 
     with tf.device('/cpu:0') if self.device_type == 'cpu' else \
         tf.device(None):
-      with tf.Session(config=self.session_config) as session:
+      with tf.compat.v1.Session(config=self.session_config) as session:
         frame_dataset = tf.data.Dataset.from_generator(
           self.generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
         frame_dataset = frame_dataset.map(self._preprocess_frames,
                                           self._get_num_parallel_calls())
         frame_dataset = frame_dataset.batch(self.batch_size)
         frame_dataset = frame_dataset.prefetch(self.batch_size)
-        next_batch = frame_dataset.make_one_shot_iterator().get_next()
+        next_batch = tf.compat.v1.data.make_one_shot_iterator(frame_dataset).get_next()
 
+        # TODO use of this iterator should be replaced by eager evaluation loop through the dataset
+        #for batch in frame_dataset:
         while True:
           try:
             frame_batch = session.run(next_batch)
