@@ -12,6 +12,7 @@ from threading import Thread
 from time import sleep, time
 from utils.io import IO
 from utils.processor import process_video
+import yappi
 
 path = os.path
 
@@ -327,7 +328,8 @@ def main():
             args.cropx, args.cropy, args.extracttimestamps,
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
-            args.smoothprobs, args.smoothingfactor, args.binarizeprobs))
+            args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
+            args.profile, args.clocktype, profile_dir_path, args.profformat))
 
     logging.debug('starting child process.')
 
@@ -545,17 +547,37 @@ if __name__ == '__main__':
                       help='For every video, output a CSV file containing a '
                            'probability distribution over class labels, a '
                            'timestamp, and a frame number for each frame')
+  parser.add_argument('--profile', '-pf', action='store_true',
+                      help='Activate profiling of the application')
+  parser.add_argument('--clocktype', '-ct', default='wall',
+                      help='Specify whether profiling should use "gpu" or "wall" clock type')
+  parser.add_argument('--profformat', '-pfmt', default='pstat',
+                      help='Specify whether profiling should save output in "pstat" or "callgrind" formats')
+  parser.add_argument('--profdir', '-pd', default='logs/profile',
+                      help='Specify directory to save profiling results to')
 
   args = parser.parse_args()
-
-  snva_version_string = 'v0.1.2'
-
-  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
   try:
     snva_home = os.environ['SNVA_HOME']
   except KeyError:
     snva_home = '.'
+
+  if (args.profile):
+    yappi.set_clock_type(args.clocktype)
+    if args.profdir == 'logs/profile':
+      profile_dir_path = path.join(snva_home, args.profdir)
+    else:
+      profile_dir_path = args.profdir
+    if not path.exists(profile_dir_path):
+      os.makedirs(profile_dir_path)
+    yappi.start()
+
+  snva_version_string = 'v0.1.2'
+
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+  
 
   # Define our log level based on arguments
   if args.loglevel == 'error':
@@ -639,3 +661,7 @@ if __name__ == '__main__':
   logging.shutdown()
 
   logger_subprocess.terminate()
+
+  if (args.profile):
+    yappi.get_func_stats().save(path.join(profile_dir_path, 'main-func-stats.prof'), type=args.profformat)
+    yappi.stop()

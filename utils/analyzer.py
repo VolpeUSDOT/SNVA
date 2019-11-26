@@ -185,12 +185,13 @@ class VideoAnalyzer(Process):
   def run(self):
     logging.info('started inference.')
     logging.debug('TF input frame shape == {}'.format(self.tensor_shape))
-
+    #builder = tf.compat.v1.profiler.ProfileOptionBuilder
+    #opts = builder(builder.time_and_memory()).order_by('micros').with_timeline_output("/home/bsumner/Documents/foo.timeline").build()
     count = 0
-
     with tf.device('/cpu:0') if self.device_type == 'cpu' else \
         tf.device(None):
       with tf.compat.v1.Session(config=self.session_config) as session:
+        #profiler = tf.compat.v1.profiler.Profiler(session.graph)
         frame_dataset = tf.data.Dataset.from_generator(
           self.generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
         frame_dataset = frame_dataset.map(self._preprocess_frames,
@@ -206,6 +207,7 @@ class VideoAnalyzer(Process):
             frame_batch = session.run(next_batch)
             probs = session.run(self.output_node,
                                 {self.input_node: frame_batch})
+            #profiler.profile_graph(options=opts)
             self.prob_array[count:count + probs.shape[0]] = probs
             count += probs.shape[0]
           except tf.errors.OutOfRangeError:

@@ -9,6 +9,7 @@ from utils.analyzer import VideoAnalyzer
 from utils.event import Trip
 from utils.io import IO
 from utils.timestamp import Timestamp
+import yappi
 
 path = os.path
 
@@ -70,7 +71,14 @@ def process_video(
     model_path, node_name_map, gpu_memory_fraction, do_crop, crop_width,
     crop_height, crop_x, crop_y, do_extract_timestamps, timestamp_max_width,
     timestamp_height, timestamp_x, timestamp_y, do_deinterlace, num_channels,
-    batch_size, do_smooth_probs, smoothing_factor, do_binarize_probs):
+    batch_size, do_smooth_probs, smoothing_factor, do_binarize_probs,
+    profile, clock_type, profile_dir, profile_fmt):
+  
+  # Start profiling this process
+  if (profile):
+    yappi.set_clock_type(clock_type)
+    yappi.start()
+
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
@@ -433,3 +441,7 @@ def process_video(
                          'return_value': num_analyzed_frames,
                          'analysis_duration': analysis_duration})
   return_code_queue.close()
+  # Print our profile data and stop
+  if (profile):
+    yappi.get_func_stats().save(path.join(profile_dir, 'processor-{0}.prof'.format(video_file_name)), type=profile_fmt)
+    yappi.stop()
