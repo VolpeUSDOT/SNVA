@@ -50,6 +50,7 @@ def stringify_command(arg_list):
   return 'command string: {}'.format(command_string)
 
 
+#TODO: accomodate unbounded number of valid process counts
 def get_valid_num_processes_per_device(device_type):
   valid_n_procs = {1, 2}
   if device_type == 'cpu':
