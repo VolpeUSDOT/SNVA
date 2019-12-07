@@ -77,7 +77,7 @@ sudo nvidia-docker run \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
   --inputlistrootdirpath /common/root/path/on/the/host \
-  --inputpath /media/input --outputpath /media/output --logspath /media/logs \
+  --inputpath /media/input --outputpath /media/output --logpath /media/logs \
   --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
   --crop --writeinferencereports True
 ```
@@ -92,7 +92,7 @@ sudo nvidia-docker run \
   --mount type=bind, \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
-  --inputpath /media/input --outputpath /media/output --logspath /media/logs \
+  --inputpath /media/input --outputpath /media/output --logpath /media/logs \
   --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
   --crop --writeinferencereports True
 ```
@@ -109,7 +109,7 @@ sudo nvidia-docker run \
   --mount type=bind, \
     src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
   volpeusdot/snva \
-  --inputpath /media/input/ --outputpath /media/output --logspath /media/logs \
+  --inputpath /media/input/ --outputpath /media/output --logpath /media/logs \
   --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
   --crop --writeinferencereports True
 ```
