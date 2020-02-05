@@ -1,14 +1,12 @@
+import json
 import logging
 from multiprocessing import Process
 import numpy as np
+import requests
+from skimage import img_as_float32
+from skimage.transform import resize
 from subprocess import PIPE, Popen
-import tensorflow as tf
 
-# Script uses tf2.0 compatability library
-# Need to move to 2.0 proper, guide is here: https://www.tensorflow.org/guide/migrate
-
-# enable eager execution throughout
-#tf.compat.v1.enable_eager_execution()
 
 class VideoAnalyzer(Process):
   def __init__(
@@ -19,28 +17,6 @@ class VideoAnalyzer(Process):
       crop_width, crop_height, ffmpeg_command, child_interrupt_queue,
       result_queue, name):
     super(VideoAnalyzer, self).__init__(name=name)
-    
-    #### TF session variables ####
-    graph_def = tf.compat.v1.GraphDef()
-
-    with open(model_path, 'rb') as file:
-      graph_def.ParseFromString(file.read())
-
-    self.input_node, self.output_node = tf.import_graph_def(
-      graph_def, return_elements=[node_names_map['input_node_name'],
-                                  node_names_map['output_node_name']])
-
-    self.device_type = device_type
-    
-    if self.device_type == 'gpu':
-      gpu_options = tf.compat.v1.GPUOptions(
-        allow_growth=True,
-        per_process_gpu_memory_fraction=gpu_memory_fraction)
-
-      self.session_config = tf.compat.v1.ConfigProto(allow_soft_placement=True,
-                                           gpu_options=gpu_options)
-    else:
-      self.session_config = None
 
     #### frame generator variables ####
     self.frame_shape = frame_shape
@@ -103,7 +79,7 @@ class VideoAnalyzer(Process):
 
   # feed the tf.data input pipeline one image at a time and, while we're at it,
   # extract timestamp overlay crops for later mapping to strings.
-  def generate_frames(self):
+  def generate_frame_batches(self):
     while True:
       try:
         try:
@@ -116,7 +92,8 @@ class VideoAnalyzer(Process):
         except:
           pass
 
-        frame_string = self.frame_pipe.stdout.read(self.frame_string_len)
+        frame_string = self.frame_pipe.stdout.read(
+          self.frame_string_len * self.batch_size)
 
         if not frame_string:
           logging.debug('closing video frame pipe following end of stream')
@@ -126,16 +103,17 @@ class VideoAnalyzer(Process):
           return
 
         frame_array = np.fromstring(frame_string, dtype=np.uint8)
-        frame_array = np.reshape(frame_array, self.frame_shape)
+        frame_array = np.reshape(frame_array, [-1] + self.frame_shape)
 
         if self.extract_timestamps:
-          self.timestamp_array[self.th * self.ti:self.th * (self.ti + 1)] = \
-            frame_array[self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
-          self.ti += 1
+          self.timestamp_array[
+          self.th * self.ti:self.th * (self.ti + len(frame_array))] = \
+            frame_array[:, self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
+          self.ti += len(frame_array)
 
         if self.crop:
-          frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
-                                    self.crop_x:self.crop_x + self.crop_width]
+          frame_array = frame_array[:, self.crop_y:self.crop_y + self.crop_height,
+                        self.crop_x:self.crop_x + self.crop_width]
 
         yield frame_array
       except Exception as e:
@@ -151,19 +129,11 @@ class VideoAnalyzer(Process):
         logging.debug('raising exception to caller.')
         raise e
 
-  def _preprocess_frames(self, image):
-    if image.dtype != tf.float32:
-      image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-    if image.shape[0] != self.model_input_size or \
-            image.shape[1] != self.model_input_size:
-      image = tf.expand_dims(image, 0)
-      image = tf.compat.v1.image.resize_bilinear(
-        image, [self.model_input_size, self.model_input_size],
-        align_corners=False)
-      image = tf.squeeze(image, [0])
-    image = tf.subtract(image, 0.5)
-    image = tf.multiply(image, 2.0)
-
+  def _preprocess_frame(self, image):
+    image = img_as_float32(image)
+    image = resize(image, (self.model_input_size, self.model_input_size))
+    image -= .5
+    image *= 2.
     return image
 
   # assumed user specification of numperdeviceprocesses has been validated,
@@ -177,42 +147,41 @@ class VideoAnalyzer(Process):
       elif self.num_processes_per_device == self.cpu_count:
         return self.cpu_count
       else:
-        return int((self.cpu_count - self.num_processes_per_device) / 
+        return int((self.cpu_count - self.num_processes_per_device) /
                    self.num_processes_per_device)
 
-  # tf function decorator seems to be necessary for eager evaluation
-  #@tf.function
   def run(self):
     logging.info('started inference.')
     logging.debug('TF input frame shape == {}'.format(self.tensor_shape))
-    #builder = tf.compat.v1.profiler.ProfileOptionBuilder
-    #opts = builder(builder.time_and_memory()).order_by('micros').with_timeline_output("/home/bsumner/Documents/foo.timeline").build()
-    count = 0
-    with tf.device('/cpu:0') if self.device_type == 'cpu' else \
-        tf.device(None):
-      with tf.compat.v1.Session(config=self.session_config) as session:
-        #profiler = tf.compat.v1.profiler.Profiler(session.graph)
-        frame_dataset = tf.data.Dataset.from_generator(
-          self.generate_frames, tf.uint8, tf.TensorShape(self.tensor_shape))
-        frame_dataset = frame_dataset.map(self._preprocess_frames,
-                                          self._get_num_parallel_calls())
-        frame_dataset = frame_dataset.batch(self.batch_size)
-        frame_dataset = frame_dataset.prefetch(self.batch_size)
-        next_batch = tf.compat.v1.data.make_one_shot_iterator(frame_dataset).get_next()
 
-        # TODO use of this iterator should be replaced by eager evaluation loop through the dataset
-        #for batch in frame_dataset:
-        while True:
-          try:
-            frame_batch = session.run(next_batch)
-            probs = session.run(self.output_node,
-                                {self.input_node: frame_batch})
-            #profiler.profile_graph(options=opts)
-            self.prob_array[count:count + probs.shape[0]] = probs
-            count += probs.shape[0]
-          except tf.errors.OutOfRangeError:
-            logging.info('completed inference.')
-            break
+    count = 0
+
+    headers = {'content-type': 'application/json'}
+    served_model_fn = 'http://localhost:8501/v1/models/mobilenet_v2:predict'
+    signature_name = 'serving_default'
+
+    print('len: ', len(self.prob_array))
+    for frame_batch in self.generate_frame_batches():
+      # preprocess for CNN
+      temp = np.ndarray(
+        (len(frame_batch), self.model_input_size, self.model_input_size, 3))
+      for i in range(len(frame_batch)):
+        temp[i] = self._preprocess_frame(frame_batch[i])
+
+      frame_batch = temp
+
+      try:
+        data = json.dumps({'signature_name': signature_name,
+                           'instances': frame_batch.tolist()})
+        json_response = requests.post(
+          served_model_fn, data=data, headers=headers)
+        response = json.loads(json_response.text)
+        probs = [pred['probabilities'] for pred in response['predictions']]
+        self.prob_array[count:count + len(probs)] = probs
+        count += len(probs)
+      except StopIteration:
+        logging.info('completed inference.')
+        break
 
     self.result_queue.put((count, self.prob_array, self.timestamp_array))
     self.result_queue.close()
