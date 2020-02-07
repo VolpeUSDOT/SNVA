@@ -12,7 +12,6 @@ from threading import Thread
 from time import sleep, time
 from utils.io import IO
 from utils.processor import process_video
-import yappi
 
 path = os.path
 
@@ -64,7 +63,7 @@ def get_valid_num_processes_per_device(device_type):
   return valid_n_procs
 
 
-def main(profile_dir_path):
+def main():
   logging.info('entering snva {} main process'.format(snva_version_string))
 
   total_num_video_to_process = None
@@ -293,7 +292,7 @@ def main(profile_dir_path):
   logging.info('Processing {} videos using {}'.format(
     total_num_video_to_process, args.modelname))
 
-  def start_video_processor(video_file_path, profile_dir_path):
+  def start_video_processor(video_file_path):
     # Before popping the next video off of the list and creating a process to
     # scan it, check to see if fewer than logical_device_count + 1 processes are
     # active. If not, Wait for a child process to release its semaphore
@@ -328,8 +327,7 @@ def main(profile_dir_path):
             args.cropx, args.cropy, args.extracttimestamps,
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
-            args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-            args.profile, args.clocktype, profile_dir_path, args.profformat))
+            args.smoothprobs, args.smoothingfactor, args.binarizeprobs))
 
     logging.debug('starting child process.')
 
@@ -418,7 +416,7 @@ def main(profile_dir_path):
     video_file_path = video_file_paths.pop()
 
     try:
-      start_video_processor(video_file_path, profile_dir_path)
+      start_video_processor(video_file_path)
     except Exception as e:
       logging.error('an unknown error has occured while processing '
                     '{}'.format(video_file_path))
@@ -547,14 +545,10 @@ if __name__ == '__main__':
                       help='For every video, output a CSV file containing a '
                            'probability distribution over class labels, a '
                            'timestamp, and a frame number for each frame')
-  parser.add_argument('--profile', '-pf', action='store_true',
-                      help='Activate profiling of the application')
   parser.add_argument('--clocktype', '-ct', default='wall',
                       help='Specify whether profiling should use "gpu" or "wall" clock type')
   parser.add_argument('--profformat', '-pfmt', default='pstat',
                       help='Specify whether profiling should save output in "pstat" or "callgrind" formats')
-  parser.add_argument('--profdir', '-pd', default='logs/profile',
-                      help='Specify directory to save profiling results to')
 
   args = parser.parse_args()
 
@@ -638,20 +632,8 @@ if __name__ == '__main__':
 
   main_interrupt_queue = Queue()
 
-  if (args.profile):
-    yappi.set_clock_type(args.clocktype)
-    if args.profdir == 'logs/profile':
-      profile_dir_path = path.join(snva_home, args.profdir)
-    else:
-      profile_dir_path = args.profdir
-    if not path.exists(profile_dir_path):
-      os.makedirs(profile_dir_path)
-    yappi.start()
-  else:
-    profile_dir_path = None
-
   try:
-    main(profile_dir_path)
+    main()
   except Exception as e:
     logging.error(e)
 
@@ -663,7 +645,3 @@ if __name__ == '__main__':
   logging.shutdown()
 
   logger_subprocess.terminate()
-
-  if (args.profile):
-    yappi.get_func_stats().save(path.join(profile_dir_path, 'main-func-stats.prof'), type=args.profformat)
-    yappi.stop()
