@@ -1,6 +1,7 @@
+# import asyncio
 import json
 import logging
-from multiprocessing import Process
+from threading import Thread
 import numpy as np
 import requests
 from skimage import img_as_float32
@@ -8,16 +9,12 @@ from skimage.transform import resize
 from subprocess import PIPE, Popen
 
 
-class VideoAnalyzer(Process):
+class VideoAnalyzer:
   def __init__(
       self, frame_shape, num_frames, num_classes, batch_size, model_input_size,
-      model_path, device_type, num_processes_per_device, cpu_count,
-      node_names_map, gpu_memory_fraction, extract_timestamps, timestamp_x,
+      num_processes_per_device, cpu_count, extract_timestamps, timestamp_x,
       timestamp_y, timestamp_height, timestamp_max_width, crop, crop_x, crop_y,
-      crop_width, crop_height, ffmpeg_command, child_interrupt_queue,
-      result_queue, name):
-    super(VideoAnalyzer, self).__init__(name=name)
-
+      crop_width, crop_height, ffmpeg_command):
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.crop = crop
@@ -56,9 +53,6 @@ class VideoAnalyzer(Process):
 
     self.prob_array = np.ndarray((num_frames, num_classes), dtype=np.float32)
 
-    self.child_interrupt_queue = child_interrupt_queue
-    self.result_queue = result_queue
-
     logging.debug('opening video frame pipe')
 
     self.frame_string_len = 1
@@ -77,23 +71,46 @@ class VideoAnalyzer(Process):
     logging.debug('video frame pipe created with pid: {}'.format(
       self.frame_pipe.pid))
 
+    self.headers = {'content-type': 'application/json'}
+    self.served_model_fn = 'http://localhost:8501/v1/models/mobilenet_v2:predict'
+    self.signature_name = 'serving_default'
+
   # feed the tf.data input pipeline one image at a time and, while we're at it,
   # extract timestamp overlay crops for later mapping to strings.
-  def generate_frame_batches(self):
+  def _generate_frame_batches(self):
     while True:
       try:
-        try:
-          _ = self.child_interrupt_queue.get_nowait()
-          logging.warning('closing video frame pipe following interrupt signal')
+        frame_batch_string = self.frame_pipe.stdout.read(
+          self.frame_string_len * self.batch_size)
+
+        if not frame_batch_string:
+          logging.debug('closing video frame pipe following end of stream')
           self.frame_pipe.stdout.close()
           self.frame_pipe.stderr.close()
           self.frame_pipe.terminate()
           return
-        except:
-          pass
 
+        yield frame_batch_string
+      except Exception as e:
+        logging.error(
+          'met an unexpected error after processing {} frames.'.format(self.ti))
+        logging.error(e)
+        logging.error(
+          'ffmpeg reported:\n{}'.format(self.frame_pipe.stderr.readlines()))
+        logging.debug('closing video frame pipe following raised exception')
+        self.frame_pipe.stdout.close()
+        self.frame_pipe.stderr.close()
+        self.frame_pipe.terminate()
+        logging.debug('raising exception to caller.')
+        raise e
+
+  # feed the tf.data input pipeline one image at a time and, while we're at it,
+  # extract timestamp overlay crops for later mapping to strings.
+  def _generate_preprocessed_frame(self):
+    while True:
+      try:
         frame_string = self.frame_pipe.stdout.read(
-          self.frame_string_len * self.batch_size)
+          self.frame_string_len)
 
         if not frame_string:
           logging.debug('closing video frame pipe following end of stream')
@@ -103,17 +120,19 @@ class VideoAnalyzer(Process):
           return
 
         frame_array = np.fromstring(frame_string, dtype=np.uint8)
-        frame_array = np.reshape(frame_array, [-1] + self.frame_shape)
+        frame_array = np.reshape(frame_array, self.frame_shape)
 
         if self.extract_timestamps:
-          self.timestamp_array[
-          self.th * self.ti:self.th * (self.ti + len(frame_array))] = \
-            frame_array[:, self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
-          self.ti += len(frame_array)
+          self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
+            frame_array[self.ty:self.ty + self.th,
+            self.tx:self.tx + self.tw]
+          self.ti += 1
 
         if self.crop:
-          frame_array = frame_array[:, self.crop_y:self.crop_y + self.crop_height,
+          frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
                         self.crop_x:self.crop_x + self.crop_width]
+
+        frame_array = self._preprocess_frame(frame_array)
 
         yield frame_array
       except Exception as e:
@@ -136,19 +155,42 @@ class VideoAnalyzer(Process):
     image *= 2.
     return image
 
-  # assumed user specification of numperdeviceprocesses has been validated,
-  # to be <= cpu cores when in --cpuonly mode
-  def _get_num_parallel_calls(self):
-    if self.device_type == 'gpu':
-      return int(self.cpu_count / self.num_processes_per_device)
-    else:
-      if self.num_processes_per_device == 1:
-        return self.cpu_count - 1
-      elif self.num_processes_per_device == self.cpu_count:
-        return self.cpu_count
-      else:
-        return int((self.cpu_count - self.num_processes_per_device) /
-                   self.num_processes_per_device)
+  def _preprocess_frame_batch(self, frame_batch_string):
+    frame_batch_array = np.fromstring(frame_batch_string, dtype=np.uint8)
+    frame_batch_array = np.reshape(frame_batch_array, [-1] + self.frame_shape)
+
+    if self.extract_timestamps:
+      self.timestamp_array[
+      self.th * self.ti:self.th * (self.ti + len(frame_batch_array))] = \
+        frame_batch_array[:, self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
+      self.ti += len(frame_batch_array)
+
+    if self.crop:
+      frame_batch_array = frame_batch_array[:, self.crop_y:self.crop_y + self.crop_height,
+                    self.crop_x:self.crop_x + self.crop_width]
+    temp_array = np.ndarray(
+      (len(frame_batch_array), self.model_input_size, self.model_input_size, 3))
+
+    for i in range(len(frame_batch_array)):
+      temp_array[i] = self._preprocess_frame(frame_batch_array[i])
+
+    return temp_array
+
+  def _get_probs_from_tf_serving(self, frame_list):
+    data = json.dumps({'signature_name': self.signature_name,
+                       'instances': frame_list})
+    response = requests.post(self.served_model_fn, data=data,
+                             headers=self.headers)
+    response = json.loads(response.text)
+
+    # if more than one output (e.g. probabilities and logits) are available,
+    # probabilities will have to be fetched from a nested dictionary
+    # probs = [pred['probabilities'] for pred in response['predictions']]
+    # self.prob_array[count:count + len(probs)] = probs
+
+    # if probabilities are the only output, they will be mapped directly to
+    # 'predictions'
+    return response['predictions']
 
   def run(self):
     logging.info('started inference.')
@@ -156,35 +198,19 @@ class VideoAnalyzer(Process):
 
     count = 0
 
-    headers = {'content-type': 'application/json'}
-    served_model_fn = 'http://localhost:8501/v1/models/mobilenet_v2:predict'
-    signature_name = 'serving_default'
-
     print('len: ', len(self.prob_array))
-    for frame_batch in self.generate_frame_batches():
-      # preprocess for CNN
-      temp = np.ndarray(
-        (len(frame_batch), self.model_input_size, self.model_input_size, 3))
-      for i in range(len(frame_batch)):
-        temp[i] = self._preprocess_frame(frame_batch[i])
 
-      frame_batch = temp
-
+    for preprocessed_frame in self._generate_preprocessed_frame():
       try:
-        data = json.dumps({'signature_name': signature_name,
-                           'instances': frame_batch.tolist()})
-        json_response = requests.post(
-          served_model_fn, data=data, headers=headers)
-        response = json.loads(json_response.text)
-        probs = [pred['probabilities'] for pred in response['predictions']]
+        # nest the single frame in a list to simulate a batch
+        probs = self._get_probs_from_tf_serving([preprocessed_frame.tolist()])
         self.prob_array[count:count + len(probs)] = probs
         count += len(probs)
       except StopIteration:
         logging.info('completed inference.')
         break
 
-    self.result_queue.put((count, self.prob_array, self.timestamp_array))
-    self.result_queue.close()
+    return count, self.prob_array, self.timestamp_array
 
   def __del__(self):
     if self.frame_pipe.returncode is None:

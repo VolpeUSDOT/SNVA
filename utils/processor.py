@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from logging.handlers import QueueHandler
 from multiprocessing import Queue
@@ -9,7 +10,6 @@ from utils.analyzer import VideoAnalyzer
 from utils.event import Trip
 from utils.io import IO
 from utils.timestamp import Timestamp
-import yappi
 
 path = os.path
 
@@ -71,19 +71,12 @@ def process_video(
     model_path, node_name_map, gpu_memory_fraction, do_crop, crop_width,
     crop_height, crop_x, crop_y, do_extract_timestamps, timestamp_max_width,
     timestamp_height, timestamp_x, timestamp_y, do_deinterlace, num_channels,
-    batch_size, do_smooth_probs, smoothing_factor, do_binarize_probs,
-    profile, clock_type, profile_dir, profile_fmt):
-  
-  # Start profiling this process
-  if (profile):
-    yappi.set_clock_type(clock_type)
-    yappi.start()
-
+    batch_size, do_smooth_probs, smoothing_factor, do_binarize_probs):
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
 
-  child_interrupt_queue = Queue()
+  # child_interrupt_queue = Queue()
   
   def interrupt_handler(signal_number, _):
     logging.warning('received interrupt signal {}.'.format(signal_number))
@@ -91,8 +84,8 @@ def process_video(
     interrupt_queue.put_nowait('_')
 
     # TODO: cancel timestamp/report generation when an interrupt is signalled
-    logging.debug('instructing inference pipeline to halt.')
-    child_interrupt_queue.put_nowait('_')
+    # logging.debug('instructing inference pipeline to halt.')
+    # child_interrupt_queue.put_nowait('_')
 
   signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -192,36 +185,15 @@ def process_video(
     device_id_queue.put(device_id)
     device_id_queue.close()
 
-  result_queue = Queue(1)
-
   analyzer = VideoAnalyzer(
     frame_shape, num_frames, len(class_name_map), batch_size, model_input_size,
-    model_path, device_type, logical_device_count, os.cpu_count(),
-    node_name_map, gpu_memory_fraction, do_extract_timestamps, timestamp_x,
+    logical_device_count, os.cpu_count(), do_extract_timestamps, timestamp_x,
     timestamp_y, timestamp_height, timestamp_max_width, do_crop, crop_x, crop_y,
-    crop_width, crop_height, ffmpeg_command, child_interrupt_queue,
-    result_queue, video_file_name)
+    crop_width, crop_height, ffmpeg_command)
 
   device_id = device_id_queue.get()
 
   logging.debug('acquired {} device with id {}'.format(device_type, device_id))
-
-  try:
-    _ = child_interrupt_queue.get_nowait()
-
-    release_device_id(device_id, device_id_queue)
-
-    logging.debug('will exit with code: interrupt and value: process_video')
-    log_queue.put(None)
-    log_queue.close()
-
-    return_code_queue.put({'return_code': 'interrupt',
-                           'return_value': 'process_video'})
-    return_code_queue.close()
-
-    return
-  except:
-    pass
 
   if device_type == 'gpu':
     mapped_device_id = str(int(device_id) % physical_device_count)
@@ -238,13 +210,7 @@ def process_video(
   try:
     start = time()
 
-    analyzer.start()
-
-    num_analyzed_frames, probability_array, timestamp_array = result_queue.get()
-
-    analyzer.terminate()
-
-    result_queue.close()
+    num_analyzed_frames, probability_array, timestamp_array = analyzer.run()
 
     end = time()
 
@@ -253,15 +219,6 @@ def process_video(
     processing_duration = IO.get_processing_duration(
       analysis_duration, 'processed {} frames in'.format(num_analyzed_frames))
     logging.info(processing_duration)
-
-    analyzer.join(timeout=15)
-
-    try:
-      os.kill(analyzer.pid, signal.SIGKILL)
-      logging.debug('analyzer process {} remained alive following join timeout '
-                    'and had to be killed'.format(analyzer.pid))
-    except:
-      pass
 
     release_device_id(device_id, device_id_queue)
 
@@ -441,7 +398,3 @@ def process_video(
                          'return_value': num_analyzed_frames,
                          'analysis_duration': analysis_duration})
   return_code_queue.close()
-  # Print our profile data and stop
-  if (profile):
-    yappi.get_func_stats().save(path.join(profile_dir, 'processor-{0}.prof'.format(video_file_name)), type=profile_fmt)
-    yappi.stop()
