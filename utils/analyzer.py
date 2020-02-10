@@ -1,7 +1,6 @@
-# import asyncio
+import concurrent.futures as futures
 import json
 import logging
-from threading import Thread
 import numpy as np
 import requests
 from skimage import img_as_float32
@@ -71,12 +70,42 @@ class VideoAnalyzer:
     logging.debug('video frame pipe created with pid: {}'.format(
       self.frame_pipe.pid))
 
+    # TODO: parameterize tf serving info
     self.headers = {'content-type': 'application/json'}
     self.served_model_fn = 'http://localhost:8501/v1/models/mobilenet_v2:predict'
     self.signature_name = 'serving_default'
 
-  # feed the tf.data input pipeline one image at a time and, while we're at it,
-  # extract timestamp overlay crops for later mapping to strings.
+  # feed the tf.data input pipeline one image at a time and, while we're at
+  # it, extract timestamp overlay crops for later mapping to strings.
+  def _generate_frames(self):
+    while True:
+      try:
+        frame_string = self.frame_pipe.stdout.read(
+          self.frame_string_len)
+
+        if not frame_string:
+          logging.debug('closing video frame pipe following end of stream')
+          self.frame_pipe.stdout.close()
+          self.frame_pipe.stderr.close()
+          self.frame_pipe.terminate()
+          return
+
+        yield frame_string
+      except Exception as e:
+        logging.error(
+          'met an unexpected error after processing {} frames.'.format(self.ti))
+        logging.error(e)
+        logging.error(
+          'ffmpeg reported:\n{}'.format(self.frame_pipe.stderr.readlines()))
+        logging.debug('closing video frame pipe following raised exception')
+        self.frame_pipe.stdout.close()
+        self.frame_pipe.stderr.close()
+        self.frame_pipe.terminate()
+        logging.debug('raising exception to caller.')
+        raise e
+
+  # feed the tf.data input pipeline one image at a time and, while we're at
+  # it, extract timestamp overlay crops for later mapping to strings.
   def _generate_frame_batches(self):
     while True:
       try:
@@ -104,92 +133,74 @@ class VideoAnalyzer:
         logging.debug('raising exception to caller.')
         raise e
 
-  # feed the tf.data input pipeline one image at a time and, while we're at it,
-  # extract timestamp overlay crops for later mapping to strings.
-  def _generate_preprocessed_frame(self):
-    while True:
-      try:
-        frame_string = self.frame_pipe.stdout.read(
-          self.frame_string_len)
+  def _preprocess_frame(self, frame):
+    frame = img_as_float32(frame)
+    frame = resize(frame, (self.model_input_size, self.model_input_size))
+    frame -= .5
+    frame *= 2.
+    return frame
+  
+  def _preprocess_frame_batch(self, frame_batch):
+    temp = np.ndarray(
+      (len(frame_batch), self.model_input_size, self.model_input_size, 3))
 
-        if not frame_string:
-          logging.debug('closing video frame pipe following end of stream')
-          self.frame_pipe.stdout.close()
-          self.frame_pipe.stderr.close()
-          self.frame_pipe.terminate()
-          return
+    for i in range(len(frame_batch)):
+      temp[i] = self._preprocess_frame(frame_batch[i])
 
-        frame_array = np.fromstring(frame_string, dtype=np.uint8)
-        frame_array = np.reshape(frame_array, self.frame_shape)
+    return temp
 
-        if self.extract_timestamps:
-          self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
-            frame_array[self.ty:self.ty + self.th,
-            self.tx:self.tx + self.tw]
-          self.ti += 1
-
-        if self.crop:
-          frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
-                        self.crop_x:self.crop_x + self.crop_width]
-
-        frame_array = self._preprocess_frame(frame_array)
-
-        yield frame_array
-      except Exception as e:
-        logging.error(
-          'met an unexpected error after processing {} frames.'.format(self.ti))
-        logging.error(e)
-        logging.error(
-          'ffmpeg reported:\n{}'.format(self.frame_pipe.stderr.readlines()))
-        logging.debug('closing video frame pipe following raised exception')
-        self.frame_pipe.stdout.close()
-        self.frame_pipe.stderr.close()
-        self.frame_pipe.terminate()
-        logging.debug('raising exception to caller.')
-        raise e
-
-  def _preprocess_frame(self, image):
-    image = img_as_float32(image)
-    image = resize(image, (self.model_input_size, self.model_input_size))
-    image -= .5
-    image *= 2.
-    return image
-
-  def _preprocess_frame_batch(self, frame_batch_string):
-    frame_batch_array = np.fromstring(frame_batch_string, dtype=np.uint8)
-    frame_batch_array = np.reshape(frame_batch_array, [-1] + self.frame_shape)
+  def _get_frame_probs_from_tf_serving(self, frame_string):
+    frame_array = np.fromstring(frame_string, dtype=np.uint8)
+    frame_array = np.reshape(frame_array, self.frame_shape)
 
     if self.extract_timestamps:
-      self.timestamp_array[
-      self.th * self.ti:self.th * (self.ti + len(frame_batch_array))] = \
-        frame_batch_array[:, self.ty:self.ty + self.th, self.tx:self.tx + self.tw]
-      self.ti += len(frame_batch_array)
+      self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
+        frame_array[self.ty:self.ty + self.th,
+        self.tx:self.tx + self.tw]
+      self.ti += 1
 
     if self.crop:
-      frame_batch_array = frame_batch_array[:, self.crop_y:self.crop_y + self.crop_height,
+      frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
                     self.crop_x:self.crop_x + self.crop_width]
-    temp_array = np.ndarray(
-      (len(frame_batch_array), self.model_input_size, self.model_input_size, 3))
 
-    for i in range(len(frame_batch_array)):
-      temp_array[i] = self._preprocess_frame(frame_batch_array[i])
-
-    return temp_array
-
-  def _get_probs_from_tf_serving(self, frame_list):
+    frame_array = self._preprocess_frame(frame_array)
     data = json.dumps({'signature_name': self.signature_name,
-                       'instances': frame_list})
+                       'instances': [frame_array.tolist()]})
     response = requests.post(self.served_model_fn, data=data,
                              headers=self.headers)
     response = json.loads(response.text)
 
     # if more than one output (e.g. probabilities and logits) are available,
     # probabilities will have to be fetched from a nested dictionary
-    # probs = [pred['probabilities'] for pred in response['predictions']]
-    # self.prob_array[count:count + len(probs)] = probs
+    # return [pred['probabilities'] for pred in response['predictions']]
 
     # if probabilities are the only output, they will be mapped directly to
     # 'predictions'
+    return response['predictions']
+
+  def _get_frame_batch_probs_from_tf_serving(self, frame_batch_string):
+    frame_batch_array = np.fromstring(frame_batch_string, dtype=np.uint8)
+    frame_batch_array = np.reshape(frame_batch_array, [-1] + self.frame_shape)
+
+    if self.extract_timestamps:
+      self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
+        frame_batch_array[:, self.ty:self.ty + self.th,
+        self.tx:self.tx + self.tw]
+      self.ti += 1
+
+    if self.crop:
+      frame_batch_array = frame_batch_array[
+                          self.crop_y:self.crop_y + self.crop_height,
+                          self.crop_x:self.crop_x + self.crop_width]
+
+    frame_batch_array = self._preprocess_frame_batch(frame_batch_array)
+
+    data = json.dumps({'signature_name': self.signature_name,
+                       'instances': frame_batch_array.tolist()})
+    response = requests.post(self.served_model_fn, data=data,
+                             headers=self.headers)
+    response = json.loads(response.text)
+
     return response['predictions']
 
   def run(self):
@@ -198,17 +209,21 @@ class VideoAnalyzer:
 
     count = 0
 
-    print('len: ', len(self.prob_array))
+    logging.info('processing {} frames'.format(len(self.prob_array)))
 
-    for preprocessed_frame in self._generate_preprocessed_frame():
-      try:
-        # nest the single frame in a list to simulate a batch
-        probs = self._get_probs_from_tf_serving([preprocessed_frame.tolist()])
+    with futures.ThreadPoolExecutor(max_workers=10) as executor:
+      future_probs = [executor.submit(
+        self._get_frame_batch_probs_from_tf_serving, frame_batch)
+        for frame_batch in self._generate_frame_batches()]
+
+      for future in futures.as_completed(future_probs):
+        probs = future.result()
+
         self.prob_array[count:count + len(probs)] = probs
+
         count += len(probs)
-      except StopIteration:
-        logging.info('completed inference.')
-        break
+
+    logging.info('completed inference.')
 
     return count, self.prob_array, self.timestamp_array
 
