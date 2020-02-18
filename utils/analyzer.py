@@ -10,6 +10,10 @@ from subprocess import PIPE, Popen
 from tensorboard._vendor.tensorflow_serving.apis import predict_pb2
 from tensorboard._vendor.tensorflow_serving.apis import prediction_service_pb2_grpc
 import tensorflow as tf
+from tensorrtserver.api import api_pb2
+from tensorrtserver.api import grpc_service_pb2
+from tensorrtserver.api import grpc_service_pb2_grpc
+import tensorrtserver.api.model_config_pb2 as model_config
 
 
 class VideoAnalyzer:
@@ -75,14 +79,26 @@ class VideoAnalyzer:
       self.frame_pipe.pid))
 
     # TODO: parameterize tf serving info
-    self.headers = {'content-type': 'application/json'}
-    # self.host = 'localhost:8501'
-    self.host = '0.0.0.0:8500'
     self.model_name = 'mobilenet_v2'
-    self.served_model_fn = 'http://' + self.host + '/v1/models/' + self.model_name + ':predict'
     self.signature_name = 'serving_default'
-    self.channel = grpc.insecure_channel(self.host)
-    self.stub = prediction_service_pb2_grpc.PredictionServiceStub(self.channel)
+
+    self.tfserving_json_host = 'localhost:8501'
+    self.tfserving_grpc_host = '0.0.0.0:8500'
+    self.trtserver_grpc_host = '0.0.0.0:8001'
+
+    self.headers = {'content-type': 'application/json'}
+
+    self.tfserving_json_served_model_fn = 'http://' + self.tfserving_json_host + '/v1/models/' + self.model_name + ':predict'
+
+    self.tfserving_grpc_served_model_fn = 'http://' + self.tfserving_grpc_host + '/v1/models/' + self.model_name + ':predict'
+
+    self.tfserving_grpc_channel = grpc.insecure_channel(self.tfserving_grpc_host)
+
+    self.trtserver_grpc_channel = grpc.insecure_channel(self.trtserver_grpc_host)
+
+    self.tfserving_grpc_stub = prediction_service_pb2_grpc.PredictionServiceStub(self.tfserving_grpc_channel)
+
+    self.trtserver_grpc_stub = grpc_service_pb2_grpc.GRPCServiceStub(self.trtserver_grpc_channel)
 
   # feed the tf.data input pipeline one image at a time and, while we're at
   # it, extract timestamp overlay crops for later mapping to strings.
@@ -213,10 +229,45 @@ class VideoAnalyzer:
       frame_array, shape=frame_array.shape))
 
     # returns a PredictResponse object
-    response = self.stub.Predict(request)
+    response = self.tfserving_grpc_stub.Predict(request)
 
     #return a list constructed from the RepeatedScalarContainer float_val
     return response.outputs['probabilities'].float_val[:]
+
+  def _get_frame_probs_from_trt_server_grpc(self, frame_string):
+    frame_array = np.fromstring(frame_string, dtype=np.uint8)
+    frame_array = np.reshape(frame_array, self.frame_shape)
+
+    if self.extract_timestamps:
+      self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
+        frame_array[self.ty:self.ty + self.th,
+        self.tx:self.tx + self.tw]
+      self.ti += 1
+
+    if self.crop:
+      frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
+                    self.crop_x:self.crop_x + self.crop_width]
+
+    frame_array = self._preprocess_frame(frame_array)
+    frame_array =  frame_array[np.newaxis, :]  # batchify single frame
+
+    request = grpc_service_pb2.InferRequest()
+    request.model_name = self.model_name
+    request.meta_data.batch_size = self.batch_size
+    output_message = api_pb2.InferRequestHeader.Output()
+    output_message.name = 'MobilenetV2/Predictions/Reshape_1:0'  # probabilities
+    output_message.cls.count = 4
+    request.meta_data.output.extend([output_message])
+    request.meta_data.input.add(name='Placeholder:0')  # input
+
+    del request.raw_input[:]
+    request.raw_input.extend([frame_array.tobytes()])
+
+    # returns a PredictResponse object
+    response = self.trtserver_grpc_stub.Infer(request)
+
+    #return a list constructed from the RepeatedScalarContainer float_val
+    return response.meta_data.output
 
   def _get_frame_batch_probs_from_tf_serving(self, frame_batch_string):
     frame_batch_array = np.fromstring(frame_batch_string, dtype=np.uint8)
@@ -253,7 +304,7 @@ class VideoAnalyzer:
 
     with futures.ThreadPoolExecutor(max_workers=10) as executor:
       future_probs = [executor.submit(
-        self._get_frame_probs_from_tf_serving_grpc, frame)
+        self._get_frame_probs_from_trt_server_grpc, frame)
         for frame in self._generate_frames()]
 
       for future in futures.as_completed(future_probs):
