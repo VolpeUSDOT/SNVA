@@ -51,16 +51,17 @@ def stringify_command(arg_list):
 
 
 def get_valid_num_processes_per_device(device_type):
-  valid_n_procs = {1, 2}
-  if device_type == 'cpu':
-    n_cpus = os.cpu_count()
-    n_procs = 4
-    while n_procs <= n_cpus:
-      k = (n_cpus - n_procs) / n_procs
-      if k == int(k):
-        valid_n_procs.add(n_procs)
-      n_procs += 2
-  return valid_n_procs
+  # valid_n_procs = {1, 2}
+  # if device_type == 'cpu':
+  #   n_cpus = os.cpu_count()
+  #   n_procs = 4
+  #   while n_procs <= n_cpus:
+  #     k = (n_cpus - n_procs) / n_procs
+  #     if k == int(k):
+  #       valid_n_procs.add(n_procs)
+  #     n_procs += 2
+  # return valid_n_procs
+  return list(range(1, os.cpu_count() + 1))
 
 
 def main():
