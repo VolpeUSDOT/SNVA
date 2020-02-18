@@ -1,4 +1,5 @@
 import concurrent.futures as futures
+import grpc
 import json
 import logging
 import numpy as np
@@ -6,6 +7,9 @@ import requests
 from skimage import img_as_float32
 from skimage.transform import resize
 from subprocess import PIPE, Popen
+from tensorboard._vendor.tensorflow_serving.apis import predict_pb2
+from tensorboard._vendor.tensorflow_serving.apis import prediction_service_pb2_grpc
+import tensorflow as tf
 
 
 class VideoAnalyzer:
@@ -72,8 +76,13 @@ class VideoAnalyzer:
 
     # TODO: parameterize tf serving info
     self.headers = {'content-type': 'application/json'}
-    self.served_model_fn = 'http://localhost:8501/v1/models/mobilenet_v2:predict'
+    # self.host = 'localhost:8501'
+    self.host = '0.0.0.0:8500'
+    self.model_name = 'mobilenet_v2'
+    self.served_model_fn = 'http://' + self.host + '/v1/models/' + self.model_name + ':predict'
     self.signature_name = 'serving_default'
+    self.channel = grpc.insecure_channel(self.host)
+    self.stub = prediction_service_pb2_grpc.PredictionServiceStub(self.channel)
 
   # feed the tf.data input pipeline one image at a time and, while we're at
   # it, extract timestamp overlay crops for later mapping to strings.
@@ -164,6 +173,8 @@ class VideoAnalyzer:
                     self.crop_x:self.crop_x + self.crop_width]
 
     frame_array = self._preprocess_frame(frame_array)
+    frame_array =  np.expand_dims(frame_array, 0)
+
     data = json.dumps({'signature_name': self.signature_name,
                        'instances': [frame_array.tolist()]})
     response = requests.post(self.served_model_fn, data=data,
@@ -177,6 +188,35 @@ class VideoAnalyzer:
     # if probabilities are the only output, they will be mapped directly to
     # 'predictions'
     return response['predictions']
+
+  def _get_frame_probs_from_tf_serving_grpc(self, frame_string):
+    frame_array = np.fromstring(frame_string, dtype=np.uint8)
+    frame_array = np.reshape(frame_array, self.frame_shape)
+
+    if self.extract_timestamps:
+      self.timestamp_array[self.th * self.ti:self.th * self.ti] = \
+        frame_array[self.ty:self.ty + self.th,
+        self.tx:self.tx + self.tw]
+      self.ti += 1
+
+    if self.crop:
+      frame_array = frame_array[self.crop_y:self.crop_y + self.crop_height,
+                    self.crop_x:self.crop_x + self.crop_width]
+
+    frame_array = self._preprocess_frame(frame_array)
+    frame_array =  frame_array[np.newaxis, :]  # batchify single frame
+
+    request = predict_pb2.PredictRequest()
+    request.model_spec.name = self.model_name
+    request.model_spec.signature_name = self.signature_name
+    request.inputs['input'].CopyFrom(tf.make_tensor_proto(
+      frame_array, shape=frame_array.shape))
+
+    # returns a PredictResponse object
+    response = self.stub.Predict(request)
+
+    #return a list constructed from the RepeatedScalarContainer float_val
+    return response.outputs['probabilities'].float_val[:]
 
   def _get_frame_batch_probs_from_tf_serving(self, frame_batch_string):
     frame_batch_array = np.fromstring(frame_batch_string, dtype=np.uint8)
@@ -213,17 +253,18 @@ class VideoAnalyzer:
 
     with futures.ThreadPoolExecutor(max_workers=10) as executor:
       future_probs = [executor.submit(
-        self._get_frame_batch_probs_from_tf_serving, frame_batch)
-        for frame_batch in self._generate_frame_batches()]
+        self._get_frame_probs_from_tf_serving_grpc, frame)
+        for frame in self._generate_frames()]
 
       for future in futures.as_completed(future_probs):
         probs = future.result()
+        # if we are batching, our returned list will be 2D and we can count
+        # the number of rows using len()
+        self.prob_array[count:count + len(probs) if self.batch_size > 1 else 1] = probs
 
-        self.prob_array[count:count + len(probs)] = probs
+        count += len(probs) if self.batch_size > 1 else 1
 
-        count += len(probs)
-
-    logging.info('completed inference.')
+    logging.info('completed inference with count {} and num_probs {}.'.format(count, self.prob_array.shape))
 
     return count, self.prob_array, self.timestamp_array
 
