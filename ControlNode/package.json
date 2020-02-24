@@ -1,0 +1,22 @@
+{
+  "name": "snvacontrolnode",
+  "version": "1.0.0",
+  "description": "Control Node for SNVA 2.0 Architecture",
+  "main": "app.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VolpeUSDOT/SNVA-Control-Node.git"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/VolpeUSDOT/SNVA-Control-Node/issues"
+  },
+  "homepage": "https://github.com/VolpeUSDOT/SNVA-Control-Node#readme",
+  "dependencies": {
+    "ws": "^7.2.1",
+    "yargs": "^15.1.0"
+  }
+}
