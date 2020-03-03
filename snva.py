@@ -271,10 +271,10 @@ def main():
     logical_device_count - physical_device_count, device_type))
 
   # child processes will dequeue and enqueue device names
-  device_id_queue = Queue(logical_device_count)
-
-  for device_id in device_id_list:
-    device_id_queue.put(device_id)
+  # device_id_queue = Queue(logical_device_count)
+  #
+  # for device_id in device_id_list:
+  #   device_id_queue.put(device_id)
 
   class_name_map = IO.read_class_names(class_names_path)
 
@@ -316,19 +316,16 @@ def main():
 
     child_logger_thread_map[video_file_name] = child_logger_thread
 
-    gpu_memory_fraction = args.gpumemoryfraction / args.numprocessesperdevice
-
     child_process = Process(
       target=process_video, name=path.splitext(video_file_name)[0],
       args=(video_file_path, output_dir_path, class_name_map, model_input_size,
-            device_id_queue, return_code_queue, child_log_queue, log_level,
-            device_type, logical_device_count, physical_device_count,
-            ffmpeg_path, ffprobe_path, model_file_path, node_name_map,
-            gpu_memory_fraction, args.crop, args.cropwidth, args.cropheight,
+            return_code_queue, child_log_queue, log_level,
+            ffmpeg_path, ffprobe_path, args.crop, args.cropwidth, args.cropheight,
             args.cropx, args.cropy, args.extracttimestamps,
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
-            args.smoothprobs, args.smoothingfactor, args.binarizeprobs))
+            args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
+            args.writeinferencereports, args.writeeventreports))
 
     logging.debug('starting child process.')
 
@@ -398,6 +395,8 @@ def main():
 
   start = time()
 
+  sleep_duration = 1
+
   while len(video_file_paths) > 0:
     # block if logical_device_count + 1 child processes are active
     while len(return_code_queue_map) > logical_device_count:
@@ -405,6 +404,7 @@ def main():
       total_analysis_duration = close_completed_video_processors(
         total_num_processed_videos, total_num_processed_frames,
         total_analysis_duration)
+      sleep(sleep_duration)
 
     try:
       _ = main_interrupt_queue.get_nowait()
@@ -435,7 +435,6 @@ def main():
     # by now, the last device_id_queue_len videos are being processed,
     # so we can afford to poll for their completion infrequently
     if len(return_code_queue_map) > 0:
-      sleep_duration = 10
       logging.debug('sleeping for {} seconds'.format(sleep_duration))
       sleep(sleep_duration)
 
