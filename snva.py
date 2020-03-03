@@ -226,15 +226,6 @@ def main():
 
     video_file_paths -= file_paths_to_exclude
 
-  if args.ionodenamesfilepath is None \
-      or not path.isfile(args.ionodenamesfilepath):
-    io_node_names_path = path.join(models_dir_path, 'io_node_names.txt')
-  else:
-    io_node_names_path = args.ionodenamesfilepath
-  logging.debug('io tensors path set to: {}'.format(io_node_names_path))
-
-  node_name_map = IO.read_node_names(io_node_names_path)
-
   if args.classnamesfilepath is None \
       or not path.isfile(args.classnamesfilepath):
     class_names_path = path.join(models_root_dir_path, 'class_names.txt')
@@ -494,8 +485,6 @@ if __name__ == '__main__':
                       help='Path to the common root directory shared by video '
                            'file paths listed in the text file specified using '
                            '--inputpath.')
-  parser.add_argument('--ionodenamesfilepath', '-ifp',
-                      help='Path to the io tensor names text file.')
   parser.add_argument('--loglevel', '-ll', default='info',
                       help='Defaults to \'info\'. Pass \'debug\' or \'error\' '
                            'for verbose or minimal logging, respectively.')
