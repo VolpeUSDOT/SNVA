@@ -66,6 +66,7 @@ wws.on('connection', function connection(ws) {
         console.log('Received: %s', message);
         parseMessage(message, ws);
     });
+    ws.on('close', onSocketDisconnect(ws));
     initializeConnection(ws);
 });
 
@@ -203,6 +204,22 @@ function checkProcessorComplete(ws) {
     var ip = ws._socket.remoteAddress;
     if (processorNodes[ip].videos.length == 0)
         shutdownProcessor(ws);
+}
+
+// If a processor loses connection, clean up outstanding tasks
+function onSocketDisconnect(ws) {
+    return function(code, reason) {
+        var ip = ws._socket.remoteAddress;
+        console.log("WS at %s disconnected with Code:%s and Reason:%s", 
+            ip, code, reason);
+        processorNodes[ip].videos.forEach(function(video) {
+            toProcess.push(video);
+        });
+        delete processorNodes[ip];
+        if (processorNodes.length == 0)
+            // TODO Start up new processors, or end.
+            console.log("All processors disconnected.");
+    };    
 }
 
 function shutdownProcessor(ws) {
