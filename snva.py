@@ -435,9 +435,13 @@ async def main():
       if response['action'] == 'STATUS_REQUEST':
         logging.info('control node requested status request')
         pass
+      elif response['action'] == 'CEASE_REQUESTS':
+        logging.info('control node has no more videos to process')
+        break
       elif response['action'] == 'SHUTDOWN':
         logging.info('control node requested shutdown')
-        break
+        # TODO should a shutdown request trigger program kill?
+        pass
       elif response['action'] == 'PROCESS':
         video_file_path = response['path']
 

@@ -20,6 +20,7 @@ const actionTypes = {
     stat_req: "STATUS_REQUEST",
     shutdown: "SHUTDOWN",
     req_video: "REQUEST_VIDEO",
+    cease_req: "CEASE_REQUESTS",
     stat_rep: "STATUS_REPORT",
     complete: "COMPLETE",
     error: "ERROR"
@@ -157,8 +158,10 @@ function sendNextVideo(ws) {
     var nextVideoPath = nextVideo();
     // If there is no 'next video', work may stop
     if (nextVideoPath == null) {
-        checkProcessorComplete(ws);
-        // TODO Send a notification we are out of videos?
+        var requestMessage = {
+            action: actionTypes.cease_req,
+        };
+        sendRequest(requestMessage, ws);
         return;
     }
     var ip = ws._socket.remoteAddress;
