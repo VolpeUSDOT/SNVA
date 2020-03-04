@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const yargs = require('yargs');
 const fs = require('fs');
-const readline = require('readline');
+const VideoManager = require('./videoPathManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
@@ -9,8 +9,6 @@ const statusCheckFreq = 300000;
 const statusTimeoutLength = 600000;
 // List of processor nodes currently active
 var processorNodes = [];
-// List of file paths to process
-var toProcess = [];
 // Completed videos and their output files
 var completed = {};
 
@@ -46,12 +44,7 @@ const argv = yargs
 
 console.log("Provided with path file: %s", argv.paths);
 // Read paths from file into memory
-readline.createInterface({
-    input: fs.createReadStream(argv.paths),
-    terminal: false
-}).on('line', function(line) {
-    toProcess.push(line);
-});
+VideoManager.readInputPaths(argv.paths);
 
 // TODO Start Processor node
 // TODO Initialize Logging
@@ -67,6 +60,7 @@ wws.on('connection', function connection(ws) {
         console.log('Received: %s', message);
         parseMessage(message, ws);
     });
+    ws.on('close', onSocketDisconnect(ws));
     initializeConnection(ws);
 });
 
@@ -99,6 +93,22 @@ function initializeConnection(ws) {
     sendRequest({action: actionTypes.con_success}, ws);
 }
 
+// If a processor loses connection, clean up outstanding tasks
+function onSocketDisconnect(ws) {
+    return function(code, reason) {
+        var ip = ws._socket.remoteAddress;
+        console.log("WS at %s disconnected with Code:%s and Reason:%s", 
+            ip, code, reason);
+        processorNodes[ip].videos.forEach(function(video) {
+            VideoManager.addVideo(video);
+        });
+        delete processorNodes[ip];
+        if (processorNodes.length == 0)
+            // TODO Start up new processors, or end.
+            console.log("All processors disconnected.");
+    };    
+}
+
 function parseMessage(message, ws) {
     var msgObj;
     var ip = ws._socket.remoteAddress;
@@ -125,12 +135,38 @@ function parseMessage(message, ws) {
         case actionTypes.error:
             console.log("Error Reported");
             handleProcError(msgObj, ws);
-            //TODO Handle Error response
             break;
         default:
             console.log("Invalid Input");
             // TODO Determine how to handle bad input
     }
+}
+
+function sendNextVideo(ws) {
+    var nextVideoPath = VideoManager.nextVideo();
+    // If there is no 'next video', work may stop
+    if (nextVideoPath == null) {
+        var requestMessage = {
+            action: actionTypes.cease_req,
+        };
+        sendRequest(requestMessage, ws);
+        return;
+    }
+    var ip = ws._socket.remoteAddress;
+    processorNodes[ip].videos.push(nextVideoPath);
+    // TODO validate path is real?
+    var requestMessage = {
+        action: actionTypes.process,
+        path: nextVideoPath,
+    };
+    sendRequest(requestMessage, ws);
+}
+
+function processStatusReport(msg, ws) {
+    // TODO Handle status report
+    console.log("Status Reported: %s", msg);
+    var ip = ws._socket.remoteAddress;
+    delete processorNodes[ip].statusRequested;
 }
 
 function processTaskComplete(msgObj, ws) {
@@ -154,54 +190,8 @@ function processTaskComplete(msgObj, ws) {
     checkProcessorComplete(ws);
 }
 
-function sendNextVideo(ws) {
-    var nextVideoPath = nextVideo();
-    // If there is no 'next video', work may stop
-    if (nextVideoPath == null) {
-        var requestMessage = {
-            action: actionTypes.cease_req,
-        };
-        sendRequest(requestMessage, ws);
-        return;
-    }
-    var ip = ws._socket.remoteAddress;
-    processorNodes[ip].videos.push(nextVideoPath);
-    // TODO validate path is real?
-    var requestMessage = {
-        action: actionTypes.process,
-        path: nextVideoPath,
-    };
-    sendRequest(requestMessage, ws);
-}
-
-function handleProcError(errorMsg, ws) {
-    if (errorMsg.description != null)
-        console.log("An error occured: %s", errorMsg.description);
-    console.log("An error occured: Cause unknown");
-    // TODO determine potential errors/behavior in each case
-        // Video not found
-        // No analyzer found
-}
-
-function processStatusReport(msg, ws) {
-    // TODO Handle status report
-    console.log("Status Reported: %s", msg);
-    var ip = ws._socket.remoteAddress;
-    delete processorNodes[ip].statusRequested;
-}
-
-function requestStatus(ws) {
-    // TODO Determine if it is suffient to simply ping/pong here?
-    var msg = {
-        action: actionTypes.stat_req
-    };
-    sendRequest(msg, ws);
-    var ip = ws._socket.remoteAddress;
-    processorNodes[ip].statusRequested = new Date().getTime();
-}
-
 function checkProcessorComplete(ws) {
-    if (toProcess.length > 0)
+    if (!VideoManager.isComplete())
         return;
     var ip = ws._socket.remoteAddress;
     if (processorNodes[ip].videos.length == 0)
@@ -221,18 +211,30 @@ function shutdownProcessor(ws) {
 
 function shutdownControlNode() {
     var output = fs.openSync(argv.outputPath, "w");
-    //fs.writeFileSync("outputData.txt", JSON.stringify(completed), 'utf8');
     Object.keys(completed).forEach(e => fs.writeSync(output, e + ": " + completed[e] + "\n"));
     fs.closeSync(output);
     process.exit();
 }
 
-function sendRequest(msgObj, ws) {
-    ws.send(JSON.stringify(msgObj));
+function handleProcError(errorMsg, ws) {
+    if (errorMsg.description != null)
+        console.log("An error occured: %s", errorMsg.description);
+    console.log("An error occured: Cause unknown");
+    // TODO determine potential errors/behavior in each case
+        // Video not found
+        // No analyzer found
 }
 
-function nextVideo() {
-    if (toProcess.length > 0)
-        return toProcess.pop();
-    return null;
+function requestStatus(ws) {
+    // TODO Determine if it is suffient to simply ping/pong here?
+    var msg = {
+        action: actionTypes.stat_req
+    };
+    sendRequest(msg, ws);
+    var ip = ws._socket.remoteAddress;
+    processorNodes[ip].statusRequested = new Date().getTime();
+}
+
+function sendRequest(msgObj, ws) {
+    ws.send(JSON.stringify(msgObj));
 }
