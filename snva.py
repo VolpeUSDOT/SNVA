@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import json
 import logging
 from logging.handlers import QueueHandler, SocketHandler
 from multiprocessing import Process, Queue
@@ -12,6 +14,7 @@ from threading import Thread
 from time import sleep, time
 from utils.io import IO
 from utils.processor import process_video
+import websockets as ws
 
 path = os.path
 
@@ -64,27 +67,27 @@ def get_valid_num_processes_per_device(device_type):
   return list(range(1, os.cpu_count() + 1))
 
 
-def main():
+async def main():
   logging.info('entering snva {} main process'.format(snva_version_string))
 
-  total_num_video_to_process = None
+  # total_num_video_to_process = None
 
   def interrupt_handler(signal_number, _):
     logging.warning('Main process received interrupt signal '
                     '{}.'.format(signal_number))
     main_interrupt_queue.put_nowait('_')
 
-    if total_num_video_to_process is None \
-        or total_num_video_to_process == len(video_file_paths):
+    # if total_num_video_to_process is None \
+    #     or total_num_video_to_process == len(video_file_paths):
 
-      # Signal the logging thread to finish up
-      logging.debug('signaling logger thread to end service.')
+    # Signal the logging thread to finish up
+    logging.debug('signaling logger thread to end service.')
 
-      log_queue.put_nowait(None)
+    log_queue.put_nowait(None)
 
-      logger_thread.join()
+    logger_thread.join()
 
-      logging.shutdown()
+    logging.shutdown()
 
   signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -118,35 +121,35 @@ def main():
 
   logging.debug('FFPROBE path set to: {}'.format(ffprobe_path))
 
-  # TODO validate all video file paths in the provided text file if args.inputpath is a text file
-  if path.isdir(args.inputpath):
-    video_file_names = set(IO.read_video_file_names(args.inputpath))
-    video_file_paths = [path.join(args.inputpath, video_file_name)
-                        for video_file_name in video_file_names]
-  elif path.isfile(args.inputpath):
-    if args.inputpath[-3:] == 'txt':
-      if args.inputlistrootdirpath is None:
-        raise ValueError('--inputlistrootdirpath must be specified when using a'
-                         ' text file as the input.')
-      with open(args.inputpath, newline='') as input_file:
-        video_file_paths = []
-
-        for line in input_file.readlines():
-          line = line.rstrip()
-          video_file_path = line.lstrip(args.inputlistrootdirpath)
-          video_file_path = path.join('/media/root', video_file_path)
-
-          if path.isfile(video_file_path):
-            video_file_paths.append(video_file_path)
-          else:
-            logging.warning('The video file at host path {} could not be found '
-                            'at mapped path {} and will not be processed'.
-              format(line, video_file_path))
-    else:
-      video_file_paths = [args.inputpath]
-  else:
-    raise ValueError('The video file/folder specified at the path {} could '
-                     'not be found.'.format(args.inputpath))
+  # # TODO validate all video file paths in the provided text file if args.inputpath is a text file
+  # if path.isdir(args.inputpath):
+  #   video_file_names = set(IO.read_video_file_names(args.inputpath))
+  #   video_file_paths = [path.join(args.inputpath, video_file_name)
+  #                       for video_file_name in video_file_names]
+  # elif path.isfile(args.inputpath):
+  #   if args.inputpath[-3:] == 'txt':
+  #     if args.inputlistrootdirpath is None:
+  #       raise ValueError('--inputlistrootdirpath must be specified when using a'
+  #                        ' text file as the input.')
+  #     with open(args.inputpath, newline='') as input_file:
+  #       video_file_paths = []
+  #
+  #       for line in input_file.readlines():
+  #         line = line.rstrip()
+  #         video_file_path = line.lstrip(args.inputlistrootdirpath)
+  #         video_file_path = path.join('/media/root', video_file_path)
+  #
+  #         if path.isfile(video_file_path):
+  #           video_file_paths.append(video_file_path)
+  #         else:
+  #           logging.warning('The video file at host path {} could not be found '
+  #                           'at mapped path {} and will not be processed'.
+  #             format(line, video_file_path))
+  #   else:
+  #     video_file_paths = [args.inputpath]
+  # else:
+  #   raise ValueError('The video file/folder specified at the path {} could '
+  #                    'not be found.'.format(args.inputpath))
 
   models_root_dir_path = path.join(snva_home, args.modelsdirpath)
 
@@ -154,13 +157,13 @@ def main():
 
   logging.debug('models_dir_path set to {}'.format(models_dir_path))
 
-  model_file_path = path.join(models_dir_path, args.protobuffilename)
-
-  if not path.isfile(model_file_path):
-    raise ValueError('The model specified at the path {} could not be '
-                     'found.'.format(model_file_path))
-
-  logging.debug('model_file_path set to {}'.format(model_file_path))
+  # model_file_path = path.join(models_dir_path, args.protobuffilename)
+  #
+  # if not path.isfile(model_file_path):
+  #   raise ValueError('The model specified at the path {} could not be '
+  #                    'found.'.format(model_file_path))
+  #
+  # logging.debug('model_file_path set to {}'.format(model_file_path))
 
   model_input_size_file_path = path.join(models_dir_path, 'input_size.txt')
 
@@ -192,39 +195,39 @@ def main():
   if not path.isdir(output_dir_path):
     os.makedirs(output_dir_path)
 
-  if args.excludepreviouslyprocessed:
-    inference_report_dir_path = path.join(output_dir_path, 'inference_reports')
-
-    if args.writeinferencereports and path.isdir(inference_report_dir_path):
-      inference_report_file_names = os.listdir(inference_report_dir_path)
-      inference_report_file_names = [path.splitext(name)[0]
-                                     for name in inference_report_file_names]
-      print('previously generated inference reports: {}'.format(
-        inference_report_file_names))
-    else:
-      inference_report_file_names = None
-    event_report_dir_path = path.join(output_dir_path, 'event_reports')
-
-    if args.writeeventreports and path.isdir(event_report_dir_path):
-      event_report_file_names = os.listdir(event_report_dir_path)
-      event_report_file_names = [path.splitext(name)[0]
-                                 for name in event_report_file_names]
-      print('previously generated event reports: {}'.format(
-        event_report_file_names))
-    else:
-      event_report_file_names = None
-
-    file_paths_to_exclude = set()
-
-    for video_file_path in video_file_paths:
-      video_file_name = path.splitext(path.split(video_file_path)[1])[0]
-      if (event_report_file_names and video_file_name 
-      in event_report_file_names) \
-          or (inference_report_file_names and video_file_name 
-          in inference_report_file_names):
-        file_paths_to_exclude.add(video_file_path)
-
-    video_file_paths -= file_paths_to_exclude
+  # if args.excludepreviouslyprocessed:
+  #   inference_report_dir_path = path.join(output_dir_path, 'inference_reports')
+  #
+  #   if args.writeinferencereports and path.isdir(inference_report_dir_path):
+  #     inference_report_file_names = os.listdir(inference_report_dir_path)
+  #     inference_report_file_names = [path.splitext(name)[0]
+  #                                    for name in inference_report_file_names]
+  #     print('previously generated inference reports: {}'.format(
+  #       inference_report_file_names))
+  #   else:
+  #     inference_report_file_names = None
+  #   event_report_dir_path = path.join(output_dir_path, 'event_reports')
+  #
+  #   if args.writeeventreports and path.isdir(event_report_dir_path):
+  #     event_report_file_names = os.listdir(event_report_dir_path)
+  #     event_report_file_names = [path.splitext(name)[0]
+  #                                for name in event_report_file_names]
+  #     print('previously generated event reports: {}'.format(
+  #       event_report_file_names))
+  #   else:
+  #     event_report_file_names = None
+  #
+  #   file_paths_to_exclude = set()
+  #
+  #   for video_file_path in video_file_paths:
+  #     video_file_name = path.splitext(path.split(video_file_path)[1])[0]
+  #     if (event_report_file_names and video_file_name
+  #     in event_report_file_names) \
+  #         or (inference_report_file_names and video_file_name
+  #         in inference_report_file_names):
+  #       file_paths_to_exclude.add(video_file_path)
+  #
+  #   video_file_paths -= file_paths_to_exclude
 
   if args.classnamesfilepath is None \
       or not path.isfile(args.classnamesfilepath):
@@ -269,20 +272,20 @@ def main():
 
   class_name_map = IO.read_class_names(class_names_path)
 
-  logging.debug('loading model at path: {}'.format(model_file_path))
+  # logging.debug('loading model at path: {}'.format(model_file_path))
 
   return_code_queue_map = {}
   child_logger_thread_map = {}
   child_process_map = {}
 
-  total_num_video_to_process = len(video_file_paths)
+  # total_num_video_to_process = len(video_file_paths)
 
   total_num_processed_videos = 0
   total_num_processed_frames = 0
   total_analysis_duration = 0
 
-  logging.info('Processing {} videos using {}'.format(
-    total_num_video_to_process, args.modelname))
+  # logging.info('Processing {} videos using {}'.format(
+  #   total_num_video_to_process, args.modelname))
 
   def start_video_processor(video_file_path):
     # Before popping the next video off of the list and creating a process to
@@ -290,11 +293,9 @@ def main():
     # active. If not, Wait for a child process to release its semaphore
     # acquisition. If so, acquire the semaphore, pop the next video name,
     # create the next child process, and pass the semaphore to it
-    video_dir_path, video_file_name = path.split(video_file_path)
-
     return_code_queue = Queue()
 
-    return_code_queue_map[video_file_name] = return_code_queue
+    return_code_queue_map[video_file_path] = return_code_queue
 
     logging.debug('creating new child process.')
 
@@ -305,10 +306,11 @@ def main():
 
     child_logger_thread.start()
 
-    child_logger_thread_map[video_file_name] = child_logger_thread
+    child_logger_thread_map[video_file_path] = child_logger_thread
 
     child_process = Process(
-      target=process_video, name=path.splitext(video_file_name)[0],
+      target=process_video,
+      name=path.splitext(path.split(video_file_path)[1])[0],
       args=(video_file_path, output_dir_path, class_name_map, model_input_size,
             return_code_queue, child_log_queue, log_level,
             ffmpeg_path, ffprobe_path, args.crop, args.cropwidth, args.cropheight,
@@ -322,13 +324,13 @@ def main():
 
     child_process.start()
 
-    child_process_map[video_file_name] = child_process
+    child_process_map[video_file_path] = child_process
 
-  def close_completed_video_processors(
+  async def close_completed_video_processors(
       total_num_processed_videos, total_num_processed_frames,
-      total_analysis_duration):
-    for video_file_name in list(return_code_queue_map.keys()):
-      return_code_queue = return_code_queue_map[video_file_name]
+      total_analysis_duration, websocket_conn):
+    for video_file_path in list(return_code_queue_map.keys()):
+      return_code_queue = return_code_queue_map[video_file_path]
 
       try:
         return_code_map = return_code_queue.get_nowait()
@@ -336,7 +338,7 @@ def main():
         return_code = return_code_map['return_code']
         return_value = return_code_map['return_value']
 
-        child_process = child_process_map[video_file_name]
+        child_process = child_process_map[video_file_path]
 
         logging.debug(
           'child process {} returned with exit code {} and exit value '
@@ -347,7 +349,15 @@ def main():
           total_num_processed_frames += return_value
           total_analysis_duration += return_code_map['analysis_duration']
 
-        child_logger_thread = child_logger_thread_map[video_file_name]
+          logging.info('notifying control node of completion')
+
+          complete_request = json.dumps({
+            'action': 'COMPLETE',
+            'video': video_file_path,
+            'output': ''})
+          await websocket_conn.send(complete_request)
+
+        child_logger_thread = child_logger_thread_map[video_file_path]
         
         logging.debug('joining logger thread for child process {}'.format(
           child_process.pid))
@@ -375,9 +385,9 @@ def main():
         
         return_code_queue.close()
         
-        return_code_queue_map.pop(video_file_name)
-        child_logger_thread_map.pop(video_file_name)
-        child_process_map.pop(video_file_name)
+        return_code_queue_map.pop(video_file_path)
+        child_logger_thread_map.pop(video_file_path)
+        child_process_map.pop(video_file_path)
       except Empty:
         pass
 
@@ -388,59 +398,85 @@ def main():
 
   sleep_duration = 1
 
-  while len(video_file_paths) > 0:
-    # block if logical_device_count + 1 child processes are active
-    while len(return_code_queue_map) > logical_device_count:
+  async with ws.connect('ws://localhost:8080/registerProcess') as conn:
+    response = await conn.recv()
+    response = json.loads(response)
+    logging.info(response)
+
+    if response['action'] != 'CONNECTION_SUCCESS':
+      raise ConnectionError(
+        'control node connection failed with response: {}'.format(response))
+
+    while True:
+      # block if logical_device_count + 1 child processes are active
+      while len(return_code_queue_map) > logical_device_count:
+        total_num_processed_videos, total_num_processed_frames, \
+        total_analysis_duration = await close_completed_video_processors(
+          total_num_processed_videos, total_num_processed_frames,
+          total_analysis_duration, conn)
+        sleep(sleep_duration)
+
+      try:  # todo poll for termination signal from control node
+        _ = main_interrupt_queue.get_nowait()
+        logging.debug(
+          'breaking out of child process generation following interrupt signal')
+        break
+      except:
+        pass
+
+      logging.info('requesting video')
+      request = json.dumps({'action': 'REQUEST_VIDEO'})
+      await conn.send(request)
+
+      logging.info('reading response')
+      response = await conn.recv()
+      response = json.loads(response)
+
+      if response['action'] == 'STATUS_REQUEST':
+        logging.info('control node requested status request')
+        pass
+      elif response['action'] == 'SHUTDOWN':
+        logging.info('control node requested shutdown')
+        break
+      elif response['action'] == 'PROCESS':
+        video_file_path = response['path']
+
+        try:
+          start_video_processor(video_file_path)
+        except Exception as e:
+          logging.error('an unknown error has occured while processing {}'.format(video_file_path))
+          logging.error(e)
+      else:
+        raise ConnectionError(
+          'control node replied with unexpected response: {}'.format(response))
+    logging.debug('{} child processes remain enqueued'.format(len(return_code_queue_map)))
+    while len(return_code_queue_map) > 0:
+      logging.debug('waiting for the final {} child processes to '
+                    'terminate'.format(len(return_code_queue_map)))
+
       total_num_processed_videos, total_num_processed_frames, \
-      total_analysis_duration = close_completed_video_processors(
+      total_analysis_duration = await close_completed_video_processors(
         total_num_processed_videos, total_num_processed_frames,
-        total_analysis_duration)
-      sleep(sleep_duration)
+        total_analysis_duration, conn)
 
-    try:
-      _ = main_interrupt_queue.get_nowait()
-      logging.debug(
-        'breaking out of child process generation following interrupt signal')
-      break
-    except:
-      pass
+      # by now, the last device_id_queue_len videos are being processed,
+      # so we can afford to poll for their completion infrequently
+      if len(return_code_queue_map) > 0:
+        logging.debug('sleeping for {} seconds'.format(sleep_duration))
+        sleep(sleep_duration)
 
-    video_file_path = video_file_paths.pop()
+    end = time() - start
 
-    try:
-      start_video_processor(video_file_path)
-    except Exception as e:
-      logging.error('an unknown error has occured while processing '
-                    '{}'.format(video_file_path))
-      logging.error(e)
+    processing_duration = IO.get_processing_duration(
+      end, 'snva {} processed a total of {} videos and {} frames in:'.format(
+        snva_version_string, total_num_processed_videos,
+        total_num_processed_frames))
+    logging.info(processing_duration)
 
-  while len(return_code_queue_map) > 0:
-    logging.debug('waiting for the final {} child processes to '
-                  'terminate'.format(len(return_code_queue_map)))
+    logging.info('Video analysis alone spanned a cumulative {:.02f} '
+                 'seconds'.format(total_analysis_duration))
 
-    total_num_processed_videos, total_num_processed_frames, \
-    total_analysis_duration = close_completed_video_processors(
-      total_num_processed_videos, total_num_processed_frames,
-      total_analysis_duration)
-
-    # by now, the last device_id_queue_len videos are being processed,
-    # so we can afford to poll for their completion infrequently
-    if len(return_code_queue_map) > 0:
-      logging.debug('sleeping for {} seconds'.format(sleep_duration))
-      sleep(sleep_duration)
-
-  end = time() - start
-
-  processing_duration = IO.get_processing_duration(
-    end, 'snva {} processed a total of {} videos and {} frames in:'.format(
-      snva_version_string, total_num_processed_videos,
-      total_num_processed_frames))
-  logging.info(processing_duration)
-
-  logging.info('Video analysis alone spanned a cumulative {:.02f} '
-               'seconds'.format(total_analysis_duration))
-
-  logging.info('exiting snva {} main process'.format(snva_version_string))
+    logging.info('exiting snva {} main process'.format(snva_version_string))
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
@@ -468,10 +504,10 @@ if __name__ == '__main__':
   parser.add_argument('--deinterlace', '-d', action='store_true',
                       help='Apply de-interlacing to video frames during '
                            'extraction.')
-  parser.add_argument('--excludepreviouslyprocessed', '-epp',
-                      action='store_true',
-                      help='Skip processing of videos for which reports '
-                           'already exist in outputpath.')
+  # parser.add_argument('--excludepreviouslyprocessed', '-epp',
+  #                     action='store_true',
+  #                     help='Skip processing of videos for which reports '
+  #                          'already exist in outputpath.')
   parser.add_argument('--extracttimestamps', '-et', action='store_true',
                       help='Crop timestamps out of video frames and map them to'
                            ' strings for inclusion in the output CSV.')
@@ -622,7 +658,7 @@ if __name__ == '__main__':
   main_interrupt_queue = Queue()
 
   try:
-    main()
+    asyncio.get_event_loop().run_until_complete(main())
   except Exception as e:
     logging.error(e)
 
