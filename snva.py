@@ -351,7 +351,7 @@ async def main():
 
   sleep_duration = 1
 
-  async with ws.connect('ws://localhost:8080/registerProcess') as conn:
+  async with ws.connect('ws://' + args.controlnodehost + '/registerProcess') as conn:
     response = await conn.recv()
     response = json.loads(response)
     logging.info(response)
@@ -446,6 +446,9 @@ if __name__ == '__main__':
                            ' two 0.5 values, both will be rounded up to 1.0')
   parser.add_argument('--classnamesfilepath', '-cnfp',
                       help='Path to the class ids/names text file.')
+  parser.add_argument('--controlnodehost', '-cnh', default='localhost:8080',
+                      help='control node colon-separated host name or IP and '
+                           'port')
   parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
   parser.add_argument('--crop', '-c', action='store_true',
                       help='Crop video frames to [offsetheight, offsetwidth, '
