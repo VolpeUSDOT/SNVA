@@ -64,13 +64,14 @@ def should_extract_timestamps(
   
   
 def process_video(
-    video_file_path, output_dir_path, class_name_map, model_input_size,
+    video_file_path, output_dir_path, class_name_map, model_name,
+    model_signature_name, model_server_host, model_input_size,
     return_code_queue, log_queue, log_level, ffmpeg_path, ffprobe_path,
     do_crop, crop_width, crop_height, crop_x, crop_y, do_extract_timestamps,
     timestamp_max_width, timestamp_height, timestamp_x, timestamp_y,
     do_deinterlace, num_channels, batch_size, do_smooth_probs,
     smoothing_factor, do_binarize_probs, do_write_inference_reports,
-    do_write_event_reports):
+    do_write_event_reports, max_threads):
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
@@ -170,11 +171,11 @@ def process_video(
 
   #TODO parameterize tf serving values
   analyzer = VideoAnalyzer(
-    frame_shape, num_frames, len(class_name_map), batch_size, model_input_size,
-    5, do_extract_timestamps, timestamp_x,
-    timestamp_y, timestamp_height, timestamp_max_width, do_crop, crop_x, crop_y,
-    crop_width, crop_height, ffmpeg_command, 'mobilenet_v2', 'serving_default',
-    '0.0.0.0:8500')
+    frame_shape, num_frames, len(class_name_map), batch_size, model_name,
+    model_signature_name, model_server_host, model_input_size,
+    do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
+    timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
+    ffmpeg_command, max_threads)
 
   try:
     start = time()

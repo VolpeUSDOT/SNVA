@@ -14,11 +14,11 @@ import tensorflow as tf
 
 class VideoAnalyzer:
   def __init__(
-      self, frame_shape, num_frames, num_classes, batch_size, model_input_size,
-      max_num_threads, should_extract_timestamps, timestamp_x, timestamp_y,
-      timestamp_height, timestamp_max_width, should_crop, crop_x, crop_y,
-      crop_width, crop_height, ffmpeg_command, model_name, signature_name,
-      host):
+      self, frame_shape, num_frames, num_classes, batch_size, model_name,
+      model_signature_name, model_server_host, model_input_size,
+      should_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
+      timestamp_max_width, should_crop, crop_x, crop_y, crop_width,
+      crop_height, ffmpeg_command, max_num_threads):
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.should_crop = should_crop
@@ -54,8 +54,9 @@ class VideoAnalyzer:
     self.num_frames_processed = 0
 
     self.model_name = model_name
-    self.signature_name = signature_name
-    self.service_stub = PredictionServiceStub(insecure_channel(host))
+    self.signature_name = model_signature_name
+    self.service_stub = PredictionServiceStub(
+      insecure_channel(model_server_host))
 
     logging.debug('opening video frame pipe')
 

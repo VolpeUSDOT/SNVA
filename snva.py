@@ -195,40 +195,6 @@ async def main():
   if not path.isdir(output_dir_path):
     os.makedirs(output_dir_path)
 
-  # if args.excludepreviouslyprocessed:
-  #   inference_report_dir_path = path.join(output_dir_path, 'inference_reports')
-  #
-  #   if args.writeinferencereports and path.isdir(inference_report_dir_path):
-  #     inference_report_file_names = os.listdir(inference_report_dir_path)
-  #     inference_report_file_names = [path.splitext(name)[0]
-  #                                    for name in inference_report_file_names]
-  #     print('previously generated inference reports: {}'.format(
-  #       inference_report_file_names))
-  #   else:
-  #     inference_report_file_names = None
-  #   event_report_dir_path = path.join(output_dir_path, 'event_reports')
-  #
-  #   if args.writeeventreports and path.isdir(event_report_dir_path):
-  #     event_report_file_names = os.listdir(event_report_dir_path)
-  #     event_report_file_names = [path.splitext(name)[0]
-  #                                for name in event_report_file_names]
-  #     print('previously generated event reports: {}'.format(
-  #       event_report_file_names))
-  #   else:
-  #     event_report_file_names = None
-  #
-  #   file_paths_to_exclude = set()
-  #
-  #   for video_file_path in video_file_paths:
-  #     video_file_name = path.splitext(path.split(video_file_path)[1])[0]
-  #     if (event_report_file_names and video_file_name
-  #     in event_report_file_names) \
-  #         or (inference_report_file_names and video_file_name
-  #         in inference_report_file_names):
-  #       file_paths_to_exclude.add(video_file_path)
-  #
-  #   video_file_paths -= file_paths_to_exclude
-
   if args.classnamesfilepath is None \
       or not path.isfile(args.classnamesfilepath):
     class_names_path = path.join(models_root_dir_path, 'class_names.txt')
@@ -264,28 +230,15 @@ async def main():
   logging.info('Generated an additional {} logical {} device(s).'.format(
     logical_device_count - physical_device_count, device_type))
 
-  # child processes will dequeue and enqueue device names
-  # device_id_queue = Queue(logical_device_count)
-  #
-  # for device_id in device_id_list:
-  #   device_id_queue.put(device_id)
-
   class_name_map = IO.read_class_names(class_names_path)
-
-  # logging.debug('loading model at path: {}'.format(model_file_path))
 
   return_code_queue_map = {}
   child_logger_thread_map = {}
   child_process_map = {}
 
-  # total_num_video_to_process = len(video_file_paths)
-
   total_num_processed_videos = 0
   total_num_processed_frames = 0
   total_analysis_duration = 0
-
-  # logging.info('Processing {} videos using {}'.format(
-  #   total_num_video_to_process, args.modelname))
 
   def start_video_processor(video_file_path):
     # Before popping the next video off of the list and creating a process to
@@ -311,14 +264,14 @@ async def main():
     child_process = Process(
       target=process_video,
       name=path.splitext(path.split(video_file_path)[1])[0],
-      args=(video_file_path, output_dir_path, class_name_map, model_input_size,
+      args=(video_file_path, output_dir_path, class_name_map, args.modelname, args.modelsignaturename, args.modelserverhost,model_input_size,
             return_code_queue, child_log_queue, log_level,
             ffmpeg_path, ffprobe_path, args.crop, args.cropwidth, args.cropheight,
             args.cropx, args.cropy, args.extracttimestamps,
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
             args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-            args.writeinferencereports, args.writeeventreports))
+            args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads))
 
     logging.debug('starting child process.')
 
@@ -535,11 +488,22 @@ if __name__ == '__main__':
                       help='Path to the directory where log files are stored.')
   parser.add_argument('--logmaxbytes', '-lmb', type=int, default=2**23,
                       help='File size in bytes at which the log rolls over.')
+  parser.add_argument('--maxanalyzerthreads', '-mat', type=int,
+                      default=4,
+                      help='Maximum number of threads to assign to each video '
+                           'processor')
   parser.add_argument('--modelsdirpath', '-mdp',
                       default='models/work_zone_scene_detection',
                       help='Path to the parent directory of model directories.')
-  parser.add_argument('--modelname', '-mn', default='inception_v3',
+  parser.add_argument('--modelname', '-mn', default='mobilenet_v2',
                       help='The square input dimensions of the neural net.')
+  parser.add_argument('--modelsignaturename', '-msn', default='serving_default',
+                      help='Name of the signature that specifies what model is '
+                           'being served, and that model\'s input and output '
+                           'tensors')
+  parser.add_argument('--modelserverhost', '-msh', default='0.0.0.0:8500',
+                      help='tensorflow serving colon-separated host name or IP '
+                           'and port')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
                       help='The fourth dimension of image batches.')
   parser.add_argument('--numprocessesperdevice', '-nppd', type=int, default=1,
