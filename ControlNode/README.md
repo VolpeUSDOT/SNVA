@@ -25,3 +25,9 @@ node app.js -p /path/to/list/of/videos.txt
 The list of videos should contain a set of paths of videos to process separated by newlines.
 
 Once the Control Node has started, a WebSocket connection may be opened by a processor node at path "/registerProcess".  Once a processor is registered, the control node will begin to issue requests to process videos.  Once the provided input list is exhausted, the control node will issue shutdown commands to all processors and stop.
+
+
+Flag | Short Flag | Properties | Description
+:------:|:---------------:|:---------------------:|:-----------:
+--paths|-p|type=string, default='./videopaths.txt'|Text File containing a list of video paths separated by newlines
+--nodes|-n|type=string, default='./nodes.json| JSON file containing a list of nodes to use as analyzers or processors. Should be an array of objects formatted as: {"node":"nodeLocation", "gpuEnabled":"true\|false"}

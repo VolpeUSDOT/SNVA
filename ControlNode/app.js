@@ -9,8 +9,14 @@ const statusCheckFreq = 300000;
 const statusTimeoutLength = 600000;
 // List of processor nodes currently active
 var processorNodes = [];
+// List of analyzer (tfserving) nodes
+var analyzerNodes = [];
 // Completed videos and their output files
 var completed = {};
+//TODO Make these cl params
+var numAnalyzer = 2;
+var procPerAnalyzer = -1;
+
 
 const actionTypes = {
     con_success: "CONNECTION_SUCCESS",
@@ -38,6 +44,12 @@ const argv = yargs
                     default: './outputList.txt',
                     type: 'string'
                 })
+    .option('nodes', {
+                alias: 'n',
+                description: 'JSON File containing a list of nodes to use for analysis and processing',
+                default: './nodes.json',
+                type: 'string'
+            })
     .help()
     .alias('help', 'h')
     .argv;
@@ -45,6 +57,25 @@ const argv = yargs
 console.log("Provided with path file: %s", argv.paths);
 // Read paths from file into memory
 VideoManager.readInputPaths(argv.paths);
+
+var rawNodes = fs.readFileSync(argv.nodes);
+var nodeList = JSON.parse(rawNodes);
+
+var gpuNodes = nodeList.filter(function(n) { return n.gpuEnabled == true;});
+var cpuNodes = nodeList.filter(function(n) { return n.gpuEnabled != true;});
+
+if (numAnalyzer >= nodeList.length) {
+    console.log("Insufficient nodes provided to create %d analyzer nodes", numAnalyzer);
+    process.exit();
+}
+
+// Start analyzer nodes
+for (var i=0;i<numAnalyzer;i++) {
+    var node = gpuNodes.pop();
+    if (node === undefined)
+        node = cpuNodes.pop();
+    startAnalyzer(node.node);
+}
 
 // TODO Start Processor node
 // TODO Initialize Logging
@@ -79,6 +110,15 @@ const statusInterval = setInterval(function checkStatus() {
     }
 }, statusCheckFreq);
 
+function startAnalyzer(node) {
+    // TODO Actually start an analyzer node via docker
+    var analyzerInfo = {
+        path: node,
+        numVideos: 0
+    };
+    analyzerNodes.push(analyzerInfo);
+}
+
 function initializeConnection(ws) {
     var ip = ws._socket.remoteAddress;
     var timestamp = new Date().getTime();
@@ -100,7 +140,7 @@ function onSocketDisconnect(ws) {
         console.log("WS at %s disconnected with Code:%s and Reason:%s", 
             ip, code, reason);
         processorNodes[ip].videos.forEach(function(video) {
-            VideoManager.addVideo(video);
+            VideoManager.addVideo(video.path);
         });
         delete processorNodes[ip];
         if (processorNodes.length == 0)
@@ -145,19 +185,32 @@ function parseMessage(message, ws) {
 function sendNextVideo(ws) {
     var nextVideoPath = VideoManager.nextVideo();
     // If there is no 'next video', work may stop
+    var requestMessage;
     if (nextVideoPath == null) {
-        var requestMessage = {
+        requestMessage = {
             action: actionTypes.cease_req,
         };
         sendRequest(requestMessage, ws);
         return;
     }
+    var analyzer = getBalancedAnalyzer();
+    var analyzerPath = "";
+    if (analyzer != null) {
+        analyzerPath = analyzer.path;
+        analyzer.numVideos++;
+    }
+
     var ip = ws._socket.remoteAddress;
-    processorNodes[ip].videos.push(nextVideoPath);
-    // TODO validate path is real?
-    var requestMessage = {
-        action: actionTypes.process,
+    var videoInfo = {
         path: nextVideoPath,
+        analyzer: analyzerPath
+    };
+    processorNodes[ip].videos.push(videoInfo);
+    // TODO validate path is real?
+    requestMessage = {
+        action: actionTypes.process,
+        analyzer: analyzer.path,
+        path: nextVideoPath
     };
     sendRequest(requestMessage, ws);
 }
@@ -176,11 +229,19 @@ function processTaskComplete(msgObj, ws) {
         // TODO Handle malformed input
         return;
     }
-    var index = processorNodes[ip].videos.indexOf(video);
+    var index = processorNodes[ip].videos.findIndex((videoItem) => videoItem.path == video);
     if (index == -1) {
         // Video path not assigned to this ws
         // TODO Handle malformed input
         return;
+    }
+    var analyzerPath = processorNodes[ip].videos[index].analyzer;
+    // Decrement our video counter
+    for (var analyzer of analyzerNodes) {
+        if (analyzer.path == analyzerPath) {
+            analyzer.numVideos--;
+            break;
+        }
     }
     processorNodes[ip].videos.splice(index, 1);
     var outputPath = msgObj.output;
@@ -237,4 +298,16 @@ function requestStatus(ws) {
 
 function sendRequest(msgObj, ws) {
     ws.send(JSON.stringify(msgObj));
+}
+
+// Return the analyzer node with the fewest videos assigned
+function getBalancedAnalyzer() {
+    if (analyzerNodes.length == 0)
+        return null;
+    var min = analyzerNodes[0];
+    analyzerNodes.forEach(function(a) {
+        if (a.numVideos < min.numVideos)
+            min = a;
+    });
+    return min;
 }
