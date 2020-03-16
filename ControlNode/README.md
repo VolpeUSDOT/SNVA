@@ -31,3 +31,4 @@ Flag | Short Flag | Properties | Description
 :------:|:---------------:|:---------------------:|:-----------:
 --paths|-p|type=string, default='./videopaths.txt'|Text File containing a list of video paths separated by newlines
 --nodes|-n|type=string, default='./nodes.json| JSON file containing a list of nodes to use as analyzers or processors. Should be an array of objects formatted as: {"node":"nodeLocation", "gpuEnabled":"true\|false"}
+--analyzerCount|-a|type=int, default=2|Number of analyzer nodes to generate

@@ -50,6 +50,12 @@ const argv = yargs
                 default: './nodes.json',
                 type: 'string'
             })
+    .option('analyzerCount', {
+                alias: 'a',
+                description: 'Number of analyzer nodes to start.  Will prioritize GPU enabled nodes.',
+                default: 2,
+                type: 'int'
+            })
     .help()
     .alias('help', 'h')
     .argv;
@@ -57,6 +63,9 @@ const argv = yargs
 console.log("Provided with path file: %s", argv.paths);
 // Read paths from file into memory
 VideoManager.readInputPaths(argv.paths);
+
+numAnalyzer = argv.analyzerCount;
+console.log(numAnalyzer);
 
 var rawNodes = fs.readFileSync(argv.nodes);
 var nodeList = JSON.parse(rawNodes);
