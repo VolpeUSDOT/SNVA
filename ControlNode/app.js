@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const yargs = require('yargs');
 const fs = require('fs');
+const path = require('path');
 const VideoManager = require('./videoPathManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
@@ -13,8 +14,9 @@ var processorNodes = [];
 var analyzerNodes = [];
 // Completed videos and their output files
 var completed = {};
-//TODO Make these cl params
+// Number of analyzer nodes to create
 var numAnalyzer = 2;
+// Number of processor ndoes
 var procPerAnalyzer = -1;
 
 
@@ -58,6 +60,12 @@ const argv = yargs
                 default: 2,
                 type: 'int'
             })
+    .option('logDir', {
+                alias: 'l',
+                description: 'Log directory. If run on a distributed environment, this should be a network location accessible by all nodes',
+                default: './logs',
+                type: 'string'
+            })
     .help()
     .alias('help', 'h')
     .argv;
@@ -85,6 +93,20 @@ for (var i=0;i<numAnalyzer;i++) {
     if (node === undefined)
         node = cpuNodes.pop();
     startAnalyzer(node.node);
+}
+
+// Create processors
+var remaining = gpuNodes.concat(cpuNodes);
+var numToCreate;
+if (procPerAnalyzer == -1)
+    numToCreate = remaining.length;
+else
+    numToCreate = numAnalyzer * procPerAnalyzer;
+for (var i=0;i<numToCreate;i++) {
+    var node = remaining.pop();
+    if (node == null)
+        return;
+    startProcessor(node.node);
 }
 
 // TODO Start Processor node
@@ -127,6 +149,14 @@ function startAnalyzer(node) {
         numVideos: 0
     };
     analyzerNodes.push(analyzerInfo);
+}
+
+function startProcessor(node) {
+    var logDir = argv.logDir + "/" + node;
+    logDir = path.normalize(logDir);
+    if (!fs.existsSync(logDir))
+        fs.mkdirSync(logDir, {recursive: true});
+    // TODO Start processor in docker, passing logDir as arg
 }
 
 function initializeConnection(ws) {
