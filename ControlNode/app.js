@@ -30,6 +30,8 @@ const actionTypes = {
     error: "ERROR"
 };
 
+console.log("Starting...");
+
 // Configure command line arguments
 const argv = yargs
     .option('paths', {
@@ -65,7 +67,6 @@ console.log("Provided with path file: %s", argv.paths);
 VideoManager.readInputPaths(argv.paths);
 
 numAnalyzer = argv.analyzerCount;
-console.log(numAnalyzer);
 
 var rawNodes = fs.readFileSync(argv.nodes);
 var nodeList = JSON.parse(rawNodes);

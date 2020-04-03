@@ -1,0 +1,14 @@
+[
+	{
+		"node":"dummyNodeLocation",
+		"gpuEnabled": false
+	},
+	{
+		"node":"dummyGpuNodeLocation",
+		"gpuEnabled": true
+	},
+	{
+		"node":"dummyGpuNodeLocation2",
+		"gpuEnabled": true
+	}
+]
