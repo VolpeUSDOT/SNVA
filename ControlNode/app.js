@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const yargs = require('yargs');
 const fs = require('fs');
 const path = require('path');
+const winston = require('winston');
 const VideoManager = require('./videoPathManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
@@ -31,8 +32,6 @@ const actionTypes = {
     complete: "COMPLETE",
     error: "ERROR"
 };
-
-console.log("Starting...");
 
 // Configure command line arguments
 const argv = yargs
@@ -70,7 +69,29 @@ const argv = yargs
     .alias('help', 'h')
     .argv;
 
-console.log("Provided with path file: %s", argv.paths);
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.timestamp({
+          format: 'YYYY-MM-DD hh:mm:ss A ZZ'
+        }),
+        winston.format.json()
+      ),
+    defaultMeta: { service: 'user-service' },
+    transports: [
+        //
+        // - Write all logs with level `error` and below to `error.log`
+        // - Write all logs with level `info` and below to `combined.log`
+        //
+        new winston.transports.File({ filename: argv.logDir + '/error.log', level: 'error'}),
+        new winston.transports.File({ filename: argv.logDir + '/combined.log'})
+    ]
+    });
+
+logger.info("Starting control node...");
+
+logger.info("Provided with path file: " + argv.paths);
+logger.info("Provided with node file: " + argv.nodes);
 // Read paths from file into memory
 VideoManager.readInputPaths(argv.paths);
 
@@ -83,7 +104,7 @@ var gpuNodes = nodeList.filter(function(n) { return n.gpuEnabled == true;});
 var cpuNodes = nodeList.filter(function(n) { return n.gpuEnabled != true;});
 
 if (numAnalyzer >= nodeList.length) {
-    console.log("Insufficient nodes provided to create %d analyzer nodes", numAnalyzer);
+    logger.error("Insufficient nodes provided to create %d analyzer nodes", numAnalyzer);
     process.exit();
 }
 
@@ -120,7 +141,7 @@ const wws = new WebSocket.Server({
 
 wws.on('connection', function connection(ws) {
     ws.on('message', function incoming(message) {
-        console.log('Received: %s', message);
+        logger.info('Received: %s', message);
         parseMessage(message, ws);
     });
     ws.on('close', onSocketDisconnect(ws));
@@ -128,13 +149,12 @@ wws.on('connection', function connection(ws) {
 });
 
 const statusInterval = setInterval(function checkStatus() {
-    console.log("Status check");
     for (var ip in processorNodes) {
         var node = processorNodes[ip];
         if (node.statusRequested) {
             if (new Date().getTime() - node.statusRequested > statusTimeoutLength) {
                 // TODO Handle a dead connection: kill old, start new, add in-progress video back into queue
-                console.log("Connection with %s lost", ip);
+                logger.debug("Connection with %s lost", ip);
             }
         } else {
             requestStatus(node.websocket);
@@ -162,7 +182,7 @@ function startProcessor(node) {
 function initializeConnection(ws) {
     var ip = ws._socket.remoteAddress;
     var timestamp = new Date().getTime();
-    console.log("Connection opened with address: %s", ip);
+    logger.info("Connection opened with address: %s", ip);
     var socketConnection = {
         websocket: ws,
         started: timestamp,
@@ -177,7 +197,7 @@ function initializeConnection(ws) {
 function onSocketDisconnect(ws) {
     return function(code, reason) {
         var ip = ws._socket.remoteAddress;
-        console.log("WS at %s disconnected with Code:%s and Reason:%s", 
+        logger.debug("WS at %s disconnected with Code:%s and Reason:%s", 
             ip, code, reason);
         processorNodes[ip].videos.forEach(function(video) {
             VideoManager.addVideo(video.path);
@@ -185,7 +205,7 @@ function onSocketDisconnect(ws) {
         delete processorNodes[ip];
         if (processorNodes.length == 0)
             // TODO Start up new processors, or end.
-            console.log("All processors disconnected.");
+            logger.debug("All processors disconnected.");
     };    
 }
 
@@ -196,28 +216,28 @@ function parseMessage(message, ws) {
     try {
         msgObj = JSON.parse(message);
     } catch (e) {
-        console.log("Invalid Input");
+        logger.debug("Invalid Input");
         return;
     }
     switch(msgObj.action) {
         case actionTypes.req_video:
-            console.log("Video requested");
+            logger.info("Video requested");
             sendNextVideo(ws);
             break;
         case actionTypes.stat_rep:
-            console.log("Status Reported");
+            logger.info("Status Reported");
             processStatusReport(msgObj, ws);
             break;
         case actionTypes.complete:
-            console.log("Task Complete");
+            logger.info("Task Complete");
             processTaskComplete(msgObj, ws);
             break;
         case actionTypes.error:
-            console.log("Error Reported");
+            logger.info("Error Reported");
             handleProcError(msgObj, ws);
             break;
         default:
-            console.log("Invalid Input");
+            logger.info("Invalid Input");
             // TODO Determine how to handle bad input
     }
 }
@@ -257,7 +277,7 @@ function sendNextVideo(ws) {
 
 function processStatusReport(msg, ws) {
     // TODO Handle status report
-    console.log("Status Reported: %s", msg);
+    logger.info("Status Reported: %s", msg);
     var ip = ws._socket.remoteAddress;
     delete processorNodes[ip].statusRequested;
 }
@@ -319,8 +339,8 @@ function shutdownControlNode() {
 
 function handleProcError(errorMsg, ws) {
     if (errorMsg.description != null)
-        console.log("An error occured: %s", errorMsg.description);
-    console.log("An error occured: Cause unknown");
+        logger.debug("An error occured: %s", errorMsg.description);
+    logger.debug("An error occured: Cause unknown");
     // TODO determine potential errors/behavior in each case
         // Video not found
         // No analyzer found

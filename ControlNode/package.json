@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/VolpeUSDOT/SNVA-Control-Node#readme",
   "dependencies": {
+    "winston": "^3.2.1",
     "ws": "^7.2.1",
     "yargs": "^15.1.0"
   }
