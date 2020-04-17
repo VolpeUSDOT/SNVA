@@ -22,6 +22,11 @@ To start the control node use the following command:
 node app.js -p /path/to/list/of/videos.txt
 ```
 
+To start via docker use:
+```
+sudo docker run --mount type=bind,src=/path/to/list/of/videos.txt,dst=/usr/config/Paths.txt --mount type=bind,src=/path/to/list/of/Nodes.json,dst=/usr/config/Nodes.json --mount type=bind,src=/path/to/log/directory,dst=/usr/logs -d bsumner/control-node --paths /usr/config/Paths.txt --nodes /usr/config/Nodes.json --logDir /usr/logs
+```
+
 The list of videos should contain a set of paths of videos to process separated by newlines.
 
 Once the Control Node has started, a WebSocket connection may be opened by a processor node at path "/registerProcess".  Once a processor is registered, the control node will begin to issue requests to process videos.  Once the provided input list is exhausted, the control node will issue shutdown commands to all processors and stop.

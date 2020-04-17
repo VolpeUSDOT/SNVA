@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const winston = require('winston');
 const VideoManager = require('./videoPathManager.js');
+const DockerManager = require('./dockerManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
@@ -135,7 +136,7 @@ for (var i=0;i<numToCreate;i++) {
 // TODO Record list of processed videos and write to file
 
 const wws = new WebSocket.Server({
-    port: 8080,
+    port: 8081,
     path: '/registerProcess'
 });
 
@@ -164,6 +165,7 @@ const statusInterval = setInterval(function checkStatus() {
 
 function startAnalyzer(node) {
     // TODO Actually start an analyzer node via docker
+    //DockerManager.startAnalyzer(node);
     var analyzerInfo = {
         path: node,
         numVideos: 0
