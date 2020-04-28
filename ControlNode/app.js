@@ -105,7 +105,7 @@ var gpuNodes = nodeList.filter(function(n) { return n.gpuEnabled == true;});
 var cpuNodes = nodeList.filter(function(n) { return n.gpuEnabled != true;});
 
 if (numAnalyzer >= nodeList.length) {
-    logger.error("Insufficient nodes provided to create %d analyzer nodes", numAnalyzer);
+    logger.error("Insufficient nodes provided to create " + numAnalyzer + " analyzer nodes");
     process.exit();
 }
 
@@ -142,7 +142,7 @@ const wws = new WebSocket.Server({
 
 wws.on('connection', function connection(ws) {
     ws.on('message', function incoming(message) {
-        logger.info('Received: %s', message);
+        logger.info('Received: ' + message);
         parseMessage(message, ws);
     });
     ws.on('close', onSocketDisconnect(ws));
@@ -155,7 +155,7 @@ const statusInterval = setInterval(function checkStatus() {
         if (node.statusRequested) {
             if (new Date().getTime() - node.statusRequested > statusTimeoutLength) {
                 // TODO Handle a dead connection: kill old, start new, add in-progress video back into queue
-                logger.debug("Connection with %s lost", ip);
+                logger.debug("Connection with " + ip + " lost");
             }
         } else {
             requestStatus(node.websocket);
@@ -176,15 +176,15 @@ function startAnalyzer(node) {
 function startProcessor(node) {
     var logDir = argv.logDir + "/" + node;
     logDir = path.normalize(logDir);
-    if (!fs.existsSync(logDir))
-        fs.mkdirSync(logDir, {recursive: true});
+    //if (!fs.existsSync(logDir))
+        //fs.mkdirSync(logDir, {recursive: true});
     // TODO Start processor in docker, passing logDir as arg
 }
 
 function initializeConnection(ws) {
     var ip = ws._socket.remoteAddress;
     var timestamp = new Date().getTime();
-    logger.info("Connection opened with address: %s", ip);
+    logger.info("Connection opened with address: " + ip);
     var socketConnection = {
         websocket: ws,
         started: timestamp,
@@ -199,8 +199,7 @@ function initializeConnection(ws) {
 function onSocketDisconnect(ws) {
     return function(code, reason) {
         var ip = ws._socket.remoteAddress;
-        logger.debug("WS at %s disconnected with Code:%s and Reason:%s", 
-            ip, code, reason);
+        logger.debug("WS at " + ip + " disconnected with Code:" + code + " and Reason:" + reason);
         processorNodes[ip].videos.forEach(function(video) {
             VideoManager.addVideo(video.path);
         });
@@ -218,28 +217,28 @@ function parseMessage(message, ws) {
     try {
         msgObj = JSON.parse(message);
     } catch (e) {
-        logger.debug("Invalid Input");
+        logger.debug("Invalid JSON Sent by " + ip);
         return;
     }
     switch(msgObj.action) {
         case actionTypes.req_video:
-            logger.info("Video requested");
+            logger.info("Video requested by " + ip);
             sendNextVideo(ws);
             break;
         case actionTypes.stat_rep:
-            logger.info("Status Reported");
+            logger.info("Status Reported by " + ip);
             processStatusReport(msgObj, ws);
             break;
         case actionTypes.complete:
-            logger.info("Task Complete");
+            logger.info("Task Complete by " + ip);
             processTaskComplete(msgObj, ws);
             break;
         case actionTypes.error:
-            logger.info("Error Reported");
+            logger.info("Error Reported by " + ip);
             handleProcError(msgObj, ws);
             break;
         default:
-            logger.info("Invalid Input");
+            logger.info("Invalid Input by " + ip);
             // TODO Determine how to handle bad input
     }
 }
@@ -265,7 +264,8 @@ function sendNextVideo(ws) {
     var ip = ws._socket.remoteAddress;
     var videoInfo = {
         path: nextVideoPath,
-        analyzer: analyzerPath
+        analyzer: analyzerPath,
+        //time: getTime()
     };
     processorNodes[ip].videos.push(videoInfo);
     // TODO validate path is real?
@@ -279,7 +279,7 @@ function sendNextVideo(ws) {
 
 function processStatusReport(msg, ws) {
     // TODO Handle status report
-    logger.info("Status Reported: %s", msg);
+    logger.info("Status Reported: " + msg);
     var ip = ws._socket.remoteAddress;
     delete processorNodes[ip].statusRequested;
 }
@@ -305,6 +305,7 @@ function processTaskComplete(msgObj, ws) {
             break;
         }
     }
+    //logger.info("%s processed video %s in %d ms", ip, video, getTime() - processorNodes[ip].videos[index].time);
     processorNodes[ip].videos.splice(index, 1);
     var outputPath = msgObj.output;
     if (outputPath == null)
@@ -327,6 +328,7 @@ function shutdownProcessor(ws) {
     };
     sendRequest(msg, ws);
     var ip = ws._socket.remoteAddress;
+    logger.info("Requesting shutdown from " + ip);
     delete processorNodes[ip];
     if (processorNodes.length == 0)
         shutdownControlNode();
@@ -341,7 +343,7 @@ function shutdownControlNode() {
 
 function handleProcError(errorMsg, ws) {
     if (errorMsg.description != null)
-        logger.debug("An error occured: %s", errorMsg.description);
+        logger.debug("An error occured: " + errorMsg.description);
     logger.debug("An error occured: Cause unknown");
     // TODO determine potential errors/behavior in each case
         // Video not found
