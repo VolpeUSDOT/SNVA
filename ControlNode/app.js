@@ -3,8 +3,8 @@ const yargs = require('yargs');
 const fs = require('fs');
 const path = require('path');
 const winston = require('winston');
-const VideoManager = require('./videoPathManager.js');
-const DockerManager = require('./dockerManager.js');
+const VideoManager = require('./modules/videoPathManager.js');
+const DockerManager = require('./modules/dockerManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
@@ -132,8 +132,6 @@ for (var i=0;i<numToCreate;i++) {
 }
 
 // TODO Start Processor node
-// TODO Initialize Logging
-// TODO Record list of processed videos and write to file
 
 const wws = new WebSocket.Server({
     port: 8081,
