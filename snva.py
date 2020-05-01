@@ -396,6 +396,7 @@ async def main():
         # TODO should a shutdown request trigger program kill?
         pass
       elif response['action'] == 'PROCESS':
+        # TODO Prepend input path
         video_file_path = response['path']
 
         try:
