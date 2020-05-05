@@ -191,7 +191,7 @@ async def main():
     output_dir_path = path.join(snva_home, args.outputpath)
   else:
     output_dir_path = args.outputpath
-
+  logging.info("Output path set to: {}".format(output_dir_path))
   if not path.isdir(output_dir_path):
     os.makedirs(output_dir_path)
 
@@ -306,7 +306,7 @@ async def main():
 
           complete_request = json.dumps({
             'action': 'COMPLETE',
-            'video': video_file_path,
+            'video': os.path.basename(video_file_path),
             'output': ''})
           await websocket_conn.send(complete_request)
 
@@ -397,7 +397,7 @@ async def main():
         pass
       elif response['action'] == 'PROCESS':
         # TODO Prepend input path
-        video_file_path = response['path']
+        video_file_path = os.path.join(args.inputpath, response['path'])
 
         try:
           start_video_processor(video_file_path)

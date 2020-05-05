@@ -24,7 +24,7 @@ node app.js -p /path/to/list/of/videos.txt
 
 To start via docker use:
 ```
-sudo docker run --mount type=bind,src=/path/to/list/of/videos.txt,dst=/usr/config/Paths.txt --mount type=bind,src=/path/to/list/of/Nodes.json,dst=/usr/config/Nodes.json --mount type=bind,src=/path/to/log/directory,dst=/usr/logs -d bsumner/control-node --paths /usr/config/Paths.txt --nodes /usr/config/Nodes.json --logDir /usr/logs
+sudo docker run --mount type=bind,src=/path/to/list/of/videos.txt,dst=/usr/config/Paths.txt --mount type=bind,src=/path/to/list/of/Nodes.json,dst=/usr/config/Nodes.json --mount type=bind,src=/path/to/log/directory,dst=/usr/logs -d bsumner/control-node --paths /usr/config/Paths.txt --nodes /usr/config/Nodes.json --logDir /usr/logs -a 1
 ```
 
 The list of videos should contain a set of paths of videos to process separated by newlines.

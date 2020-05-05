@@ -286,12 +286,13 @@ function processTaskComplete(msgObj, ws) {
     var ip = ws._socket.remoteAddress;
     var video = msgObj.video;
     if (video == null) {
-        // TODO Handle malformed input
+        logger.error("Completed video not specified by " + ip);
         return;
     }
     var index = processorNodes[ip].videos.findIndex((videoItem) => videoItem.path == video);
     if (index == -1) {
         // Video path not assigned to this ws
+        logger.error("Node reported on video it was not assigned: " + ip);
         // TODO Handle malformed input
         return;
     }
