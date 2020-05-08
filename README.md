@@ -1,4 +1,4 @@
-# SHRP2 NDS Video Analytics (SNVA) v0.1.2
+# SHRP2 NDS Video Analytics (SNVA) v0.2.0
 
 This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). The project is described in detail in our paper: [arXiv preprint arXiv:1811.04250, 2018](https://arxiv.org/abs/1811.04250).
 
@@ -11,25 +11,25 @@ SNVA has been tested using the following software stack:
 
 - Ubuntu = 16.04
 - Python >= 3.5
-- TensorFlow = 1.8 (and its published dependencies)
+- TensorFlow = 2.1 (and its published dependencies)
 - FFmpeg >= 2.8
 
 
-## Optional Software Dependencies
+## Architecture
 
-Inference speed was observed to improve by ~10% by building TensorFlow from source and including:
+SNVA v0.2 is intended to run in a networked environment, and is comprised of three main components:
 
-- TensorRT = 3.0.4
+### Control Node
 
-Installation of the Docker-containerized version of SNVA has been tested using:
+Manages the assignment of tasks to other working nodes.  For more details view [here](ControlNode/README.md).
 
-- NVIDIA-Docker = 2.0.3
-- Docker = 18.03.1-CE
+### Analyzer Node
 
+The anaylzer node is a tf-serving 2.1 instance built from the official docker image.  For more details, view [here](https://www.tensorflow.org/tfx/serving/docker).
 
-## System Requirements and Performance Expectations
+### Processor Node
 
-SNVA is intended to run on systems with NVIDIA GPUs, but can also run in a CPU-only mode. SNVA runs ~10x faster on a single NVIDIA GeForce GTX 1080 Ti together with a 3.00GHz 10-core Intel Core i7-6950X CPU than it does on the 10-core CPU alone. For a system with N GPUs and for --numprocessesperdevice = M, SNVA will process N * M videos concurrently, but is not (at this time) designed to distribute the processing of a single video across multiple GPUs. Inference speeds depend on the particular CNN architecture used to develop the model. When tested on two GPUs against 31,535,862 video frames spanning 1,344 videos, InceptionV3 inferred class labels at 826.24 fps on average over 10:40:04 hours, MobilenetV2 (with one video processor assigned to each GPU) averaged 1491.36 fps over 05:58:20 hours, and MobilenetV2 (with two video processors assigned to each GPU) averaged 1833.1 fps over 4:53:42 hours. RAM consumption on our development machine appeared to be safely bounded above by 3.75GB per active video processor.
+The processor node is assigned videos by the Control Node.  It then handles making inference requests to the analyzer node, as well as pre/post processing and writing the results.  The rest of this document describes the Processor Node.
 
 
 ## To install on Ubuntu:
@@ -48,70 +48,30 @@ git clone https://github.com/VolpeUSDOT/SNVA.git SNVA
 
 ```shell
 python3 snva.py
-  --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --modelname mobilenet_v2
-```
-
-```shell
-python snva.py
-  --modelname mobilenet_v2 \
-  --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --outputpath /path/to/your/desired/report/directory \
-  --logpath /path/to/your/desired/report/directory/log
-  --batchsize 128 --loglevel debug --smoothprobs --extracttimestamps --crop \
-  --writeinferencereports True
+  -et --modelname mobilenet_v2 \
+  -cnh controlodeHostOrIP \
+  -l /path/to/your/desired/log/directory  \
+  --modelsdirpath /path/to/your/model/directory \
+   -msh analyzerHostOrIP \
+   -ip /path/to/directory/containing/your/video/files \
+   --writeinferencereports True
 ```
 
 ## To run using NVIDIA-Docker on Ubuntu (for a text file listing absolute paths to videos):
 
 ```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video/source/file/or/directory,dst=/media/input \
-  --mount type=bind, \
-    src=/path/to/a/common/root/video/directory/when/inputpath/is/a/text/file, \
-    dst=/media/root \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputlistrootdirpath /common/root/path/on/the/host \
-  --inputpath /media/input --outputpath /media/output --logspath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
-```
-## To run using NVIDIA-Docker on Ubuntu (for a directory of videos):
+	sudo docker run \
+    --runtime=nvidia 
+    --mount type=bind,\
+    src=/path/to/your/model/directory,dst=/usr/model \
+    --mount type=bind,\
+    src=/path/to/your/desired/output/directory,dst=/usr/output 
+    --mount type=bind,\
+    src=/path/to/directory/containing/your/vidoe/files,dst=/usr/videos 
+    --mount type=bind,\
+    src=/path/to/your/desired/log/directory,dst=/usr/logs\
+    snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true
 
-```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video_file/source/directory,dst=/media/input \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputpath /media/input --outputpath /media/output --logspath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
-```
-
-## To run using NVIDIA-Docker on Ubuntu (for a single video):
-
-```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video_file/source/directory/video_file_name.ext, \
-    dst=/media/input/video_file_name.ext \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputpath /media/input/ --outputpath /media/output --logspath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
 ```
 
 
@@ -129,11 +89,9 @@ Flag | Short Flag | Properties | Description
 --cropx|-cx|type=int, default=2|x-component of top-left corner of crop
 --cropy|-cy|type=int, default=0|y-component of top-left corner of crop
 --deinterlace|-d|action=store_true|Apply de-interlacing to video frames during extraction
---excludepreviouslyprocessed|-epp|action=store_true|Skip processing of videos for which reports already exist in outputpath
 --extracttimestamps|-et|action=store_true|Crop timestamps out of video frames and map them to strings for inclusion in the output CSV
 --gpumemoryfraction|-gmf|type=float, default=0.9|% of GPU memory available to this process
---inputpath|-ip|required=True|Path to a single video file, a folder containing video files, or a text file that lists absolute video file paths
---inputlistrootdirpath|-ilrdp|Path to the common root directory shared by video file paths listed in the text file specified using --inputpath
+--inputpath|-ip|required=True|Path to a directory containing the video files to be processed
 --ionodenamesfilepath|-ifp|Path to the io tensor names text file
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
 --logmode|-lm|default=verbose|If verbose, log to file and console. If silent, log to file only
@@ -153,6 +111,8 @@ Flag | Short Flag | Properties | Description
 --timestampy|-ty|type=int, default=340|y-component of top-left corner of timestamp (before cropping)
 --writeeventreports|-wer|type=bool, default=True|Output a CVS file for each video containing one or more feature events
 --writeinferencereports|-wir|type=bool, default=False|For every video, output a CSV file containing a probability distribution over class labels, a timestamp, and a frame number for each frame
+--controlnodehost|-cnh|default=localhost:8080|Control Node, colon-separated hostname or IP and Port
+--modelserverhost|-msh|default=0.0.0.0:8500|Tensorflow Serving Instance, colon-separated hostname or IP and Port
 
 
 ## Troubleshooting and Additional Considerations

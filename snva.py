@@ -478,10 +478,6 @@ if __name__ == '__main__':
                       help='Path to a single video file, a folder containing '
                            'video files, or a text file that lists absolute '
                            'video file paths.')
-  parser.add_argument('--inputlistrootdirpath', '-ilrdp',
-                      help='Path to the common root directory shared by video '
-                           'file paths listed in the text file specified using '
-                           '--inputpath.')
   parser.add_argument('--loglevel', '-ll', default='info',
                       help='Defaults to \'info\'. Pass \'debug\' or \'error\' '
                            'for verbose or minimal logging, respectively.')
