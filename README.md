@@ -52,9 +52,9 @@ python3 snva.py
   -cnh controlodeHostOrIP \
   -l /path/to/your/desired/log/directory  \
   --modelsdirpath /path/to/your/model/directory \
-   -msh analyzerHostOrIP \
-   -ip /path/to/directory/containing/your/video/files \
-   --writeinferencereports True
+  -msh analyzerHostOrIP \
+  -ip /path/to/directory/containing/your/video/files \
+  --writeinferencereports True
 ```
 
 ## To run using NVIDIA-Docker on Ubuntu (for a text file listing absolute paths to videos):

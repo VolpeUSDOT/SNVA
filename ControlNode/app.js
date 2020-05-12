@@ -51,7 +51,6 @@ const argv = yargs
     .option('nodes', {
                 alias: 'n',
                 description: 'JSON File containing a list of nodes to use for analysis and processing',
-                default: './nodes.json',
                 type: 'string'
             })
     .option('analyzerCount', {
@@ -98,37 +97,40 @@ VideoManager.readInputPaths(argv.paths);
 
 numAnalyzer = argv.analyzerCount;
 
-var rawNodes = fs.readFileSync(argv.nodes);
-var nodeList = JSON.parse(rawNodes);
+var nodeList = [];
+if (argv.nodes != null) {
+    var rawNodes = fs.readFileSync(argv.nodes);
+    nodeList = JSON.parse(rawNodes);
 
-var gpuNodes = nodeList.filter(function(n) { return n.gpuEnabled == true;});
-var cpuNodes = nodeList.filter(function(n) { return n.gpuEnabled != true;});
+    var gpuNodes = nodeList.filter(function(n) { return n.gpuEnabled == true;});
+    var cpuNodes = nodeList.filter(function(n) { return n.gpuEnabled != true;});
 
-if (numAnalyzer >= nodeList.length) {
-    logger.error("Insufficient nodes provided to create " + numAnalyzer + " analyzer nodes");
-    process.exit();
-}
+    if (numAnalyzer >= nodeList.length) {
+        logger.error("Insufficient nodes provided to create " + numAnalyzer + " analyzer nodes");
+        process.exit();
+    }
 
-// Start analyzer nodes
-for (var i=0;i<numAnalyzer;i++) {
-    var node = gpuNodes.pop();
-    if (node === undefined)
-        node = cpuNodes.pop();
-    startAnalyzer(node.node);
-}
+    // Start analyzer nodes
+    for (var i=0;i<numAnalyzer;i++) {
+        var node = gpuNodes.pop();
+        if (node === undefined)
+            node = cpuNodes.pop();
+        startAnalyzer(node.node);
+    }
 
-// Create processors
-var remaining = gpuNodes.concat(cpuNodes);
-var numToCreate;
-if (procPerAnalyzer == -1)
-    numToCreate = remaining.length;
-else
-    numToCreate = numAnalyzer * procPerAnalyzer;
-for (var i=0;i<numToCreate;i++) {
-    var node = remaining.pop();
-    if (node == null)
-        return;
-    startProcessor(node.node);
+    // Create processors
+    var remaining = gpuNodes.concat(cpuNodes);
+    var numToCreate;
+    if (procPerAnalyzer == -1)
+        numToCreate = remaining.length;
+    else
+        numToCreate = numAnalyzer * procPerAnalyzer;
+    for (var i=0;i<numToCreate;i++) {
+        var node = remaining.pop();
+        if (node == null)
+            return;
+        startProcessor(node.node);
+    }
 }
 
 // TODO Start Processor node
@@ -269,7 +271,7 @@ function sendNextVideo(ws) {
     // TODO validate path is real?
     requestMessage = {
         action: actionTypes.process,
-        analyzer: analyzer.path,
+        analyzer: analyzerPath,
         path: nextVideoPath
     };
     sendRequest(requestMessage, ws);
