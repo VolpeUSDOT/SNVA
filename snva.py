@@ -18,6 +18,9 @@ import websockets as ws
 
 path = os.path
 
+logger = logging.getLogger('websockets')
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
 def main_logger_fn(log_queue):
   while True:
@@ -350,91 +353,108 @@ async def main():
   start = time()
 
   sleep_duration = 1
+  breakLoop = False
+  while True:
+    try:
+      async with ws.connect('ws://' + args.controlnodehost + '/registerProcess') as conn:
+        response = await conn.recv()
+        response = json.loads(response)
+        logging.info(response)
 
-  async with ws.connect('ws://' + args.controlnodehost + '/registerProcess') as conn:
-    response = await conn.recv()
-    response = json.loads(response)
-    logging.info(response)
+        if response['action'] != 'CONNECTION_SUCCESS':
+          raise ConnectionError(
+            'control node connection failed with response: {}'.format(response))
 
-    if response['action'] != 'CONNECTION_SUCCESS':
-      raise ConnectionError(
-        'control node connection failed with response: {}'.format(response))
+        while True:
+          # block if logical_device_count + 1 child processes are active
+          while len(return_code_queue_map) > logical_device_count:
+            total_num_processed_videos, total_num_processed_frames, \
+            total_analysis_duration = await close_completed_video_processors(
+              total_num_processed_videos, total_num_processed_frames,
+              total_analysis_duration, conn)
+            sleep(sleep_duration)
 
-    while True:
-      # block if logical_device_count + 1 child processes are active
-      while len(return_code_queue_map) > logical_device_count:
-        total_num_processed_videos, total_num_processed_frames, \
-        total_analysis_duration = await close_completed_video_processors(
-          total_num_processed_videos, total_num_processed_frames,
-          total_analysis_duration, conn)
-        sleep(sleep_duration)
+          try:  # todo poll for termination signal from control node
+            _ = main_interrupt_queue.get_nowait()
+            logging.debug(
+              'breaking out of child process generation following interrupt signal')
+            break
+          except:
+            pass
 
-      try:  # todo poll for termination signal from control node
-        _ = main_interrupt_queue.get_nowait()
-        logging.debug(
-          'breaking out of child process generation following interrupt signal')
-        break
-      except:
-        pass
+          logging.info('requesting video')
+          request = json.dumps({'action': 'REQUEST_VIDEO'})
+          await conn.send(request)
 
-      logging.info('requesting video')
-      request = json.dumps({'action': 'REQUEST_VIDEO'})
-      await conn.send(request)
+          logging.info('reading response')
+          response = await conn.recv()
+          response = json.loads(response)
 
-      logging.info('reading response')
-      response = await conn.recv()
-      response = json.loads(response)
+          if response['action'] == 'STATUS_REQUEST':
+            logging.info('control node requested status request')
+            pass
+          elif response['action'] == 'CEASE_REQUESTS':
+            logging.info('control node has no more videos to process')
+            break
+          elif response['action'] == 'SHUTDOWN':
+            logging.info('control node requested shutdown')
+            # TODO should a shutdown request trigger program kill?
+            pass
+          elif response['action'] == 'PROCESS':
+            # TODO Prepend input path
+            video_file_path = os.path.join(args.inputpath, response['path'])
+            request_received = json.dumps({'action': 'REQUEST_RECEIVED', 'video': response['path']})
+            await conn.send(request_received)
+            try:
+              start_video_processor(video_file_path)
+            except Exception as e:
+              logging.error('an unknown error has occured while processing {}'.format(video_file_path))
+              logging.error(e)
+          else:
+            raise ConnectionError(
+              'control node replied with unexpected response: {}'.format(response))
+        logging.debug('{} child processes remain enqueued'.format(len(return_code_queue_map)))
+        while len(return_code_queue_map) > 0:
+          logging.debug('waiting for the final {} child processes to '
+                        'terminate'.format(len(return_code_queue_map)))
 
-      if response['action'] == 'STATUS_REQUEST':
-        logging.info('control node requested status request')
-        pass
-      elif response['action'] == 'CEASE_REQUESTS':
-        logging.info('control node has no more videos to process')
-        break
-      elif response['action'] == 'SHUTDOWN':
-        logging.info('control node requested shutdown')
-        # TODO should a shutdown request trigger program kill?
-        pass
-      elif response['action'] == 'PROCESS':
-        # TODO Prepend input path
-        video_file_path = os.path.join(args.inputpath, response['path'])
+          total_num_processed_videos, total_num_processed_frames, \
+          total_analysis_duration = await close_completed_video_processors(
+            total_num_processed_videos, total_num_processed_frames,
+            total_analysis_duration, conn)
 
-        try:
-          start_video_processor(video_file_path)
-        except Exception as e:
-          logging.error('an unknown error has occured while processing {}'.format(video_file_path))
-          logging.error(e)
-      else:
-        raise ConnectionError(
-          'control node replied with unexpected response: {}'.format(response))
-    logging.debug('{} child processes remain enqueued'.format(len(return_code_queue_map)))
-    while len(return_code_queue_map) > 0:
-      logging.debug('waiting for the final {} child processes to '
-                    'terminate'.format(len(return_code_queue_map)))
+          # by now, the last device_id_queue_len videos are being processed,
+          # so we can afford to poll for their completion infrequently
+          if len(return_code_queue_map) > 0:
+            logging.debug('sleeping for {} seconds'.format(sleep_duration))
+            sleep(sleep_duration)
 
-      total_num_processed_videos, total_num_processed_frames, \
-      total_analysis_duration = await close_completed_video_processors(
-        total_num_processed_videos, total_num_processed_frames,
-        total_analysis_duration, conn)
+        end = time() - start
 
-      # by now, the last device_id_queue_len videos are being processed,
-      # so we can afford to poll for their completion infrequently
-      if len(return_code_queue_map) > 0:
-        logging.debug('sleeping for {} seconds'.format(sleep_duration))
-        sleep(sleep_duration)
+        processing_duration = IO.get_processing_duration(
+          end, 'snva {} processed a total of {} videos and {} frames in:'.format(
+            snva_version_string, total_num_processed_videos,
+            total_num_processed_frames))
+        logging.info(processing_duration)
 
-    end = time() - start
+        logging.info('Video analysis alone spanned a cumulative {:.02f} '
+                    'seconds'.format(total_analysis_duration))
 
-    processing_duration = IO.get_processing_duration(
-      end, 'snva {} processed a total of {} videos and {} frames in:'.format(
-        snva_version_string, total_num_processed_videos,
-        total_num_processed_frames))
-    logging.info(processing_duration)
-
-    logging.info('Video analysis alone spanned a cumulative {:.02f} '
-                 'seconds'.format(total_analysis_duration))
-
-    logging.info('exiting snva {} main process'.format(snva_version_string))
+        logging.info('exiting snva {} main process'.format(snva_version_string))
+        breakloop = True
+    except socket.gaierror:
+      # log something
+      logging.info('gaierror')
+      continue
+    except ConnectionRefusedError:
+      # log something else
+      logging.info('connection refused')
+      break
+    except ws.exceptions.ConnectionClosed:
+      logging.info('Connection lost.  Attempting reconnect...')
+      continue
+    if breakLoop:
+      break
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(

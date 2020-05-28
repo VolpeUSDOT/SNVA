@@ -8,14 +8,18 @@ const DockerManager = require('./modules/dockerManager.js');
 
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
-// Length of time (in ms) a node has to respond to a status request before it is considered dead
-const statusTimeoutLength = 600000;
+// Length of time (in ms) a node has to reconnect before it is considered dead
+const reconnectTimer = 600000;
+// Length of time a processor has to confirm it received a process request
+const processTimer = 6000;
 // List of processor nodes currently active
 var processorNodes = [];
 // List of analyzer (tfserving) nodes
 var analyzerNodes = [];
 // Completed videos and their output files
 var completed = {};
+// Sent requests, pending acknowledgment from processor, and their timeouts
+var pending = {};
 // Number of analyzer nodes to create
 var numAnalyzer = 2;
 // Number of processor ndoes
@@ -25,6 +29,7 @@ var procPerAnalyzer = -1;
 const actionTypes = {
     con_success: "CONNECTION_SUCCESS",
     process: "PROCESS",
+    req_rec: "REQUEST_RECEIVED",
     stat_req: "STATUS_REQUEST",
     shutdown: "SHUTDOWN",
     req_video: "REQUEST_VIDEO",
@@ -70,7 +75,7 @@ const argv = yargs
     .argv;
 
 const logger = winston.createLogger({
-    level: 'info',
+    level: 'debug',
     format: winston.format.combine(
         winston.format.timestamp({
           format: 'YYYY-MM-DD hh:mm:ss A ZZ'
@@ -149,7 +154,7 @@ wws.on('connection', function connection(ws) {
     initializeConnection(ws);
 });
 
-const statusInterval = setInterval(function checkStatus() {
+/*const statusInterval = setInterval(function checkStatus() {
     for (var ip in processorNodes) {
         var node = processorNodes[ip];
         if (node.statusRequested) {
@@ -161,7 +166,7 @@ const statusInterval = setInterval(function checkStatus() {
             requestStatus(node.websocket);
         }
     }
-}, statusCheckFreq);
+}, statusCheckFreq);*/
 
 function startAnalyzer(node) {
     // TODO Actually start an analyzer node via docker
@@ -183,15 +188,22 @@ function startProcessor(node) {
 
 function initializeConnection(ws) {
     var ip = ws._socket.remoteAddress;
-    var timestamp = new Date().getTime();
-    logger.info("Connection opened with address: " + ip);
-    var socketConnection = {
-        websocket: ws,
-        started: timestamp,
-        lastResponse: timestamp,
-        videos: []
-    };
-    processorNodes[ip] = socketConnection;
+    if (processorNodes[ip] != null) {
+        logger.info(ip + " reconnected");
+        clearTimeout(processorNodes[ip].timeoutId);
+        processorNodes[ip].timeoutId = null;
+        processorNodes[ip].websocket = ws;
+    } else {
+        var timestamp = new Date().getTime();
+        logger.info("Connection opened with address: " + ip);
+        var socketConnection = {
+            websocket: ws,
+            started: timestamp,
+            lastResponse: timestamp,
+            videos: []
+        };
+        processorNodes[ip] = socketConnection;
+    }
     sendRequest({action: actionTypes.con_success}, ws);
 }
 
@@ -200,6 +212,13 @@ function onSocketDisconnect(ws) {
     return function(code, reason) {
         var ip = ws._socket.remoteAddress;
         logger.debug("WS at " + ip + " disconnected with Code:" + code + " and Reason:" + reason);
+        processorNodes[ip].timeoutId = setTimeout(onReconnectFail(ip), reconnectTimer);
+    };    
+}
+
+function onReconnectFail(ip) {
+    return function() {
+        logger.debug("WS at " + ip + " failed to reconnect");
         processorNodes[ip].videos.forEach(function(video) {
             VideoManager.addVideo(video.path);
         });
@@ -207,12 +226,13 @@ function onSocketDisconnect(ws) {
         if (processorNodes.length == 0)
             // TODO Start up new processors, or end.
             logger.debug("All processors disconnected.");
-    };    
+    };
 }
 
 function parseMessage(message, ws) {
     var msgObj;
     var ip = ws._socket.remoteAddress;
+    logger.debug("Parsing message from " + ip);
     processorNodes[ip].lastResponse = new Date().getTime();
     try {
         msgObj = JSON.parse(message);
@@ -224,6 +244,10 @@ function parseMessage(message, ws) {
         case actionTypes.req_video:
             logger.info("Video requested by " + ip);
             sendNextVideo(ws);
+            break;
+        case actionTypes.req_rec:
+            logger.info("Confirm request received by " + ip);
+            processReceived(msgObj, ws);
             break;
         case actionTypes.stat_rep:
             logger.info("Status Reported by " + ip);
@@ -245,15 +269,18 @@ function parseMessage(message, ws) {
 
 function sendNextVideo(ws) {
     var nextVideoPath = VideoManager.nextVideo();
+    var ip = ws._socket.remoteAddress;
     // If there is no 'next video', work may stop
     var requestMessage;
     if (nextVideoPath == null) {
+        logger.info("No videos remaining; telling " + ip + " to cease requests");
         requestMessage = {
             action: actionTypes.cease_req,
         };
         sendRequest(requestMessage, ws);
         return;
     }
+    logger.info("Sending video to " + ip + ": " + nextVideoPath);
     var analyzer = getBalancedAnalyzer();
     var analyzerPath = "";
     if (analyzer != null) {
@@ -261,12 +288,13 @@ function sendNextVideo(ws) {
         analyzer.numVideos++;
     }
 
-    var ip = ws._socket.remoteAddress;
     var videoInfo = {
         path: nextVideoPath,
         analyzer: analyzerPath,
         //time: getTime()
     };
+    pending[nextVideoPath] = setTimeout(processTimeout(nextVideoPath, ws), processTimer);
+    logger.debug("Created timeout with ID: " + pending[nextVideoPath]);
     processorNodes[ip].videos.push(videoInfo);
     // TODO validate path is real?
     requestMessage = {
@@ -275,6 +303,26 @@ function sendNextVideo(ws) {
         path: nextVideoPath
     };
     sendRequest(requestMessage, ws);
+}
+
+function processReceived(msgObj, ws) {
+    logger.debug("Clearing timeout for " + msgObj.video);
+    logger.debug("Timeout ID: " + pending[msgObj.video])
+    clearTimeout(pending[msgObj.video]);
+    pending[msgObj.video] = null;
+}
+
+function processTimeout(video, ws) {
+    var ip = ws._socket.remoteAddress;
+    return function() {
+        // Processor did not acknoweldge receipt of video
+        // Remove video from processor
+        logger.info("Connection " + ip + " did not verify receipt of request to process " + video);
+        removeVideoFromProcessor(ip, video);
+        // Return it to the queue, and clean up the pending request
+        VideoManager.addVideo(video);
+        pending[video] = null;
+    }
 }
 
 function processStatusReport(msg, ws) {
@@ -291,6 +339,15 @@ function processTaskComplete(msgObj, ws) {
         logger.error("Completed video not specified by " + ip);
         return;
     }
+    removeVideoFromProcessor(ip, video);
+    var outputPath = msgObj.output;
+    if (outputPath == null)
+        outputPath = "Not Reported";
+    completed[video] = outputPath;
+    checkProcessorComplete(ws);
+}
+
+function removeVideoFromProcessor(ip, video) {
     var index = processorNodes[ip].videos.findIndex((videoItem) => videoItem.path == video);
     if (index == -1) {
         // Video path not assigned to this ws
@@ -308,11 +365,6 @@ function processTaskComplete(msgObj, ws) {
     }
     //logger.info("%s processed video %s in %d ms", ip, video, getTime() - processorNodes[ip].videos[index].time);
     processorNodes[ip].videos.splice(index, 1);
-    var outputPath = msgObj.output;
-    if (outputPath == null)
-        outputPath = "Not Reported";
-    completed[video] = outputPath;
-    checkProcessorComplete(ws);
 }
 
 function checkProcessorComplete(ws) {
@@ -336,6 +388,7 @@ function shutdownProcessor(ws) {
 }
 
 function shutdownControlNode() {
+    logger.info("Shutting down");
     var output = fs.openSync(argv.outputPath, "w");
     Object.keys(completed).forEach(e => fs.writeSync(output, e + ": " + completed[e] + "\n"));
     fs.closeSync(output);
@@ -362,7 +415,9 @@ function requestStatus(ws) {
 }
 
 function sendRequest(msgObj, ws) {
-    ws.send(JSON.stringify(msgObj));
+    var ip = ws._socket.remoteAddress;
+    logger.debug("Sending request to " + ip + ": " + JSON.stringify(msgObj));
+    ws.send(JSON.stringify(msgObj), {}, function() {logger.debug("Request Sent");});
 }
 
 // Return the analyzer node with the fewest videos assigned
