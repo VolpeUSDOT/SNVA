@@ -150,6 +150,14 @@ wws.on('connection', function connection(ws) {
         logger.info('Received: ' + message);
         parseMessage(message, ws);
     });
+
+    ws.on('pong', function test(ms) {
+        var ip = ws._socket.remoteAddress;
+        var diff = parseInt(new Date().getTime()) - parseInt(ms.toString());
+        logger.info("Latency to " + ip + ": " + diff + " ms");
+    });
+    var date = new Date().getTime();
+    ws.ping(new Date().getTime());
     ws.on('close', onSocketDisconnect(ws));
     initializeConnection(ws);
 });
