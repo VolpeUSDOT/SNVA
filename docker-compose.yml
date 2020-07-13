@@ -1,0 +1,54 @@
+version: '2.4'
+
+services:
+    analyzer:
+      image: tensorflow/serving:latest-gpu
+      runtime: nvidia
+      ports:
+        - 8500:8500
+        - 8501:8501
+      volumes:
+        - type: bind
+          source: <path to model base directory>
+          target: /models/mobilenet_v2
+      environment:
+        - MODEL_NAME=mobilenet_v2
+        - CUDA_VISIBLE_DEVICES=0
+      command: --enable_batching
+    control:
+        build: ./ControlNode
+        image: control-node
+        ports:
+            - 8081:8081
+        volumes:
+            - type: bind
+              source: <path to list of video names>
+              target: /usr/config/Paths.txt
+            - type: bind
+              source: <path to node json file>
+              target: /usr/config/Nodes.json
+            - type: bind
+              source: <path to log directory>
+              target: /usr/logs
+        command: --paths /usr/config/Paths.txt --logDir /usr/logs -a 1 --nodes /usr/config/Nodes.json
+    processor:
+        build: .
+        image: snva-processor
+        depends_on:
+          - "analyzer"
+          - "control"
+        volumes:
+            - type: bind
+              source: <path to model base directory>
+              target: /usr/model
+            - type: bind
+              source: <path to output directory>
+              target: /usr/output
+            - type: bind
+              source: <path to video directory>
+              target: /usr/videos
+            - type: bind
+              source: <path to log directory>
+              target: /usr/logs
+        command: -et -cpu -cnh 152.122.106.229:8081 -msh 152.122.106.229:8500 -wir true
+
