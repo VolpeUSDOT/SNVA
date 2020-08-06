@@ -6,6 +6,7 @@ import os
 import signal
 from time import time
 from utils.analyzer import VideoAnalyzer
+from utils.signalstateanalyzer import SignalVideoAnalyzer
 from utils.event import Trip
 from utils.io import IO
 from utils.timestamp import Timestamp
@@ -71,7 +72,7 @@ def process_video(
     timestamp_max_width, timestamp_height, timestamp_x, timestamp_y,
     do_deinterlace, num_channels, batch_size, do_smooth_probs,
     smoothing_factor, do_binarize_probs, do_write_inference_reports,
-    do_write_event_reports, max_threads):
+    do_write_event_reports, max_threads, processor_mode):
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
@@ -169,13 +170,21 @@ def process_video(
 
   logging.debug('FFmpeg output frame shape == {}'.format(frame_shape))
 
-  #TODO parameterize tf serving values
-  analyzer = VideoAnalyzer(
+  if processor_mode == "signalstate":
+    analyzer = SignalVideoAnalyzer(
     frame_shape, num_frames, len(class_name_map), batch_size, model_name,
     model_signature_name, model_server_host, model_input_size,
     do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
     timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
     ffmpeg_command, max_threads)
+  else:
+    #TODO parameterize tf serving values
+    analyzer = VideoAnalyzer(
+      frame_shape, num_frames, len(class_name_map), batch_size, model_name,
+      model_signature_name, model_server_host, model_input_size,
+      do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
+      timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
+      ffmpeg_command, max_threads)
 
   try:
     start = time()

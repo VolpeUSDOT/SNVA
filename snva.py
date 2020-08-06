@@ -274,7 +274,7 @@ async def main():
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
             args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-            args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads))
+            args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
 
     logging.debug('starting child process.')
 
@@ -356,6 +356,10 @@ async def main():
   breakLoop = False
   while True:
     try:
+      logging.debug("breakloop")
+      logging.debug(breakLoop)
+      if breakLoop:
+        break
       async with ws.connect('ws://' + args.controlnodehost + '/registerProcess') as conn:
         response = await conn.recv()
         response = json.loads(response)
@@ -415,8 +419,8 @@ async def main():
               'control node replied with unexpected response: {}'.format(response))
         logging.debug('{} child processes remain enqueued'.format(len(return_code_queue_map)))
         while len(return_code_queue_map) > 0:
-          logging.debug('waiting for the final {} child processes to '
-                        'terminate'.format(len(return_code_queue_map)))
+          #logging.debug('waiting for the final {} child processes to '
+          #              'terminate'.format(len(return_code_queue_map)))
 
           total_num_processed_videos, total_num_processed_frames, \
           total_analysis_duration = await close_completed_video_processors(
@@ -426,7 +430,7 @@ async def main():
           # by now, the last device_id_queue_len videos are being processed,
           # so we can afford to poll for their completion infrequently
           if len(return_code_queue_map) > 0:
-            logging.debug('sleeping for {} seconds'.format(sleep_duration))
+            #logging.debug('sleeping for {} seconds'.format(sleep_duration))
             sleep(sleep_duration)
 
         end = time() - start
@@ -441,7 +445,7 @@ async def main():
                     'seconds'.format(total_analysis_duration))
 
         logging.info('exiting snva {} main process'.format(snva_version_string))
-        breakloop = True
+        breakLoop = True
     except socket.gaierror:
       # log something
       logging.info('gaierror')
@@ -562,6 +566,9 @@ if __name__ == '__main__':
                       help='Specify whether profiling should use "gpu" or "wall" clock type')
   parser.add_argument('--profformat', '-pfmt', default='pstat',
                       help='Specify whether profiling should save output in "pstat" or "callgrind" formats')
+  parser.add_argument('--processormode', '-pm', default='workzone',
+                      help='Specify wheter processor should use "workzone", "weather", or "signalstate" pipelines')
+
 
   args = parser.parse_args()
 
@@ -607,7 +614,7 @@ if __name__ == '__main__':
   log_file_path = path.join(logs_dir_path, log_file_name)
 
   log_format = '%(asctime)s:%(processName)s:%(process)d:%(levelname)s:' \
-               '%(module)s:%(funcName)s:%(message)s'
+               '%(module)s:%(lineno)d:%(funcName)s:%(message)s'
 
   logger_script_path = path.join(snva_home, 'utils/logger.py')
 
