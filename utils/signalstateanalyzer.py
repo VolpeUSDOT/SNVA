@@ -213,8 +213,6 @@ class SignalVideoAnalyzer:
   def _consume_batch_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    logging.debug("Respose shape 0: {}".format(response.shape[0]))
-    #logging.debug("we're working with: {}".format(type(response.outputs['num_detections'])))
     counts = response.outputs['num_detections'].float_val[:]
     counts = np.array(counts, dtype=np.float32)
     classes = tf.make_ndarray(response.outputs['detection_classes'])
@@ -225,15 +223,12 @@ class SignalVideoAnalyzer:
       #logging.debug("Counts: {}".format(str(num_detections)))
       frame_scores = scores[i]
       frame_scores = frame_scores[:num_detections]
-      logging.debug("frame_scores made, count is {} and shape is {}".format(num_detections, frame_scores.shape))
       frame_classes = classes[i]
       frame_classes = frame_classes[:num_detections]
-      logging.debug("frame_classes made, count is {} and shape is {}".format(num_detections, frame_classes.shape))
       frame_boxes = boxes[i]
       frame_boxes = frame_boxes[:num_detections]
-      logging.debug("frame_boxes made, count is {} and shape is {}".format(num_detections, frame_boxes.shape))
       frame_map = {'num_detections': num_detections, 'detection_classes': frame_classes, 'detection_scores': frame_scores, 'detection_boxes': frame_boxes }
-      self.signal_maps[index + i] = frame_map
+      self.signal_maps.insert(index + i, frame_map)
 
     return counts.shape[0]  # report num frames processed to caller
 
@@ -254,7 +249,7 @@ class SignalVideoAnalyzer:
     logging.info('completed inference on {} frames.'.format(
       self.num_frames_processed))
 
-    return self.num_frames_processed, self.prob_array, self.timestamp_array
+    return self.num_frames_processed, self.signal_maps, self.timestamp_array
 
   def __del__(self):
     if self.frame_pipe.returncode is None:

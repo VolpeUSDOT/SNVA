@@ -13,7 +13,7 @@ from subprocess import PIPE, Popen
 from threading import Thread
 from time import sleep, time
 from utils.io import IO
-from utils.processor import process_video
+from utils.processor import process_video, process_video_signalstate
 import websockets as ws
 
 path = os.path
@@ -264,7 +264,20 @@ async def main():
 
     child_logger_thread_map[video_file_path] = child_logger_thread
 
-    child_process = Process(
+    if 'signalstate' == args.processormode:
+      child_process = Process(
+        target=process_video_signalstate,
+        name=path.splitext(path.split(video_file_path)[1])[0],
+        args=(video_file_path, output_dir_path, class_name_map, args.modelname, args.modelsignaturename, args.modelserverhost,model_input_size,
+              return_code_queue, child_log_queue, log_level,
+              ffmpeg_path, ffprobe_path, args.crop, args.cropwidth, args.cropheight,
+              args.cropx, args.cropy, args.extracttimestamps,
+              args.timestampmaxwidth, args.timestampheight, args.timestampx,
+              args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
+              args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
+              args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
+    else:
+      child_process = Process(
       target=process_video,
       name=path.splitext(path.split(video_file_path)[1])[0],
       args=(video_file_path, output_dir_path, class_name_map, args.modelname, args.modelsignaturename, args.modelserverhost,model_input_size,
@@ -275,7 +288,6 @@ async def main():
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
             args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
             args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
-
     logging.debug('starting child process.')
 
     child_process.start()

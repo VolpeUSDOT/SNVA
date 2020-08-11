@@ -324,3 +324,22 @@ class IO:
             for event in events]
 
     IO.write_csv(report_file_path, header, rows)
+  
+  @staticmethod
+  def write_signalstate_report(report_file_name, report_dir_path, detections):
+    report_dir_path = path.join(report_dir_path, 'event_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    header = ['file_name', 'frame_number', 'timestamp',
+              'classification', 'xtl', 'ytl', 'xbr', 'ybr']
+
+    rows = [[report_file_name, det['frame_num'], det['timestamp'],
+             det['classification'], det['xtl'], det['ytl'], det['xbr'], det['ybr'],]
+            for det in detections]
+
+    IO.write_csv(report_file_path, header, rows)
