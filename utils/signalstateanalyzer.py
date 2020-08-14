@@ -51,8 +51,6 @@ class SignalVideoAnalyzer:
     self.ffmpeg_command = ffmpeg_command
     self.num_classes = num_classes
     self.signal_maps = []
-    self.prob_array = np.ndarray(
-      (num_frames, self.num_classes), dtype=np.float32)
     self.num_frames_processed = 0
 
     self.model_name = model_name
@@ -151,9 +149,7 @@ class SignalVideoAnalyzer:
   def _consume_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    logging.debug('Response from grpc req')
-    loggind.debug(response)
-    self.prob_array[index] = response.outputs['probabilities'].float_val[:]
+    #self.prob_array[index] = response.outputs['probabilities'].float_val[:]
     return 1  # report one additional frame processed to caller
 
   def _produce_batch_grpc_request(self):
@@ -170,24 +166,18 @@ class SignalVideoAnalyzer:
           self.frame_pipe.stderr.close()
           self.frame_pipe.terminate()
           return
-
         frame = np.fromstring(frame, dtype=np.uint8)
         frame = np.reshape(frame, [-1] + self.frame_shape)
-
         if self.should_extract_timestamps:
           self.timestamp_array[self.th * self.ti:self.th * (
             self.ti + frame.shape[0])] = \
             np.reshape(frame[:, self.ty:self.ty + self.th,
             self.tx:self.tx + self.tw], (-1,) + self.timestamp_array.shape[1:])
           self.ti += frame.shape[0]
-
         if self.should_crop:
           frame = frame[:, self.crop_y:self.crop_y + self.crop_height,
                   self.crop_x:self.crop_x + self.crop_width]
 
-        #frame = self._preprocess_frame_batch(frame)
-        #logging.debug("Frame shape final")
-        #logging.debug(frame.shape)
         request = PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
@@ -220,7 +210,6 @@ class SignalVideoAnalyzer:
     boxes = tf.make_ndarray(response.outputs['detection_boxes'])
     for i in range(counts.shape[0]):
       num_detections = int(counts[i])
-      #logging.debug("Counts: {}".format(str(num_detections)))
       frame_scores = scores[i]
       frame_scores = frame_scores[:num_detections]
       frame_classes = classes[i]
@@ -233,8 +222,8 @@ class SignalVideoAnalyzer:
     return counts.shape[0]  # report num frames processed to caller
 
   def run(self):
-    logging.info('started inference on {} frames'.format(
-      self.prob_array.shape[0]))
+    #logging.info('started inference on {} frames'.format(
+    #  self.prob_array.shape[0]))
 
     with futures.ThreadPoolExecutor(
         max_workers=self.max_num_threads) as executor:

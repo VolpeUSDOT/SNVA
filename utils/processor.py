@@ -96,7 +96,7 @@ def process_video(
   try:
     start = time()
 
-    frame_width, frame_height, num_frames = IO.get_video_dimensions(
+    frame_width, frame_height, num_frames, _ = IO.get_video_dimensions(
       video_file_path, ffprobe_path)
 
     end = time() - start
@@ -404,9 +404,10 @@ def process_video_signalstate(
   try:
     start = time()
 
-    frame_width, frame_height, num_frames = IO.get_video_dimensions(
+    # For signal state, we use duration as num_frames, as we will only grab one frame per second
+    frame_width, frame_height, num_frames, duration = IO.get_video_dimensions(
       video_file_path, ffprobe_path)
-
+    num_frames = duration
     end = time() - start
 
     processing_duration = IO.get_processing_duration(
@@ -454,7 +455,7 @@ def process_video_signalstate(
 
   ffmpeg_command.extend(
     ['-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', 'vfr',
-     '-hide_banner', '-loglevel', '0', '-f', 'image2pipe', 'pipe:1'])
+     '-hide_banner', '-loglevel', '0', '-r', '1', '-f', 'image2pipe', 'pipe:1'])
 
   try:
     do_extract_timestamps = should_extract_timestamps(
@@ -498,7 +499,8 @@ def process_video_signalstate(
       analysis_duration, 'processed {} frames in'.format(num_analyzed_frames))
     logging.info(processing_duration)
 
-    if num_analyzed_frames != num_frames:
+    #if num_analyzed_frames != num_frames:
+    if False:
       if interrupt_queue.empty():
         raise AssertionError('num_analyzed_frames ({}) != num_frames '
                              '({})'.format(num_analyzed_frames, num_frames))

@@ -3,6 +3,7 @@ import json
 import logging
 import numpy as np
 import os
+import math
 import subprocess as sp
 
 path = os.path
@@ -78,7 +79,8 @@ class IO:
       raise e
     return int(json_map['streams'][0]['width']),\
            int(json_map['streams'][0]['height']),\
-           int(json_map['streams'][0]['nb_frames'])
+           int(json_map['streams'][0]['nb_frames']),\
+           int(math.ceil(float(json_map['streams'][0]['duration']))) + 1
 
   @staticmethod
   def _get_gauss_weight_and_window(smoothing_factor):
