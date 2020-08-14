@@ -498,15 +498,7 @@ def process_video_signalstate(
     processing_duration = IO.get_processing_duration(
       analysis_duration, 'processed {} frames in'.format(num_analyzed_frames))
     logging.info(processing_duration)
-
-    #if num_analyzed_frames != num_frames:
-    if False:
-      if interrupt_queue.empty():
-        raise AssertionError('num_analyzed_frames ({}) != num_frames '
-                             '({})'.format(num_analyzed_frames, num_frames))
-      else:
-        raise InterruptedError('num_analyzed_frames ({}) != num_frames '
-                               '({})'.format(num_analyzed_frames, num_frames))
+    
   except InterruptedError as ae:
     logging.error(ae)
 
