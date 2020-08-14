@@ -197,10 +197,7 @@ function startProcessor(node) {
 function initializeConnection(ws) {
     var ip = ws._socket.remoteAddress;
     if (processorNodes[ip] != null) {
-        logger.info(ip + " reconnected");
-        clearTimeout(processorNodes[ip].timeoutId);
-        processorNodes[ip].timeoutId = null;
-        processorNodes[ip].websocket = ws;
+        onReconnect(ws);
     } else {
         var timestamp = new Date().getTime();
         logger.info("Connection opened with address: " + ip);
@@ -215,10 +212,20 @@ function initializeConnection(ws) {
     sendRequest({action: actionTypes.con_success}, ws);
 }
 
+function onReconnect(ws) {
+    var ip = ws._socket.remoteAddress;
+    logger.info(ip + " reconnected");
+    clearTimeout(processorNodes[ip].timeoutId);
+    processorNodes[ip].timeoutId = null;
+    processorNodes[ip].websocket = ws;
+    processorNodes[ip].disconnect = false;
+}
+
 // If a processor loses connection, clean up outstanding tasks
-function onSocketDisconnect(ws) {
+function onSocketDisconnect(ws) {  
     return function(code, reason) {
         var ip = ws._socket.remoteAddress;
+        processorNodes[ip].disconnect = true;
         logger.debug("WS at " + ip + " disconnected with Code:" + code + " and Reason:" + reason);
         processorNodes[ip].timeoutId = setTimeout(onReconnectFail(ip), reconnectTimer);
     };    
@@ -242,6 +249,13 @@ function parseMessage(message, ws) {
     var ip = ws._socket.remoteAddress;
     logger.debug("Parsing message from " + ip);
     processorNodes[ip].lastResponse = new Date().getTime();
+    // Sometimes a disconnect event fires server-side erroneously and the client continues to send messages 
+    // In that case, log it and mark as reconnected
+    if (processorNodes[ip].disconnect) {
+        logger.warn("Erroneous disconnect reported for " + ip);
+        onReconnect(ws);
+    }
+    
     try {
         msgObj = JSON.parse(message);
     } catch (e) {
