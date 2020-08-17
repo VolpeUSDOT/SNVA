@@ -149,7 +149,20 @@ class SignalVideoAnalyzer:
   def _consume_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    #self.prob_array[index] = response.outputs['probabilities'].float_val[:]
+    counts = response.outputs['num_detections'].float_val[:]
+    counts = np.array(counts, dtype=np.float32)
+    classes = tf.make_ndarray(response.outputs['detection_classes'])
+    scores = tf.make_ndarray(response.outputs['detection_scores'])
+    boxes = tf.make_ndarray(response.outputs['detection_boxes'])
+    num_detections = int(counts[0])
+    frame_scores = scores[0]
+    frame_scores = frame_scores[:num_detections]
+    frame_classes = classes[0]
+    frame_classes = frame_classes[:num_detections]
+    frame_boxes = boxes[0]
+    frame_boxes = frame_boxes[:num_detections]
+    frame_map = {'num_detections': num_detections, 'detection_classes': frame_classes, 'detection_scores': frame_scores, 'detection_boxes': frame_boxes }
+    self.signal_maps.insert(index, frame_map)
     return 1  # report one additional frame processed to caller
 
   def _produce_batch_grpc_request(self):
