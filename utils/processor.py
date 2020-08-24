@@ -169,22 +169,13 @@ def process_video(
   frame_shape = [frame_height, frame_width, num_channels]
 
   logging.debug('FFmpeg output frame shape == {}'.format(frame_shape))
-
-  if processor_mode == "signalstate":
-    analyzer = SignalVideoAnalyzer(
+    #TODO parameterize tf serving values
+  analyzer = VideoAnalyzer(
     frame_shape, num_frames, len(class_name_map), batch_size, model_name,
     model_signature_name, model_server_host, model_input_size,
     do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
     timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
     ffmpeg_command, max_threads)
-  else:
-    #TODO parameterize tf serving values
-    analyzer = VideoAnalyzer(
-      frame_shape, num_frames, len(class_name_map), batch_size, model_name,
-      model_signature_name, model_server_host, model_input_size,
-      do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
-      timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
-      ffmpeg_command, max_threads)
 
   try:
     start = time()
@@ -325,21 +316,27 @@ def process_video(
 
     if timestamp_strings is not None:
       timestamp_strings = timestamp_strings.astype(np.int32)
-
     trip = Trip(frame_numbers, timestamp_strings, qa_flags, probability_array,
                 class_name_map)
 
-    work_zone_events = trip.find_work_zone_events()
-
-    if len(work_zone_events) > 0:
-      logging.info('{} work zone events were found in {}'.format(
-        len(work_zone_events), video_file_name))
-
-      if do_write_event_reports:
-        IO.write_event_report(video_file_name, output_dir_path, work_zone_events)
+    if processor_mode == "weather":
+      if len(trip.feature_sequence) > 0:
+        logging.info('{} weather events were found in {}'.format(
+          len(trip.feature_sequence), video_file_name))
+        if do_write_event_reports:
+          IO.write_weather_report(video_file_name, output_dir_path, trip.feature_sequence)
     else:
-      logging.info(
-        'No work zone events were found in {}'.format(video_file_name))
+      events = trip.find_work_zone_events()
+
+      if len(events) > 0:
+        logging.info('{} work zone events were found in {}'.format(
+          len(events), video_file_name))
+
+        if do_write_event_reports:
+          IO.write_event_report(video_file_name, output_dir_path, events)
+      else:
+        logging.info(
+          'No work zone events were found in {}'.format(video_file_name))
 
     end = time() - start
 

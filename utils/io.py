@@ -328,6 +328,23 @@ class IO:
     IO.write_csv(report_file_path, header, rows)
   
   @staticmethod
+  def write_weather_report(report_file_name, report_dir_path, weather_features):
+    report_dir_path = path.join(report_dir_path, 'event_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    header = ['file_name', 'sequence_number', 'classification', 'start_frame_number',
+              'end_frame_number', 'start_timestamp', 'end_timestamp']
+    rows = [[report_file_name, feat.feature_id, feat.class_name, feat.start_frame_number,
+             feat.end_frame_number, feat.start_timestamp, feat.end_timestamp]
+            for feat in weather_features]
+    IO.write_csv(report_file_path, header, rows)
+
+  @staticmethod
   def write_signalstate_report(report_file_name, report_dir_path, detections):
     report_dir_path = path.join(report_dir_path, 'event_reports')
 
@@ -341,7 +358,7 @@ class IO:
               'classification', 'xtl', 'ytl', 'xbr', 'ybr']
 
     rows = [[report_file_name, det['frame_num'], det['timestamp'],
-             det['classification'], det['xtl'], det['ytl'], det['xbr'], det['ybr'],]
+             det['classification'], det['xtl'], det['ytl'], det['xbr'], det['ybr']]
             for det in detections]
 
     IO.write_csv(report_file_path, header, rows)
