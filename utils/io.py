@@ -328,6 +328,15 @@ class IO:
     IO.write_csv(report_file_path, header, rows)
   
   @staticmethod
+  def write_json(file_name, dir_path, json_data):
+    file_path = path.join(dir_path, 'bbox_reports')
+    if not path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = path.join(file_path, file_name + '.json')
+    with open(file_path, mode='w', newline='') as output_file:
+        json.dump(json_data, output_file)
+
+  @staticmethod
   def write_weather_report(report_file_name, report_dir_path, weather_features):
     report_dir_path = path.join(report_dir_path, 'event_reports')
 
@@ -355,10 +364,10 @@ class IO:
       report_dir_path, report_file_name + '.csv')
 
     header = ['file_name', 'frame_number', 'timestamp',
-              'classification', 'xtl', 'ytl', 'xbr', 'ybr']
+              'classification']
 
     rows = [[report_file_name, det['frame_num'], det['timestamp'],
-             det['classification'], det['xtl'], det['ytl'], det['xbr'], det['ybr']]
+             det['classification']]
             for det in detections]
 
     IO.write_csv(report_file_path, header, rows)

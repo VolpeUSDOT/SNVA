@@ -376,7 +376,7 @@ def process_video_signalstate(
     do_crop, crop_width, crop_height, crop_x, crop_y, do_extract_timestamps,
     timestamp_max_width, timestamp_height, timestamp_x, timestamp_y,
     do_deinterlace, num_channels, batch_size, do_smooth_probs,
-    smoothing_factor, do_binarize_probs, do_write_inference_reports,
+    smoothing_factor, do_binarize_probs, do_write_bbox_reports,
     do_write_event_reports, max_threads, processor_mode):
   configure_logger(log_level, log_queue)
 
@@ -574,8 +574,24 @@ def process_video_signalstate(
 
   logging.debug('attempting to generate reports')
 
-  #if do_write_inference_reports:
-    # TODO Write inference reports
+  if do_write_bbox_reports:
+    json_data = []
+    for frame_num, frame_map in enumerate(frame_map_array, start=0):
+      if timestamp_strings is not None:
+        timestamp = timestamp_strings[frame_num]
+      else:
+        timestamp = None
+      for i in range(0, frame_map['num_detections']):
+        class_name = class_name_map[frame_map['detection_classes'][i]]
+        bbox = frame_map['detection_boxes'][i]
+        json_data.append({
+          'frame_num': int(frame_num),
+          'video_name': video_file_name,
+          'timestamp': int(timestamp),
+          'class_name': class_name,
+          'detection_boxes': bbox.tolist(),
+          'detection_score': float(frame_map['detection_scores'][i])})
+    IO.write_json(video_file_name + 'BBOX', output_dir_path, json_data)
 
   try:
     start = time()

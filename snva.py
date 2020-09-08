@@ -275,7 +275,7 @@ async def main():
               args.timestampmaxwidth, args.timestampheight, args.timestampx,
               args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
               args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-              args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
+              args.writebbox, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
     else:
       child_process = Process(
       target=process_video,
@@ -501,6 +501,8 @@ if __name__ == '__main__':
   parser.add_argument('--deinterlace', '-d', action='store_true',
                       help='Apply de-interlacing to video frames during '
                            'extraction.')
+  parser.add_argument('--writebbox', '-bb', action='store_true',
+                      help='Create JSON files with bounding box data for signal state')
   # parser.add_argument('--excludepreviouslyprocessed', '-epp',
   #                     action='store_true',
   #                     help='Skip processing of videos for which reports '
