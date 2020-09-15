@@ -4,17 +4,6 @@ This repository houses the SNVA application and additional code used to develop 
 
 SNVA is intended to expand the Roadway Information Database (RID)’s ability to help transportation safety researchers develop and answer research questions. The RID is the primary source of data collected as part of the FHWA’s SHRP2 Naturalistic Driving Study, including vehicle telemetry, geolocation, and roadway characteristics data. Missing from the RID are the locations of work zones driven through by NDS volunteer drivers. The app’s first release will focus on enabling/enhancing research questions related to work zone safety by using machine learning-based computer vision techniques to exhaustively and automatically detect the presence of work zone features across the entire ~1 million-hour forward-facing video data set, and then conflating that information with the RID’s time-series records. Previously, researchers depended on sparse and low fidelity 511 data provided by states that hosted the routes driven by volunteers. A successful deployment of the SNVA app will make it possible to query the RID for the exact start/stop locations, lengths, and frequencies of work zones in trip videos; a long-standing, highly desired ability within the SHRP2 community.
 
-
-## Required Software Dependencies
-
-SNVA has been tested using the following software stack:
-
-- Ubuntu = 16.04
-- Python >= 3.5
-- TensorFlow = 2.1 (and its published dependencies)
-- FFmpeg >= 2.8
-
-
 ## Architecture
 
 SNVA v0.2 is intended to run in a networked environment, and is comprised of three main components:
@@ -31,6 +20,18 @@ The anaylzer node is a tf-serving 2.1 instance built from the official docker im
 
 The processor node is assigned videos by the Control Node.  It then handles making inference requests to the analyzer node, as well as pre/post processing and writing the results.  The rest of this document describes the Processor Node.
 
+## Required Software Dependencies
+
+SNVA has been tested using the following software stack:
+
+- Ubuntu = 16.04
+- Python >= 3.5
+- TensorFlow = 2.1 (and its published dependencies)
+- TensorBoard = 2.1
+- FFmpeg >= 2.8
+- websockets
+- numpy
+- scikit-image
 
 ## To install on Ubuntu:
 
@@ -113,6 +114,8 @@ Flag | Short Flag | Properties | Description
 --writeinferencereports|-wir|type=bool, default=False|For every video, output a CSV file containing a probability distribution over class labels, a timestamp, and a frame number for each frame
 --controlnodehost|-cnh|default=localhost:8080|Control Node, colon-separated hostname or IP and Port
 --modelserverhost|-msh|default=0.0.0.0:8500|Tensorflow Serving Instance, colon-separated hostname or IP and Port
+--processormode|-pm|default=workzone|Indicates what model pipeline to use: 'workzone', 'signalstate', or 'weather'
+--writebbox|-bb|action=store_true|Create JSON files with raw bounding box coordinates when run in 'signalstate' mode
 
 
 ## Troubleshooting and Additional Considerations
