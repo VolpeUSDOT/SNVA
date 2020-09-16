@@ -22,6 +22,7 @@ class VideoAnalyzer:
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.should_crop = should_crop
+    
 
     if self.should_crop:
       self.crop_x = crop_x
@@ -54,6 +55,12 @@ class VideoAnalyzer:
     self.num_frames_processed = 0
 
     self.model_name = model_name
+    if model_name == 'weather':
+      self.input_name = 'keras_layer_input'
+      self.output_name = 'output'
+    else:
+      self.input_name = 'input'
+      self.output_name = 'probabilities'
     self.signature_name = model_signature_name
     self.service_stub = PredictionServiceStub(
       insecure_channel(model_server_host))
@@ -184,7 +191,7 @@ class VideoAnalyzer:
         request = PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
-        request.inputs['input'].CopyFrom(
+        request.inputs[self.input_name].CopyFrom(
           tf.make_tensor_proto(frame, shape=frame.shape, dtype=tf.float32))
 
         num_processed += frame.shape[0]
@@ -206,7 +213,8 @@ class VideoAnalyzer:
   def _consume_batch_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    response = response.outputs['probabilities'].float_val[:]
+    logging.debug(str(response))
+    response = response.outputs[self.output_name].float_val[:]
     response = np.array(response, dtype=np.float32)
     response = np.reshape(response, (-1, self.num_classes))
 
