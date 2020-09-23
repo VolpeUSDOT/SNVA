@@ -76,6 +76,9 @@ def process_video(
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
+
+  # Create a output subdirectory for the current mode
+  output_dir_path = path.join(output_dir_path, processor_mode)
   
   def interrupt_handler(signal_number, _):
     logging.warning('received interrupt signal {}.'.format(signal_number))
@@ -381,6 +384,9 @@ def process_video_signalstate(
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
+
+  # Create a output subdirectory for the current mode
+  output_dir_path = path.join(output_dir_path, processor_mode)
   
   def interrupt_handler(signal_number, _):
     logging.warning('received interrupt signal {}.'.format(signal_number))

@@ -213,7 +213,6 @@ class VideoAnalyzer:
   def _consume_batch_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    logging.debug(str(response))
     response = response.outputs[self.output_name].float_val[:]
     response = np.array(response, dtype=np.float32)
     response = np.reshape(response, (-1, self.num_classes))
