@@ -96,6 +96,8 @@ def process_video(
 
   logging.info('preparing to analyze {}'.format(video_file_path))
 
+  output_files = []
+
   try:
     start = time()
 
@@ -282,11 +284,11 @@ def process_video(
     try:
       start = time()
 
-      IO.write_inference_report(
+      inf_report = IO.write_inference_report(
         video_file_name, output_dir_path, analyzer.prob_array, class_name_map,
         timestamp_strings, qa_flags, do_smooth_probs, smoothing_factor,
         do_binarize_probs)
-
+      output_files.append(inf_report)
       end = time() - start
 
       processing_duration = IO.get_processing_duration(
@@ -327,7 +329,8 @@ def process_video(
         logging.info('{} weather events were found in {}'.format(
           len(trip.feature_sequence), video_file_name))
         if do_write_event_reports:
-          IO.write_weather_report(video_file_name, output_dir_path, trip.feature_sequence)
+          weather_rep =IO.write_weather_report(video_file_name, output_dir_path, trip.feature_sequence)
+          output_files.append(weather_rep)
     else:
       events = trip.find_work_zone_events()
 
@@ -336,7 +339,8 @@ def process_video(
           len(events), video_file_name))
 
         if do_write_event_reports:
-          IO.write_event_report(video_file_name, output_dir_path, events)
+          event_rep = IO.write_event_report(video_file_name, output_dir_path, events)
+          output_files.append(event_rep)
       else:
         logging.info(
           'No work zone events were found in {}'.format(video_file_name))
@@ -369,7 +373,8 @@ def process_video(
 
   return_code_queue.put({'return_code': 'success',
                          'return_value': num_analyzed_frames,
-                         'analysis_duration': analysis_duration})
+                         'analysis_duration': analysis_duration,
+                         'output_locations': str(output_files)})
   return_code_queue.close()
 
 def process_video_signalstate(
@@ -387,6 +392,7 @@ def process_video_signalstate(
 
   # Create a output subdirectory for the current mode
   output_dir_path = path.join(output_dir_path, processor_mode)
+  output_files = []
   
   def interrupt_handler(signal_number, _):
     logging.warning('received interrupt signal {}.'.format(signal_number))
@@ -597,7 +603,8 @@ def process_video_signalstate(
           'class_name': class_name,
           'detection_boxes': bbox.tolist(),
           'detection_score': float(frame_map['detection_scores'][i])})
-    IO.write_json(video_file_name + 'BBOX', output_dir_path, json_data)
+    bbox_rep = IO.write_json(video_file_name + 'BBOX', output_dir_path, json_data)
+    output_files.append(bbox_rep)
 
   try:
     start = time()
@@ -628,7 +635,8 @@ def process_video_signalstate(
         len(detections), video_file_name))
 
       if do_write_event_reports:
-        IO.write_signalstate_report(video_file_name, output_dir_path, detections)
+        evt_rep = IO.write_signalstate_report(video_file_name, output_dir_path, detections)
+        output_files.append(evt_rep)
     else:
       logging.info(
         'No signal state events were found in {}'.format(video_file_name))
@@ -661,5 +669,6 @@ def process_video_signalstate(
 
   return_code_queue.put({'return_code': 'success',
                          'return_value': num_analyzed_frames,
-                         'analysis_duration': analysis_duration})
+                         'analysis_duration': analysis_duration,
+                         'output_locations': str(output_files)})
   return_code_queue.close()

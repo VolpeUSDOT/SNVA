@@ -322,7 +322,7 @@ async def main():
           complete_request = json.dumps({
             'action': 'COMPLETE',
             'video': os.path.basename(video_file_path),
-            'output': ''})
+            'output': return_code_map['output_locations']})
           await websocket_conn.send(complete_request)
 
         child_logger_thread = child_logger_thread_map[video_file_path]

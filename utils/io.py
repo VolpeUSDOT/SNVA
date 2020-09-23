@@ -306,6 +306,7 @@ class IO:
       report_dir_path, report_file_name + '.csv')
 
     IO.write_csv(report_file_path, header, rows)
+    return report_file_path
 
   # TODO: confirm that the csv can be opened after writing
   @staticmethod
@@ -326,6 +327,7 @@ class IO:
             for event in events]
 
     IO.write_csv(report_file_path, header, rows)
+    return report_dir_path
   
   @staticmethod
   def write_json(file_name, dir_path, json_data):
@@ -335,6 +337,7 @@ class IO:
     file_path = path.join(file_path, file_name + '.json')
     with open(file_path, mode='w', newline='') as output_file:
         json.dump(json_data, output_file)
+    return file_path
 
   @staticmethod
   def write_weather_report(report_file_name, report_dir_path, weather_features):
@@ -352,6 +355,7 @@ class IO:
              feat.end_frame_number, feat.start_timestamp, feat.end_timestamp]
             for feat in weather_features]
     IO.write_csv(report_file_path, header, rows)
+    return report_file_path
 
   @staticmethod
   def write_signalstate_report(report_file_name, report_dir_path, detections):
@@ -371,3 +375,4 @@ class IO:
             for det in detections]
 
     IO.write_csv(report_file_path, header, rows)
+    return report_file_path
