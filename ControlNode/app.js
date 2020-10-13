@@ -156,6 +156,7 @@ wws.on('connection', function connection(ws) {
         var diff = parseInt(new Date().getTime()) - parseInt(ms.toString());
         logger.info("Latency to " + ip + ": " + diff + " ms");
     });
+
     var date = new Date().getTime();
     ws.ping(new Date().getTime());
     ws.on('close', onSocketDisconnect(ws));
@@ -316,7 +317,6 @@ function sendNextVideo(ws) {
         //time: getTime()
     };
     pending[nextVideoPath] = setTimeout(processTimeout(nextVideoPath, ws), processTimer);
-    logger.debug("Created timeout with ID: " + pending[nextVideoPath]);
     processorNodes[ip].videos.push(videoInfo);
     // TODO validate path is real?
     requestMessage = {
@@ -329,7 +329,6 @@ function sendNextVideo(ws) {
 
 function processReceived(msgObj, ws) {
     logger.debug("Clearing timeout for " + msgObj.video);
-    logger.debug("Timeout ID: " + pending[msgObj.video])
     clearTimeout(pending[msgObj.video]);
     pending[msgObj.video] = null;
 }
