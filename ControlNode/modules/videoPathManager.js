@@ -7,6 +7,7 @@ exports.readInputPaths = readInputPaths;
 exports.nextVideo = nextVideo;
 exports.addVideo = addVideo;
 exports.isComplete = isComplete;
+exports.getCount = getCount;
 
 function readInputPaths(pathFile) {
     readline.createInterface({
@@ -15,6 +16,10 @@ function readInputPaths(pathFile) {
     }).on('line', function(line) {
         toProcess.push(line);
     });
+}
+
+function getCount() {
+    return toProcess.length;
 }
 
 function nextVideo() {

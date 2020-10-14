@@ -3,6 +3,9 @@ const yargs = require('yargs');
 const fs = require('fs');
 const path = require('path');
 const winston = require('winston');
+const http = require('http');
+const url = require('url');
+var express = require('express')
 const VideoManager = require('./modules/videoPathManager.js');
 const DockerManager = require('./modules/dockerManager.js');
 
@@ -138,11 +141,26 @@ if (argv.nodes != null) {
     }
 }
 
-// TODO Start Processor node
+var app = express()
+
+app.use(express.static('web'))
+
+const server = http.createServer(app);
 
 const wws = new WebSocket.Server({
-    port: 8081,
+    noServer: true,
     path: '/registerProcess'
+});
+
+const guiWws = new WebSocket.Server({
+    noServer: true,
+    path: '/snvaStatus'
+});
+
+guiWws.on('connection', function guiConn(ws) {
+    // One-way connection; we don't need to accept any messages
+    // Client should handle reconnect if needed
+    ws.send(JSON.stringify(getGuiInfo()));
 });
 
 wws.on('connection', function connection(ws) {
@@ -163,19 +181,29 @@ wws.on('connection', function connection(ws) {
     initializeConnection(ws);
 });
 
-/*const statusInterval = setInterval(function checkStatus() {
-    for (var ip in processorNodes) {
-        var node = processorNodes[ip];
-        if (node.statusRequested) {
-            if (new Date().getTime() - node.statusRequested > statusTimeoutLength) {
-                // TODO Handle a dead connection: kill old, start new, add in-progress video back into queue
-                logger.debug("Connection with " + ip + " lost");
-            }
-        } else {
-            requestStatus(node.websocket);
-        }
+server.on('upgrade', function upgrade(request, socket, head) {
+    const pathname = url.parse(request.url).pathname;
+    if (pathname === '/snvaStatus') {
+      guiWws.handleUpgrade(request, socket, head, function done(ws) {
+        guiWws.emit('connection', ws, request);
+      });
+    } else if (pathname === '/registerProcess') {
+      wss.handleUpgrade(request, socket, head, function done(ws) {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
     }
-}, statusCheckFreq);*/
+});
+  
+server.listen(8081);
+
+function getGuiInfo() {
+    return {
+        'videosRemaining': VideoManager.getCount(),
+        'processorInfo': processorNodes
+    };
+}
 
 function startAnalyzer(node) {
     // TODO Actually start an analyzer node via docker
