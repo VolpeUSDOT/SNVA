@@ -366,13 +366,16 @@ async def main():
 
   sleep_duration = 1
   breakLoop = False
+  connectionId = None
   while True:
     try:
-      logging.debug("breakloop")
-      logging.debug(breakLoop)
       if breakLoop:
         break
-      async with ws.connect('ws://' + args.controlnodehost + '/registerProcess') as conn:
+      wsUrl = 'ws://' + args.controlnodehost + '/registerProcess'
+      if connectionId is not None:
+        wsUrl = wsUrl + '?id=' + connectionId
+      logging.debug("Connecting with URL {}".format(wsUrl))
+      async with ws.connect(wsUrl) as conn:
         response = await conn.recv()
         response = json.loads(response)
         logging.info(response)
@@ -380,7 +383,8 @@ async def main():
         if response['action'] != 'CONNECTION_SUCCESS':
           raise ConnectionError(
             'control node connection failed with response: {}'.format(response))
-
+        connectionId = response['id']
+        logging.debug("Assigned id {}".format(connectionId))
         while True:
           # block if logical_device_count + 1 child processes are active
           while len(return_code_queue_map) > logical_device_count:

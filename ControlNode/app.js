@@ -16,7 +16,7 @@ const reconnectTimer = 600000;
 // Length of time a processor has to confirm it received a process request
 const processTimer = 6000;
 // List of processor nodes currently active
-var processorNodes = [];
+var processorNodes = {};
 // List of analyzer (tfserving) nodes
 var analyzerNodes = [];
 // Completed videos and their output files
@@ -27,7 +27,8 @@ var pending = {};
 var numAnalyzer = 2;
 // Number of processor ndoes
 var procPerAnalyzer = -1;
-
+// Processor ID - we just count up
+var nextProcessorId = 0;
 
 const actionTypes = {
     con_success: "CONNECTION_SUCCESS",
@@ -160,25 +161,28 @@ const guiWws = new WebSocket.Server({
 guiWws.on('connection', function guiConn(ws) {
     // One-way connection; we don't need to accept any messages
     // Client should handle reconnect if needed
-    ws.send(JSON.stringify(getGuiInfo()));
+    ws.send(getGuiInfo());
 });
 
-wws.on('connection', function connection(ws) {
+wws.on('connection', function connection(ws, req) {
     ws.on('message', function incoming(message) {
         logger.info('Received: ' + message);
         parseMessage(message, ws);
     });
 
     ws.on('pong', function test(ms) {
-        var ip = ws._socket.remoteAddress;
+        var id = ws.id;
         var diff = parseInt(new Date().getTime()) - parseInt(ms.toString());
-        logger.info("Latency to " + ip + ": " + diff + " ms");
+        logger.info("Latency to " + id + ": " + diff + " ms");
     });
+
+    const parameters = url.parse(req.url, true);
+    var id = parameters.query.id;
 
     var date = new Date().getTime();
     ws.ping(new Date().getTime());
     ws.on('close', onSocketDisconnect(ws));
-    initializeConnection(ws);
+    initializeConnection(ws, id);
 });
 
 server.on('upgrade', function upgrade(request, socket, head) {
@@ -188,8 +192,8 @@ server.on('upgrade', function upgrade(request, socket, head) {
         guiWws.emit('connection', ws, request);
       });
     } else if (pathname === '/registerProcess') {
-      wss.handleUpgrade(request, socket, head, function done(ws) {
-        wss.emit('connection', ws, request);
+      wws.handleUpgrade(request, socket, head, function done(ws) {
+        wws.emit('connection', ws, request);
       });
     } else {
       socket.destroy();
@@ -199,10 +203,16 @@ server.on('upgrade', function upgrade(request, socket, head) {
 server.listen(8081);
 
 function getGuiInfo() {
-    return {
+    return JSON.stringify({
         'videosRemaining': VideoManager.getCount(),
         'processorInfo': processorNodes
-    };
+    });
+}
+
+function broadcastStatus() {
+    guiWws.clients.forEach((client) => {
+        client.send(getGuiInfo());
+    });
 }
 
 function startAnalyzer(node) {
@@ -223,115 +233,127 @@ function startProcessor(node) {
     // TODO Start processor in docker, passing logDir as arg
 }
 
-function initializeConnection(ws) {
-    var ip = ws._socket.remoteAddress;
-    if (processorNodes[ip] != null) {
-        onReconnect(ws);
+function initializeConnection(ws, id) {
+    if (id != null) {
+        onReconnect(ws, id);
     } else {
+        var ip = ws._socket.remoteAddress;
         var timestamp = new Date().getTime();
         logger.info("Connection opened with address: " + ip);
+        var id = "Processor" + (nextProcessorId++).toString();
+        logger.info("Assigned ID: " + id);
+        ws.id = id;
         var socketConnection = {
-            websocket: ws,
             started: timestamp,
             lastResponse: timestamp,
-            videos: []
+            videos: [],
+            ip: ip
         };
-        processorNodes[ip] = socketConnection;
+        processorNodes[id] = socketConnection;
+        broadcastStatus();
     }
-    sendRequest({action: actionTypes.con_success}, ws);
+    sendRequest({action: actionTypes.con_success, id: id}, ws);
 }
 
-function onReconnect(ws) {
-    var ip = ws._socket.remoteAddress;
-    logger.info(ip + " reconnected");
-    clearTimeout(processorNodes[ip].timeoutId);
-    processorNodes[ip].timeoutId = null;
-    processorNodes[ip].websocket = ws;
-    processorNodes[ip].disconnect = false;
+function onReconnect(ws, id) {
+    ws.id = id;
+    logger.info(id + " reconnected");
+    clearTimeout(processorNodes[id].timeoutId);
+    processorNodes[id].timeoutId = null;
+    processorNodes[id].disconnect = false;
 }
 
 // If a processor loses connection, clean up outstanding tasks
 function onSocketDisconnect(ws) {  
     return function(code, reason) {
-        var ip = ws._socket.remoteAddress;
-        processorNodes[ip].disconnect = true;
-        logger.debug("WS at " + ip + " disconnected with Code:" + code + " and Reason:" + reason);
-        processorNodes[ip].timeoutId = setTimeout(onReconnectFail(ip), reconnectTimer);
+        var id = ws.id;
+        processorNodes[id].disconnect = true;
+        logger.debug("WS " + id + " disconnected with Code:" + code + " and Reason:" + reason);
+        processorNodes[id].timeoutId = setTimeout(onReconnectFail(id), reconnectTimer);
     };    
 }
 
-function onReconnectFail(ip) {
+function onReconnectFail(id) {
     return function() {
-        logger.debug("WS at " + ip + " failed to reconnect");
-        processorNodes[ip].videos.forEach(function(video) {
+        logger.debug("WS " + id + " failed to reconnect");
+        processorNodes[id].videos.forEach(function(video) {
             VideoManager.addVideo(video.path);
         });
-        delete processorNodes[ip];
-        if (processorNodes.length == 0)
+        processorNodes[id].closed = true;
+        if (!haveActiveProcessors())
             // TODO Start up new processors, or end.
             logger.debug("All processors disconnected.");
     };
 }
 
+function haveActiveProcessors() {
+    for (var proc in processorNodes) {
+        if (!processorNodes[proc].closed)
+            return true;
+    }
+    return false;
+}
+
 function parseMessage(message, ws) {
     var msgObj;
-    var ip = ws._socket.remoteAddress;
-    logger.debug("Parsing message from " + ip);
-    processorNodes[ip].lastResponse = new Date().getTime();
+    var id = ws.id;
+    logger.debug("Parsing message from " + id);
+    processorNodes[id].lastResponse = new Date().getTime();
     // Sometimes a disconnect event fires server-side erroneously and the client continues to send messages 
     // In that case, log it and mark as reconnected
-    if (processorNodes[ip].disconnect) {
-        logger.warn("Erroneous disconnect reported for " + ip);
-        onReconnect(ws);
+    if (processorNodes[id].disconnect) {
+        logger.warn("Erroneous disconnect reported for " + id);
+        onReconnect(ws, id);
     }
     
     try {
         msgObj = JSON.parse(message);
     } catch (e) {
-        logger.debug("Invalid JSON Sent by " + ip);
+        logger.debug("Invalid JSON Sent by " + id);
         return;
     }
     switch(msgObj.action) {
         case actionTypes.req_video:
-            logger.info("Video requested by " + ip);
+            logger.info("Video requested by " + id);
             sendNextVideo(ws);
             break;
         case actionTypes.req_rec:
-            logger.info("Confirm request received by " + ip);
+            logger.info("Confirm request received by " + id);
             processReceived(msgObj, ws);
             break;
         case actionTypes.stat_rep:
-            logger.info("Status Reported by " + ip);
+            logger.info("Status Reported by " + id);
             processStatusReport(msgObj, ws);
             break;
         case actionTypes.complete:
-            logger.info("Task Complete by " + ip);
+            logger.info("Task Complete by " + id);
             processTaskComplete(msgObj, ws);
             break;
         case actionTypes.error:
-            logger.info("Error Reported by " + ip);
+            logger.info("Error Reported by " + id);
             handleProcError(msgObj, ws);
             break;
         default:
-            logger.info("Invalid Input by " + ip);
+            logger.info("Invalid Input by " + id);
             // TODO Determine how to handle bad input
     }
+    broadcastStatus();
 }
 
 function sendNextVideo(ws) {
     var nextVideoPath = VideoManager.nextVideo();
-    var ip = ws._socket.remoteAddress;
+    var id = ws.id;
     // If there is no 'next video', work may stop
     var requestMessage;
     if (nextVideoPath == null) {
-        logger.info("No videos remaining; telling " + ip + " to cease requests");
+        logger.info("No videos remaining; telling " + id + " to cease requests");
         requestMessage = {
             action: actionTypes.cease_req,
         };
         sendRequest(requestMessage, ws);
         return;
     }
-    logger.info("Sending video to " + ip + ": " + nextVideoPath);
+    logger.info("Sending video to " + id + ": " + nextVideoPath);
     var analyzer = getBalancedAnalyzer();
     var analyzerPath = "";
     if (analyzer != null) {
@@ -345,7 +367,7 @@ function sendNextVideo(ws) {
         //time: getTime()
     };
     pending[nextVideoPath] = setTimeout(processTimeout(nextVideoPath, ws), processTimer);
-    processorNodes[ip].videos.push(videoInfo);
+    processorNodes[id].videos.push(videoInfo);
     // TODO validate path is real?
     requestMessage = {
         action: actionTypes.process,
@@ -362,12 +384,12 @@ function processReceived(msgObj, ws) {
 }
 
 function processTimeout(video, ws) {
-    var ip = ws._socket.remoteAddress;
+    var id = ws.id;
     return function() {
         // Processor did not acknoweldge receipt of video
         // Remove video from processor
-        logger.info("Connection " + ip + " did not verify receipt of request to process " + video);
-        removeVideoFromProcessor(ip, video);
+        logger.info("Connection " + id + " did not verify receipt of request to process " + video);
+        removeVideoFromProcessor(id, video);
         // Return it to the queue, and clean up the pending request
         VideoManager.addVideo(video);
         pending[video] = null;
@@ -377,18 +399,18 @@ function processTimeout(video, ws) {
 function processStatusReport(msg, ws) {
     // TODO Handle status report
     logger.info("Status Reported: " + msg);
-    var ip = ws._socket.remoteAddress;
-    delete processorNodes[ip].statusRequested;
+    var id = ws.id;
+    delete processorNodes[id].statusRequested;
 }
 
 function processTaskComplete(msgObj, ws) {
-    var ip = ws._socket.remoteAddress;
+    var id = ws.id;
     var video = msgObj.video;
     if (video == null) {
-        logger.error("Completed video not specified by " + ip);
+        logger.error("Completed video not specified by " + id);
         return;
     }
-    removeVideoFromProcessor(ip, video);
+    removeVideoFromProcessor(id, video);
     var outputPath = msgObj.output;
     if (outputPath == null)
         outputPath = "Not Reported";
@@ -396,15 +418,15 @@ function processTaskComplete(msgObj, ws) {
     checkProcessorComplete(ws);
 }
 
-function removeVideoFromProcessor(ip, video) {
-    var index = processorNodes[ip].videos.findIndex((videoItem) => videoItem.path == video);
+function removeVideoFromProcessor(id, video) {
+    var index = processorNodes[id].videos.findIndex((videoItem) => videoItem.path == video);
     if (index == -1) {
         // Video path not assigned to this ws
-        logger.error("Node reported on video it was not assigned: " + ip);
+        logger.error("Node reported on video it was not assigned: " + id);
         // TODO Handle malformed input
         return;
     }
-    var analyzerPath = processorNodes[ip].videos[index].analyzer;
+    var analyzerPath = processorNodes[id].videos[index].analyzer;
     // Decrement our video counter
     for (var analyzer of analyzerNodes) {
         if (analyzer.path == analyzerPath) {
@@ -412,15 +434,15 @@ function removeVideoFromProcessor(ip, video) {
             break;
         }
     }
-    //logger.info("%s processed video %s in %d ms", ip, video, getTime() - processorNodes[ip].videos[index].time);
-    processorNodes[ip].videos.splice(index, 1);
+    //logger.info("%s processed video %s in %d ms", ip, video, getTime() - processorNodes[id].videos[index].time);
+    processorNodes[id].videos.splice(index, 1);
 }
 
 function checkProcessorComplete(ws) {
     if (!VideoManager.isComplete())
         return;
-    var ip = ws._socket.remoteAddress;
-    if (processorNodes[ip].videos.length == 0)
+    var id = ws.id;
+    if (processorNodes[id].videos.length == 0)
         shutdownProcessor(ws);
 }
 
@@ -429,10 +451,10 @@ function shutdownProcessor(ws) {
         action: actionTypes.shutdown
     };
     sendRequest(msg, ws);
-    var ip = ws._socket.remoteAddress;
-    logger.info("Requesting shutdown from " + ip);
-    delete processorNodes[ip];
-    if (processorNodes.length == 0)
+    var id = ws.id;
+    logger.info("Requesting shutdown from " + id);
+    processorNodes[id].closed = true;
+    if (!haveActiveProcessors())
         shutdownControlNode();
 }
 
@@ -459,13 +481,13 @@ function requestStatus(ws) {
         action: actionTypes.stat_req
     };
     sendRequest(msg, ws);
-    var ip = ws._socket.remoteAddress;
-    processorNodes[ip].statusRequested = new Date().getTime();
+    var id = ws.id;
+    processorNodes[id].statusRequested = new Date().getTime();
 }
 
 function sendRequest(msgObj, ws) {
-    var ip = ws._socket.remoteAddress;
-    logger.debug("Sending request to " + ip + ": " + JSON.stringify(msgObj));
+    var id = ws.id;
+    logger.debug("Sending request to " + id + ": " + JSON.stringify(msgObj));
     ws.send(JSON.stringify(msgObj), {}, function() {logger.debug("Request Sent");});
 }
 
