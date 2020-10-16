@@ -12,11 +12,13 @@ const DockerManager = require('./modules/dockerManager.js');
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
 // Length of time (in ms) a node has to reconnect before it is considered dead
-const reconnectTimer = 600000;
+const reconnectTimer = 60000;
 // Length of time a processor has to confirm it received a process request
 const processTimer = 6000;
 // List of processor nodes currently active
 var processorNodes = {};
+// List of timeouts from disconnects - we can't store in the above since they don't serialize
+var timeouts = {};
 // List of analyzer (tfserving) nodes
 var analyzerNodes = [];
 // Completed videos and their output files
@@ -258,9 +260,10 @@ function initializeConnection(ws, id) {
 function onReconnect(ws, id) {
     ws.id = id;
     logger.info(id + " reconnected");
-    clearTimeout(processorNodes[id].timeoutId);
+    clearTimeout(timeouts[id]);
     processorNodes[id].timeoutId = null;
     processorNodes[id].disconnect = false;
+    broadcastStatus();
 }
 
 // If a processor loses connection, clean up outstanding tasks
@@ -269,8 +272,9 @@ function onSocketDisconnect(ws) {
         var id = ws.id;
         processorNodes[id].disconnect = true;
         logger.debug("WS " + id + " disconnected with Code:" + code + " and Reason:" + reason);
-        processorNodes[id].timeoutId = setTimeout(onReconnectFail(id), reconnectTimer);
-    };    
+        timeouts[id] = setTimeout(onReconnectFail(id), reconnectTimer);
+        broadcastStatus();
+    };
 }
 
 function onReconnectFail(id) {
@@ -283,6 +287,8 @@ function onReconnectFail(id) {
         if (!haveActiveProcessors())
             // TODO Start up new processors, or end.
             logger.debug("All processors disconnected.");
+        delete timeouts[id];
+        broadcastStatus();
     };
 }
 
