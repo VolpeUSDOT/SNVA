@@ -12,9 +12,9 @@ const DockerManager = require('./modules/dockerManager.js');
 // Length of time (in ms) to wait before running a status check on nodes
 const statusCheckFreq = 300000;
 // Length of time (in ms) a node has to reconnect before it is considered dead
-const reconnectTimer = 60000;
+const reconnectTimer = 600000;
 // Length of time a processor has to confirm it received a process request
-const processTimer = 6000;
+const processTimer = 60000;
 // List of processor nodes currently active
 var processorNodes = {};
 // List of timeouts from disconnects - we can't store in the above since they don't serialize
@@ -96,6 +96,9 @@ const logger = winston.createLogger({
         //
         new winston.transports.File({ filename: argv.logDir + '/error.log', level: 'error'}),
         new winston.transports.File({ filename: argv.logDir + '/combined.log'})
+    ],
+    exceptionHandlers: [
+        new winston.transports.File({ filename: argv.logDir + '/exceptions.log', timestamp: true, maxsize: 1000000 })
     ]
     });
 
@@ -170,6 +173,11 @@ wws.on('connection', function connection(ws, req) {
     ws.on('message', function incoming(message) {
         logger.info('Received: ' + message);
         parseMessage(message, ws);
+    });
+
+    ws.on("error", function(error) {
+        // Manage error here
+        logger.error(error);
     });
 
     ws.on('pong', function test(ms) {
@@ -282,6 +290,7 @@ function onReconnectFail(id) {
         logger.debug("WS " + id + " failed to reconnect");
         processorNodes[id].videos.forEach(function(video) {
             VideoManager.addVideo(video.path);
+            removeVideoFromProcessor(id, video.path);
         });
         processorNodes[id].closed = true;
         if (!haveActiveProcessors())
@@ -310,6 +319,11 @@ function parseMessage(message, ws) {
     if (processorNodes[id].disconnect) {
         logger.warn("Erroneous disconnect reported for " + id);
         onReconnect(ws, id);
+    }
+    if (processorNodes[id].closed) {
+        logger.warn("Message recieved from closed processor " + id + ": requesting shutdown");
+        shutdownProcessor(ws)
+        return
     }
     
     try {
@@ -465,11 +479,14 @@ function shutdownProcessor(ws) {
 }
 
 function shutdownControlNode() {
-    logger.info("Shutting down");
+    broadcastStatus();
     var output = fs.openSync(argv.outputPath, "w");
     Object.keys(completed).forEach(e => fs.writeSync(output, e + ": " + completed[e] + "\n"));
     fs.closeSync(output);
-    process.exit();
+    logger.info("Shutting down");
+    // Logger will need time to finish, and does not seem to properly fire an event when it does
+    // TODO find a better solution to this
+    setTimeout(process.exit, 5000);
 }
 
 function handleProcError(errorMsg, ws) {

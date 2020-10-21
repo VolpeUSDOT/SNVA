@@ -383,7 +383,8 @@ async def main():
         if response['action'] != 'CONNECTION_SUCCESS':
           raise ConnectionError(
             'control node connection failed with response: {}'.format(response))
-        connectionId = response['id']
+        if connectionId is None:
+          connectionId = response['id']
         logging.debug("Assigned id {}".format(connectionId))
         while True:
           # block if logical_device_count + 1 child processes are active
@@ -418,7 +419,7 @@ async def main():
             break
           elif response['action'] == 'SHUTDOWN':
             logging.info('control node requested shutdown')
-            # TODO should a shutdown request trigger program kill?
+            break
             pass
           elif response['action'] == 'PROCESS':
             # TODO Prepend input path
