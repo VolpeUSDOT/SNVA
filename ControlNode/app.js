@@ -47,8 +47,8 @@ const actionTypes = {
 
 // Configure command line arguments
 const argv = yargs
-    .option('paths', {
-                    alias: 'p',
+    .option('inputFile', {
+                    alias: 'i',
                     description: 'Path to a file containing a list of videos to process',
                     default: './videopaths.txt',
                     type: 'string'
@@ -76,6 +76,12 @@ const argv = yargs
                 default: './logs',
                 type: 'string'
             })
+    .option('port', {
+        alias: 'p',
+        description: 'Port which server should listen on',
+        default: 8081,
+        type: 'int'
+    })
     .help()
     .alias('help', 'h')
     .argv;
@@ -112,6 +118,7 @@ VideoManager.readInputPaths(argv.paths);
 numAnalyzer = argv.analyzerCount;
 
 var nodeList = [];
+// Placeholder functionality to automatically start other nodes; incomplete
 if (argv.nodes != null) {
     var rawNodes = fs.readFileSync(argv.nodes);
     nodeList = JSON.parse(rawNodes);
@@ -210,7 +217,7 @@ server.on('upgrade', function upgrade(request, socket, head) {
     }
 });
   
-server.listen(8081);
+server.listen(argv.port);
 
 function getGuiInfo() {
     return JSON.stringify({

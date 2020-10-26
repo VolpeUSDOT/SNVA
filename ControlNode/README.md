@@ -34,7 +34,8 @@ Once the Control Node has started, a WebSocket connection may be opened by a pro
 
 Flag | Short Flag | Properties | Description
 :------:|:---------------:|:---------------------:|:-----------:
---paths|-p|type=string, default='./videopaths.txt'|Text File containing a list of video paths separated by newlines
+--input|-i|type=string, default='./videopaths.txt'|Text File containing a list of video paths separated by newlines
 --nodes|-n|type=string, default='./nodes.json| JSON file containing a list of nodes to use as analyzers or processors. Should be an array of objects formatted as: {"node":"nodeLocation", "gpuEnabled":"true\|false"}. Functionality based on this argument is incomplete.
 --analyzerCount|-a|type=int, default=2|Number of analyzer nodes to generate. Functionality based on this argument is incomplete.
 --logDir|-l|type=string, default=./logs|Directory to save log files.
+--port|-p|type=int, default=8081|Port which server should listen on.
