@@ -110,10 +110,10 @@ const logger = winston.createLogger({
 
 logger.info("Starting control node...");
 
-logger.info("Provided with path file: " + argv.paths);
+logger.info("Provided with path file: " + argv.inputFile);
 logger.info("Provided with node file: " + argv.nodes);
 // Read paths from file into memory
-VideoManager.readInputPaths(argv.paths);
+VideoManager.readInputPaths(argv.inputFile);
 
 numAnalyzer = argv.analyzerCount;
 
@@ -178,7 +178,7 @@ guiWws.on('connection', function guiConn(ws) {
 
 wws.on('connection', function connection(ws, req) {
     ws.on('message', function incoming(message) {
-        logger.info('Received: ' + message);
+        logger.info('Received from ' + ws.id + ': ' + message);
         parseMessage(message, ws);
     });
 
@@ -192,7 +192,7 @@ wws.on('connection', function connection(ws, req) {
         var diff = parseInt(new Date().getTime()) - parseInt(ms.toString());
         logger.info("Latency to " + id + ": " + diff + " ms");
     });
-
+    
     const parameters = url.parse(req.url, true);
     var id = parameters.query.id;
 
@@ -328,7 +328,7 @@ function parseMessage(message, ws) {
         onReconnect(ws, id);
     }
     if (processorNodes[id].closed) {
-        logger.warn("Message recieved from closed processor " + id + ": requesting shutdown");
+        logger.warn("Message received from closed processor " + id + ": requesting shutdown");
         shutdownProcessor(ws)
         return
     }

@@ -420,7 +420,6 @@ async def main():
           elif response['action'] == 'SHUTDOWN':
             logging.info('control node requested shutdown')
             break
-            pass
           elif response['action'] == 'PROCESS':
             # TODO Prepend input path
             video_file_path = os.path.join(args.inputpath, response['path'])
