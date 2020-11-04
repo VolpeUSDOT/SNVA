@@ -205,33 +205,7 @@ async def main():
     class_names_path = args.classnamesfilepath
   logging.debug('labels path set to: {}'.format(class_names_path))
 
-  if args.cpuonly:
-    device_id_list = ['0']
-    device_type = 'cpu'
-  else:
-    device_id_list = IO.get_device_ids()
-    device_type = 'gpu'
-
-  physical_device_count = len(device_id_list)
-
-  logging.info('Found {} physical {} device(s).'.format(
-    physical_device_count, device_type))
-
-  valid_num_processes_list = get_valid_num_processes_per_device(device_type)
-
-  if args.numprocessesperdevice not in valid_num_processes_list:
-      raise ValueError(
-        'The the number of processes to assign to each {} device is expected '
-        'to be in the set {}.'.format(device_type, valid_num_processes_list))
-
-  for i in range(physical_device_count,
-                 physical_device_count * args.numprocessesperdevice):
-    device_id_list.append(str(i))
-
-  logical_device_count = len(device_id_list)
-
-  logging.info('Generated an additional {} logical {} device(s).'.format(
-    logical_device_count - physical_device_count, device_type))
+  num_processes = args.numprocesses
 
   class_name_map = IO.read_class_names(class_names_path)
 
@@ -387,8 +361,8 @@ async def main():
           connectionId = response['id']
         logging.debug("Assigned id {}".format(connectionId))
         while True:
-          # block if logical_device_count + 1 child processes are active
-          while len(return_code_queue_map) > logical_device_count:
+          # block if num_processes child processes are active
+          while len(return_code_queue_map) >= num_processes:
             total_num_processed_videos, total_num_processed_frames, \
             total_analysis_duration = await close_completed_video_processors(
               total_num_processed_videos, total_num_processed_frames,
@@ -490,7 +464,8 @@ if __name__ == '__main__':
   parser.add_argument('--controlnodehost', '-cnh', default='localhost:8080',
                       help='control node colon-separated host name or IP and '
                            'port')
-  parser.add_argument('--cpuonly', '-cpu', action='store_true', help='')
+  parser.add_argument('--numprocesses', '-np', type=int, default=3, 
+                      help='Number of videos to process at one time')
   parser.add_argument('--crop', '-c', action='store_true',
                       help='Crop video frames to [offsetheight, offsetwidth, '
                            'targetheight, targetwidth]')

@@ -83,7 +83,7 @@ Flag | Short Flag | Properties | Description
 --batchsize|-bs|type=int, default=32|Number of concurrent neural net inputs
 --binarizeprobs|-b|action=store_true|Round probs to zero or one. For distributions with two 0.5 values, both will be rounded up to 1.0
 --classnamesfilepath|-cnfp||Path to the class ids/names text file
---cpuonly|-cpu|action=store_true|Useful for systems without an NVIDIA GPU
+--numprocesses|-np|type=int, default=3|Number of videos to process at one time
 --crop|-c|action=store_true|Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]
 --cropheight|-ch|type=int, default=320|y-component of bottom-right corner of crop
 --cropwidth|-cw|type=int, default=474|x-component of bottom-right corner of crop
