@@ -341,6 +341,7 @@ async def main():
   sleep_duration = 1
   breakLoop = False
   connectionId = None
+  isIdle = False
   while True:
     try:
       if breakLoop:
@@ -376,13 +377,37 @@ async def main():
             break
           except:
             pass
-
-          logging.info('requesting video')
-          request = json.dumps({'action': 'REQUEST_VIDEO'})
-          await conn.send(request)
-
-          logging.info('reading response')
-          response = await conn.recv()
+          
+          if not isIdle:
+            logging.info('requesting video')
+            request = json.dumps({'action': 'REQUEST_VIDEO'})
+            await conn.send(request)
+            logging.info('reading response')
+            response = await conn.recv()
+          else:
+            # If idle, we will try to close completed processors until all are done
+            while len(return_code_queue_map) > 0:
+              # Before checking for completed processes, check for a new message
+              logging.info('Checking for new message')
+              try:
+                # If we get a response quickly, break our waiting loop and process the command
+                response = await asyncio.wait_for(conn.recv(), 1)
+                break
+              except asyncio.TimeoutError:
+                # Otherwise, go back to finishing our current tasks
+                logging.debug('No new message from control node, continuing...')
+                pass
+              total_num_processed_videos, total_num_processed_frames, \
+              total_analysis_duration = await close_completed_video_processors(
+                total_num_processed_videos, total_num_processed_frames,
+                total_analysis_duration, conn)
+              # by now, the last device_id_queue_len videos are being processed,
+              # so we can afford to poll for their completion infrequently
+              if len(return_code_queue_map) > 0:
+                sleep(sleep_duration)
+            # Once all are complete, if still idle we have no work left to do - we just wait for a new message
+            response = await conn.recv() 
+          
           response = json.loads(response)
 
           if response['action'] == 'STATUS_REQUEST':
@@ -390,9 +415,15 @@ async def main():
             pass
           elif response['action'] == 'CEASE_REQUESTS':
             logging.info('control node has no more videos to process')
-            break
+            isIdle = True
+            pass
+          elif response['action'] == 'RESUME_REQUESTS':
+            logging.info('control node has instructed to resume requests')
+            isIdle = False
+            pass
           elif response['action'] == 'SHUTDOWN':
             logging.info('control node requested shutdown')
+            breakLoop = True
             break
           elif response['action'] == 'PROCESS':
             # TODO Prepend input path
@@ -447,6 +478,10 @@ async def main():
     except ws.exceptions.ConnectionClosed:
       logging.info('Connection lost.  Attempting reconnect...')
       continue
+    except Exception as e:
+      logging.error("Unknown Exception")
+      logging.error(e)
+      raise e
     if breakLoop:
       break
 

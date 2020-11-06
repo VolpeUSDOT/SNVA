@@ -39,3 +39,7 @@ Flag | Short Flag | Properties | Description
 --analyzerCount|-a|type=int, default=2|Number of analyzer nodes to generate. Functionality based on this argument is incomplete.
 --logDir|-l|type=string, default=./logs|Directory to save log files.
 --port|-p|type=int, default=8081|Port which server should listen on.
+
+## GUI
+
+A web-based monitoring GUI is available at \<deploymentIp\>:\<port\>/snvaGui. This will display the status of all connected Processor nodes, as well as the number of videos remaining in the processing queue. The page will automatically update as the status changes.

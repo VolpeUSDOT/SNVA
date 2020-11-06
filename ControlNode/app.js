@@ -40,6 +40,7 @@ const actionTypes = {
     shutdown: "SHUTDOWN",
     req_video: "REQUEST_VIDEO",
     cease_req: "CEASE_REQUESTS",
+    resume_req: "RESUME_REQUESTS",
     stat_rep: "STATUS_REPORT",
     complete: "COMPLETE",
     error: "ERROR"
@@ -377,6 +378,7 @@ function sendNextVideo(ws) {
         requestMessage = {
             action: actionTypes.cease_req,
         };
+        processorNodes[id].idle = true;
         sendRequest(requestMessage, ws);
         return;
     }
@@ -466,9 +468,17 @@ function removeVideoFromProcessor(id, video) {
 }
 
 function checkProcessorComplete(ws) {
-    if (!VideoManager.isComplete())
-        return;
     var id = ws.id;
+    if (!VideoManager.isComplete()) {
+        // If we still have tasks in queue, and this processor has ceased requests, make it resume
+        if (processorNodes[id].idle === true && processorNodes[id].closed != true) {
+            var msg = {
+                action: actionTypes.resume_req
+            };
+            sendRequest(msg, ws);
+        }
+        return;
+    }
     if (processorNodes[id].videos.length == 0)
         shutdownProcessor(ws);
 }
