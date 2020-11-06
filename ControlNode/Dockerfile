@@ -4,4 +4,4 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 8081
-ENTRYPOINT [ "node", "app.js"]
+ENTRYPOINT ["node", "app.js"]
