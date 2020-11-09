@@ -421,6 +421,7 @@ function processTimeout(video, ws) {
         removeVideoFromProcessor(id, video);
         // Return it to the queue, and clean up the pending request
         VideoManager.addVideo(video);
+        broadcastStatus();
         pending[video] = null;
     }
 }

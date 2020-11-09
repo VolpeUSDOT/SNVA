@@ -1,6 +1,8 @@
-# SHRP2 NDS Video Analytics (SNVA) v0.2.0
+# SHRP2 NDS Video Analytics (SNVA) v0.2.1
 
-This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). The project is described in detail in our paper: [arXiv preprint arXiv:1811.04250, 2018](https://arxiv.org/abs/1811.04250).
+This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). 
+
+v0.1 of the project is described in detail in our paper: [arXiv preprint arXiv:1811.04250, 2018](https://arxiv.org/abs/1811.04250). If you were directed here by our paper, the v0.1 code may be found [here](https://github.com/VolpeUSDOT/SNVA/tree/v0.1.2).
 
 SNVA is intended to expand the Roadway Information Database (RID)’s ability to help transportation safety researchers develop and answer research questions. The RID is the primary source of data collected as part of the FHWA’s SHRP2 Naturalistic Driving Study, including vehicle telemetry, geolocation, and roadway characteristics data. Missing from the RID are the locations of work zones driven through by NDS volunteer drivers. The app’s first release will focus on enabling/enhancing research questions related to work zone safety by using machine learning-based computer vision techniques to exhaustively and automatically detect the presence of work zone features across the entire ~1 million-hour forward-facing video data set, and then conflating that information with the RID’s time-series records. Previously, researchers depended on sparse and low fidelity 511 data provided by states that hosted the routes driven by volunteers. A successful deployment of the SNVA app will make it possible to query the RID for the exact start/stop locations, lengths, and frequencies of work zones in trip videos; a long-standing, highly desired ability within the SHRP2 community.
 
@@ -72,7 +74,6 @@ python3 snva.py
     --mount type=bind,\
     src=/path/to/your/desired/log/directory,dst=/usr/logs\
     snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true
-
 ```
 
 
