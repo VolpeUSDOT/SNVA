@@ -9,4 +9,4 @@ RUN pip install scikit-image
 RUN apt-get -y update
 RUN apt-get -y upgrade
 RUN apt-get install -y ffmpeg
-ENTRYPOINT [ "python", "snva.py", "--modelname", "mobilenet_v2", "--modelsdirpath", "/usr/model", "-op", "/usr/output", "-ip", "/usr/videos", "-l", "/usr/logs"]
+ENTRYPOINT [ "python", "snva.py", "--modelsdirpath", "/usr/model", "-op", "/usr/output", "-ip", "/usr/videos", "-l", "/usr/logs"]

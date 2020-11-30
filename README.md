@@ -51,7 +51,7 @@ git clone https://github.com/VolpeUSDOT/SNVA.git SNVA
 
 ```shell
 python3 snva.py
-  -et --modelname mobilenet_v2 \
+  -et --modelname desired_model_name \
   -cnh controlodeHostOrIP \
   -l /path/to/your/desired/log/directory  \
   --modelsdirpath /path/to/your/model/directory \
@@ -73,9 +73,17 @@ python3 snva.py
     src=/path/to/directory/containing/your/vidoe/files,dst=/usr/videos 
     --mount type=bind,\
     src=/path/to/your/desired/log/directory,dst=/usr/logs\
-    snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true
+    snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true 
+    --modelname desired_model_name
 ```
 
+## Model directory structure
+
+The model directory should contain subdirectories for each available model. The specific model to use is specified by the '--modelname' argument, which should match the name of one of these directories. 
+
+This directory should also contain two nonstandard files. The first, class_names.txt, should be saved in the model directory itself. It will contain a list mapping numeric class id values to the appropriate string class name, in the format 'id:class_name'. Items should be separated by newlines. The processor will use this to parse model output.
+
+The second file is the input_size.txt file, which should be saved in the subdirectory for each modelname. It will contain a single numeric value between 224 and 299, and indicates the square input dimension of the neural net.
 
 ## Usage
 
@@ -100,7 +108,7 @@ Flag | Short Flag | Properties | Description
 --logpath|-l|default=logs|Path to the directory where log files are stored
 --logmaxbytes|-lmb|type=int|default=2**23|File size in bytes at which the log rolls over
 --modelsdirpath|-mdp|default=models/work_zone_scene_detection|Path to the parent directory of model directories
---modelname|-mn|required=True|The square input dimensions of the neural net
+--modelname|-mn|required=True|The subdirectory of modelsdirpath to use
 --numchannels|-nc|type=int, default=3|The fourth dimension of image batches
 --numprocessesperdevice|-nppd|type=int, default=1|The number of instances of inference to perform on each device
 --protobuffilename|-pbfn|default=model.pb|Name of the model protobuf file
@@ -135,3 +143,14 @@ When using Docker, some extraneous C++ output is passed to the host machine's co
 ## License
 
 [MIT](https://opensource.org/licenses/MIT)
+
+## Reference
+
+```
+@article{SNVA2018,
+  title={Detecting Work Zones in SHRP 2 NDS Videos Using Deep Learning Based Computer Vision},
+  author={Abodo, Rittmuller, Sumner, Berthaume},
+  journal={arXiv preprint arXiv:1811.04250},
+  year={2018}
+}
+```

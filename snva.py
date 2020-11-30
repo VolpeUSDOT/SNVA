@@ -548,7 +548,7 @@ if __name__ == '__main__':
                       default='models/work_zone_scene_detection',
                       help='Path to the parent directory of model directories.')
   parser.add_argument('--modelname', '-mn', default='mobilenet_v2',
-                      help='The square input dimensions of the neural net.')
+                      help='The name of the model directory under modelsdirpath to use.')
   parser.add_argument('--modelsignaturename', '-msn', default='serving_default',
                       help='Name of the signature that specifies what model is '
                            'being served, and that model\'s input and output '
