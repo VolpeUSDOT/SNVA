@@ -70,11 +70,11 @@ python3 snva.py
     --mount type=bind,\
     src=/path/to/your/desired/output/directory,dst=/usr/output 
     --mount type=bind,\
-    src=/path/to/directory/containing/your/vidoe/files,dst=/usr/videos 
+    src=/path/to/directory/containing/your/video/files,dst=/usr/videos 
     --mount type=bind,\
     src=/path/to/your/desired/log/directory,dst=/usr/logs\
-    snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true 
-    --modelname desired_model_name
+    snva-processor -et -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true 
+    --mn desired_model_name -pm <workzone/signalstate/weather>
 ```
 
 ## Model directory structure
