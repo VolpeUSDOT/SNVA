@@ -1,0 +1,3 @@
+/not/a/real/path.mp4
+/another/fake/video.mp4
+/just/one/more.mp4

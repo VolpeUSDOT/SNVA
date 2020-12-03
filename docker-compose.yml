@@ -1,0 +1,55 @@
+version: '2.4'
+# version 3.x does not allow us to specify nvidia runtime for the analyzer node
+
+services:
+    analyzer:
+      image: tensorflow/serving:latest-gpu
+      runtime: nvidia
+      ports:
+        - 8500:8500
+        - 8501:8501
+      volumes:
+        - type: bind
+          source: /media/data_1/snva_1/Models/fhwa/tf2/shrp2_nds/active_learning_round_1/mobilenet_v2
+          target: /models/mobilenet_v2
+      environment:
+        - MODEL_NAME=mobilenet_v2
+        - CUDA_VISIBLE_DEVICES=0
+      command: --enable_batching
+    control:
+        build: ./ControlNode
+        image: control-node
+        ports:
+            - 8081:8081
+        volumes:
+            - type: bind
+              source: /home/bsumner/Documents/DockerTestPaths.txt
+              target: /usr/config/Paths.txt
+            - type: bind
+              source: /home/bsumner/Documents/TestCaseNodes.json
+              target: /usr/config/Nodes.json
+            - type: bind
+              source: /home/bsumner/Documents/controlTestLogs
+              target: /usr/logs
+        command: --paths /usr/config/Paths.txt --logDir /usr/logs -a 1 --nodes /usr/config/Nodes.json
+    processor:
+        build: .
+        image: snva-processor
+        depends_on:
+          - "analyzer"
+          - "control"
+        volumes:
+            - type: bind
+              source: /home/bsumner/Documents/models/work_zone_scene_detection/
+              target: /usr/model
+            - type: bind
+              source: /home/bsumner/Documents/testOutput
+              target: /usr/output
+            - type: bind
+              source: /home/bsumner/Documents/testVideos
+              target: /usr/videos
+            - type: bind
+              source: /home/bsumner/Documents/testLogs
+              target: /usr/logs
+        command: -et -cpu -cnh 152.122.106.229:8081 -msh 152.122.106.229:8500 -wir true
+

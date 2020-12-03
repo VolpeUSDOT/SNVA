@@ -3,6 +3,7 @@ import json
 import logging
 import numpy as np
 import os
+import math
 import subprocess as sp
 
 path = os.path
@@ -78,7 +79,8 @@ class IO:
       raise e
     return int(json_map['streams'][0]['width']),\
            int(json_map['streams'][0]['height']),\
-           int(json_map['streams'][0]['nb_frames'])
+           int(json_map['streams'][0]['nb_frames']),\
+           int(math.ceil(float(json_map['streams'][0]['duration']))) + 1
 
   @staticmethod
   def _get_gauss_weight_and_window(smoothing_factor):
@@ -304,6 +306,7 @@ class IO:
       report_dir_path, report_file_name + '.csv')
 
     IO.write_csv(report_file_path, header, rows)
+    return report_file_path
 
   # TODO: confirm that the csv can be opened after writing
   @staticmethod
@@ -324,3 +327,52 @@ class IO:
             for event in events]
 
     IO.write_csv(report_file_path, header, rows)
+    return report_dir_path
+  
+  @staticmethod
+  def write_json(file_name, dir_path, json_data):
+    file_path = path.join(dir_path, 'bbox_reports')
+    if not path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = path.join(file_path, file_name + '.json')
+    with open(file_path, mode='w', newline='') as output_file:
+        json.dump(json_data, output_file)
+    return file_path
+
+  @staticmethod
+  def write_weather_report(report_file_name, report_dir_path, weather_features):
+    report_dir_path = path.join(report_dir_path, 'event_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    header = ['file_name', 'sequence_number', 'classification', 'start_frame_number',
+              'end_frame_number', 'start_timestamp', 'end_timestamp']
+    rows = [[report_file_name, feat.feature_id, feat.class_name, feat.start_frame_number,
+             feat.end_frame_number, feat.start_timestamp, feat.end_timestamp]
+            for feat in weather_features]
+    IO.write_csv(report_file_path, header, rows)
+    return report_file_path
+
+  @staticmethod
+  def write_signalstate_report(report_file_name, report_dir_path, detections):
+    report_dir_path = path.join(report_dir_path, 'event_reports')
+
+    if not path.exists(report_dir_path):
+      os.makedirs(report_dir_path)
+
+    report_file_path = path.join(
+      report_dir_path, report_file_name + '.csv')
+
+    header = ['file_name', 'frame_number', 'timestamp',
+              'classification']
+
+    rows = [[report_file_name, det['frame_num'], det['timestamp'],
+             det['classification']]
+            for det in detections]
+
+    IO.write_csv(report_file_path, header, rows)
+    return report_file_path

@@ -1,9 +1,26 @@
-# SHRP2 NDS Video Analytics (SNVA) v0.1.2
+# SHRP2 NDS Video Analytics (SNVA) v0.2.2
 
-This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). The project is described in detail in our paper: [arXiv preprint arXiv:1811.04250, 2018](https://arxiv.org/abs/1811.04250).
+This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). 
+
+v0.1 of the project is described in detail in our paper: [arXiv preprint arXiv:1811.04250, 2018](https://arxiv.org/abs/1811.04250). If you were directed here by our paper, the v0.1 code may be found [here](https://github.com/VolpeUSDOT/SNVA/tree/v0.1.2).
 
 SNVA is intended to expand the Roadway Information Database (RID)’s ability to help transportation safety researchers develop and answer research questions. The RID is the primary source of data collected as part of the FHWA’s SHRP2 Naturalistic Driving Study, including vehicle telemetry, geolocation, and roadway characteristics data. Missing from the RID are the locations of work zones driven through by NDS volunteer drivers. The app’s first release will focus on enabling/enhancing research questions related to work zone safety by using machine learning-based computer vision techniques to exhaustively and automatically detect the presence of work zone features across the entire ~1 million-hour forward-facing video data set, and then conflating that information with the RID’s time-series records. Previously, researchers depended on sparse and low fidelity 511 data provided by states that hosted the routes driven by volunteers. A successful deployment of the SNVA app will make it possible to query the RID for the exact start/stop locations, lengths, and frequencies of work zones in trip videos; a long-standing, highly desired ability within the SHRP2 community.
 
+## Architecture
+
+SNVA v0.2 is intended to run in a networked environment, and is comprised of three main components:
+
+### Control Node
+
+Manages the assignment of tasks to other working nodes.  For more details view [here](ControlNode/README.md).
+
+### Analyzer Node
+
+The anaylzer node is a tf-serving 2.1 instance built from the official docker image.  For more details, view [here](https://www.tensorflow.org/tfx/serving/docker).
+
+### Processor Node
+
+The processor node is assigned videos by the Control Node.  It then handles making inference requests to the analyzer node, as well as pre/post processing and writing the results.  The rest of this document describes the Processor Node.
 
 ## Required Software Dependencies
 
@@ -11,26 +28,12 @@ SNVA has been tested using the following software stack:
 
 - Ubuntu = 16.04
 - Python >= 3.5
-- TensorFlow = 1.8 (and its published dependencies)
+- TensorFlow = 2.1 (and its published dependencies)
+- TensorBoard = 2.1
 - FFmpeg >= 2.8
-
-
-## Optional Software Dependencies
-
-Inference speed was observed to improve by ~10% by building TensorFlow from source and including:
-
-- TensorRT = 3.0.4
-
-Installation of the Docker-containerized version of SNVA has been tested using:
-
-- NVIDIA-Docker = 2.0.3
-- Docker = 18.03.1-CE
-
-
-## System Requirements and Performance Expectations
-
-SNVA is intended to run on systems with NVIDIA GPUs, but can also run in a CPU-only mode. SNVA runs ~10x faster on a single NVIDIA GeForce GTX 1080 Ti together with a 3.00GHz 10-core Intel Core i7-6950X CPU than it does on the 10-core CPU alone. For a system with N GPUs and for --numprocessesperdevice = M, SNVA will process N * M videos concurrently, but is not (at this time) designed to distribute the processing of a single video across multiple GPUs. Inference speeds depend on the particular CNN architecture used to develop the model. When tested on two GPUs against 31,535,862 video frames spanning 1,344 videos, InceptionV3 inferred class labels at 826.24 fps on average over 10:40:04 hours, MobilenetV2 (with one video processor assigned to each GPU) averaged 1491.36 fps over 05:58:20 hours, and MobilenetV2 (with two video processors assigned to each GPU) averaged 1833.1 fps over 4:53:42 hours. RAM consumption on our development machine appeared to be safely bounded above by 3.75GB per active video processor.
-
+- websockets
+- numpy
+- scikit-image
 
 ## To install on Ubuntu:
 
@@ -48,72 +51,39 @@ git clone https://github.com/VolpeUSDOT/SNVA.git SNVA
 
 ```shell
 python3 snva.py
-  --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --modelname mobilenet_v2
-```
-
-```shell
-python snva.py
-  --modelname mobilenet_v2 \
-  --inputpath /path/to/your/desired/video_file/source/directory/or/file \
-  --outputpath /path/to/your/desired/report/directory \
-  --logpath /path/to/your/desired/report/directory/log
-  --batchsize 128 --loglevel debug --smoothprobs --extracttimestamps --crop \
+  -et --modelname desired_model_name \
+  -cnh controlodeHostOrIP \
+  -l /path/to/your/desired/log/directory  \
+  --modelsdirpath /path/to/your/model/directory \
+  -msh analyzerHostOrIP \
+  -ip /path/to/directory/containing/your/video/files \
   --writeinferencereports True
 ```
 
 ## To run using NVIDIA-Docker on Ubuntu (for a text file listing absolute paths to videos):
 
 ```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video/source/file/or/directory,dst=/media/input \
-  --mount type=bind, \
-    src=/path/to/a/common/root/video/directory/when/inputpath/is/a/text/file, \
-    dst=/media/root \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputlistrootdirpath /common/root/path/on/the/host \
-  --inputpath /media/input --outputpath /media/output --logpath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
-```
-## To run using NVIDIA-Docker on Ubuntu (for a directory of videos):
-
-```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video_file/source/directory,dst=/media/input \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputpath /media/input --outputpath /media/output --logpath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
+	sudo docker run \
+    --runtime=nvidia 
+    --mount type=bind,\
+    src=/path/to/your/model/directory,dst=/usr/model \
+    --mount type=bind,\
+    src=/path/to/your/desired/output/directory,dst=/usr/output 
+    --mount type=bind,\
+    src=/path/to/directory/containing/your/vidoe/files,dst=/usr/videos 
+    --mount type=bind,\
+    src=/path/to/your/desired/log/directory,dst=/usr/logs\
+    snva-processor -et -cpu -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true 
+    --modelname desired_model_name
 ```
 
-## To run using NVIDIA-Docker on Ubuntu (for a single video):
+## Model directory structure
 
-```shell
-sudo nvidia-docker run \
-  --mount type=bind, \
-    src=/path/to/your/desired/video_file/source/directory/video_file_name.ext, \
-    dst=/media/input/video_file_name.ext \
-  --mount type=bind, \
-    src=/path/to/your/desired/csv_file/destination/directory,dst=/media/output \
-  --mount type=bind, \
-    src=/path/to/your/desired/log_file/destination/directory,dst=/media/logs \
-  volpeusdot/snva \
-  --inputpath /media/input/ --outputpath /media/output --logpath /media/logs \
-  --modelname inception_v3 --batchsize 64 --smoothprobs --extracttimestamps \
-  --crop --writeinferencereports True
-```
+The model directory should contain subdirectories for each available model. The specific model to use is specified by the '--modelname' argument, which should match the name of one of these directories. 
 
+This directory should also contain two nonstandard files. The first, class_names.txt, should be saved in the model directory itself. It will contain a list mapping numeric class id values to the appropriate string class name, in the format 'id:class_name'. Items should be separated by newlines. The processor will use this to parse model output.
+
+The second file is the input_size.txt file, which should be saved in the subdirectory for each modelname. It will contain a single numeric value between 224 and 299, and indicates the square input dimension of the neural net.
 
 ## Usage
 
@@ -122,25 +92,23 @@ Flag | Short Flag | Properties | Description
 --batchsize|-bs|type=int, default=32|Number of concurrent neural net inputs
 --binarizeprobs|-b|action=store_true|Round probs to zero or one. For distributions with two 0.5 values, both will be rounded up to 1.0
 --classnamesfilepath|-cnfp||Path to the class ids/names text file
---cpuonly|-cpu|action=store_true|Useful for systems without an NVIDIA GPU
+--numprocesses|-np|type=int, default=3|Number of videos to process at one time
 --crop|-c|action=store_true|Crop video frames to [offsetheight, offsetwidth, targetheight, targetwidth]
 --cropheight|-ch|type=int, default=320|y-component of bottom-right corner of crop
 --cropwidth|-cw|type=int, default=474|x-component of bottom-right corner of crop
 --cropx|-cx|type=int, default=2|x-component of top-left corner of crop
 --cropy|-cy|type=int, default=0|y-component of top-left corner of crop
 --deinterlace|-d|action=store_true|Apply de-interlacing to video frames during extraction
---excludepreviouslyprocessed|-epp|action=store_true|Skip processing of videos for which reports already exist in outputpath
 --extracttimestamps|-et|action=store_true|Crop timestamps out of video frames and map them to strings for inclusion in the output CSV
 --gpumemoryfraction|-gmf|type=float, default=0.9|% of GPU memory available to this process
---inputpath|-ip|required=True|Path to a single video file, a folder containing video files, or a text file that lists absolute video file paths
---inputlistrootdirpath|-ilrdp|Path to the common root directory shared by video file paths listed in the text file specified using --inputpath
+--inputpath|-ip|required=True|Path to a directory containing the video files to be processed
 --ionodenamesfilepath|-ifp|Path to the io tensor names text file
 --loglevel|-ll|default=info|Defaults to 'info'. Pass 'debug' or 'error' for verbose or minimal logging, respectively
 --logmode|-lm|default=verbose|If verbose, log to file and console. If silent, log to file only
 --logpath|-l|default=logs|Path to the directory where log files are stored
 --logmaxbytes|-lmb|type=int|default=2**23|File size in bytes at which the log rolls over
 --modelsdirpath|-mdp|default=models/work_zone_scene_detection|Path to the parent directory of model directories
---modelname|-mn|required=True|The square input dimensions of the neural net
+--modelname|-mn|required=True|The subdirectory of modelsdirpath to use
 --numchannels|-nc|type=int, default=3|The fourth dimension of image batches
 --numprocessesperdevice|-nppd|type=int, default=1|The number of instances of inference to perform on each device
 --protobuffilename|-pbfn|default=model.pb|Name of the model protobuf file
@@ -153,6 +121,10 @@ Flag | Short Flag | Properties | Description
 --timestampy|-ty|type=int, default=340|y-component of top-left corner of timestamp (before cropping)
 --writeeventreports|-wer|type=bool, default=True|Output a CVS file for each video containing one or more feature events
 --writeinferencereports|-wir|type=bool, default=False|For every video, output a CSV file containing a probability distribution over class labels, a timestamp, and a frame number for each frame
+--controlnodehost|-cnh|default=localhost:8080|Control Node, colon-separated hostname or IP and Port
+--modelserverhost|-msh|default=0.0.0.0:8500|Tensorflow Serving Instance, colon-separated hostname or IP and Port
+--processormode|-pm|default=workzone|Indicates what model pipeline to use: 'workzone', 'signalstate', or 'weather'
+--writebbox|-bb|action=store_true|Create JSON files with raw bounding box coordinates when run in 'signalstate' mode
 
 
 ## Troubleshooting and Additional Considerations
@@ -171,3 +143,14 @@ When using Docker, some extraneous C++ output is passed to the host machine's co
 ## License
 
 [MIT](https://opensource.org/licenses/MIT)
+
+## Reference
+
+```
+@article{SNVA2018,
+  title={Detecting Work Zones in SHRP 2 NDS Videos Using Deep Learning Based Computer Vision},
+  author={Abodo, Rittmuller, Sumner, Berthaume},
+  journal={arXiv preprint arXiv:1811.04250},
+  year={2018}
+}
+```

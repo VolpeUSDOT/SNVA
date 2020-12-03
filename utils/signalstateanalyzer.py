@@ -12,7 +12,7 @@ from tensorboard._vendor.tensorflow_serving.apis.prediction_service_pb2_grpc \
 import tensorflow as tf
 
 
-class VideoAnalyzer:
+class SignalVideoAnalyzer:
   def __init__(
       self, frame_shape, num_frames, num_classes, batch_size, model_name,
       model_signature_name, model_server_host, model_input_size,
@@ -22,7 +22,7 @@ class VideoAnalyzer:
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.should_crop = should_crop
-    
+    self.printOneTime = True
 
     if self.should_crop:
       self.crop_x = crop_x
@@ -50,20 +50,15 @@ class VideoAnalyzer:
     self.batch_size = batch_size
     self.ffmpeg_command = ffmpeg_command
     self.num_classes = num_classes
-    self.prob_array = np.ndarray(
-      (num_frames, self.num_classes), dtype=np.float32)
+    self.signal_maps = []
     self.num_frames_processed = 0
 
     self.model_name = model_name
-    if model_name == 'weather':
-      self.input_name = 'keras_layer_input'
-      self.output_name = 'output'
-    else:
-      self.input_name = 'input'
-      self.output_name = 'probabilities'
     self.signature_name = model_signature_name
-    self.service_stub = PredictionServiceStub(
-      insecure_channel(model_server_host))
+    max_msg_length = 100* 1024 * 1024
+    options = [('grpc.max_message_length', max_msg_length), ('grpc.max_receive_message_length', max_msg_length)]
+    channel = insecure_channel(model_server_host, options=options)
+    self.service_stub = PredictionServiceStub(channel)
 
     logging.debug('opening video frame pipe')
 
@@ -154,7 +149,20 @@ class VideoAnalyzer:
   def _consume_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    self.prob_array[index] = response.outputs['probabilities'].float_val[:]
+    counts = response.outputs['num_detections'].float_val[:]
+    counts = np.array(counts, dtype=np.float32)
+    classes = tf.make_ndarray(response.outputs['detection_classes'])
+    scores = tf.make_ndarray(response.outputs['detection_scores'])
+    boxes = tf.make_ndarray(response.outputs['detection_boxes'])
+    num_detections = int(counts[0])
+    frame_scores = scores[0]
+    frame_scores = frame_scores[:num_detections]
+    frame_classes = classes[0]
+    frame_classes = frame_classes[:num_detections]
+    frame_boxes = boxes[0]
+    frame_boxes = frame_boxes[:num_detections]
+    frame_map = {'num_detections': num_detections, 'detection_classes': frame_classes, 'detection_scores': frame_scores, 'detection_boxes': frame_boxes }
+    self.signal_maps.insert(index, frame_map)
     return 1  # report one additional frame processed to caller
 
   def _produce_batch_grpc_request(self):
@@ -171,28 +179,23 @@ class VideoAnalyzer:
           self.frame_pipe.stderr.close()
           self.frame_pipe.terminate()
           return
-
         frame = np.fromstring(frame, dtype=np.uint8)
         frame = np.reshape(frame, [-1] + self.frame_shape)
-
         if self.should_extract_timestamps:
           self.timestamp_array[self.th * self.ti:self.th * (
             self.ti + frame.shape[0])] = \
             np.reshape(frame[:, self.ty:self.ty + self.th,
             self.tx:self.tx + self.tw], (-1,) + self.timestamp_array.shape[1:])
           self.ti += frame.shape[0]
-
         if self.should_crop:
           frame = frame[:, self.crop_y:self.crop_y + self.crop_height,
                   self.crop_x:self.crop_x + self.crop_width]
 
-        frame = self._preprocess_frame_batch(frame)
-
         request = PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
-        request.inputs[self.input_name].CopyFrom(
-          tf.make_tensor_proto(frame, shape=frame.shape, dtype=tf.float32))
+        request.inputs['inputs'].CopyFrom(
+          tf.make_tensor_proto(frame, shape=frame.shape, dtype=tf.uint8))
 
         num_processed += frame.shape[0]
 
@@ -213,17 +216,27 @@ class VideoAnalyzer:
   def _consume_batch_grpc_request(self, request, index):
     #TODO: validate the response
     response = self.service_stub.Predict(request)
-    response = response.outputs[self.output_name].float_val[:]
-    response = np.array(response, dtype=np.float32)
-    response = np.reshape(response, (-1, self.num_classes))
+    counts = response.outputs['num_detections'].float_val[:]
+    counts = np.array(counts, dtype=np.float32)
+    classes = tf.make_ndarray(response.outputs['detection_classes'])
+    scores = tf.make_ndarray(response.outputs['detection_scores'])
+    boxes = tf.make_ndarray(response.outputs['detection_boxes'])
+    for i in range(counts.shape[0]):
+      num_detections = int(counts[i])
+      frame_scores = scores[i]
+      frame_scores = frame_scores[:num_detections]
+      frame_classes = classes[i]
+      frame_classes = frame_classes[:num_detections]
+      frame_boxes = boxes[i]
+      frame_boxes = frame_boxes[:num_detections]
+      frame_map = {'num_detections': num_detections, 'detection_classes': frame_classes, 'detection_scores': frame_scores, 'detection_boxes': frame_boxes }
+      self.signal_maps.insert(index + i, frame_map)
 
-    self.prob_array[index:index + response.shape[0]] = response
-
-    return response.shape[0]  # report num frames processed to caller
+    return counts.shape[0]  # report num frames processed to caller
 
   def run(self):
-    logging.info('started inference on {} frames'.format(
-      self.prob_array.shape[0]))
+    #logging.info('started inference on {} frames'.format(
+    #  self.prob_array.shape[0]))
 
     with futures.ThreadPoolExecutor(
         max_workers=self.max_num_threads) as executor:
@@ -238,7 +251,7 @@ class VideoAnalyzer:
     logging.info('completed inference on {} frames.'.format(
       self.num_frames_processed))
 
-    return self.num_frames_processed, self.prob_array, self.timestamp_array
+    return self.num_frames_processed, self.signal_maps, self.timestamp_array
 
   def __del__(self):
     if self.frame_pipe.returncode is None:

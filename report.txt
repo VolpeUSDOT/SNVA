@@ -1,0 +1,137 @@
+================================================================================
+Input tree: 'SNVA'
+================================================================================
+--------------------------------------------------------------------------------
+Processing file 'SNVA/__init__.py'
+ outputting to 'SNVA2.0/__init__.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/snva.py'
+ outputting to 'SNVA2.0/snva.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/timestamp.py'
+ outputting to 'SNVA2.0/utils/timestamp.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/processor.py'
+ outputting to 'SNVA2.0/utils/processor.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/event.py'
+ outputting to 'SNVA2.0/utils/event.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/__init__.py'
+ outputting to 'SNVA2.0/utils/__init__.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/analyzer.py'
+ outputting to 'SNVA2.0/utils/analyzer.py'
+--------------------------------------------------------------------------------
+
+'SNVA/utils/analyzer.py' Line 19
+--------------------------------------------------------------------------------
+
+Renamed function 'tf.GraphDef' to 'tf.compat.v1.GraphDef'
+
+    Old:     graph_def = tf.GraphDef()
+                         ~~~~~~~~~~~   
+    New:     graph_def = tf.compat.v1.GraphDef()
+                         ~~~~~~~~~~~~~~~~~~~~~   
+
+'SNVA/utils/analyzer.py' Line 31
+--------------------------------------------------------------------------------
+
+Renamed function 'tf.GPUOptions' to 'tf.compat.v1.GPUOptions'
+
+    Old:       gpu_options = tf.GPUOptions(
+                             ~~~~~~~~~~~~~  
+    New:       gpu_options = tf.compat.v1.GPUOptions(
+                             ~~~~~~~~~~~~~~~~~~~~~~~  
+
+'SNVA/utils/analyzer.py' Line 35
+--------------------------------------------------------------------------------
+
+Renamed function 'tf.ConfigProto' to 'tf.compat.v1.ConfigProto'
+
+    Old:       self.session_config = tf.ConfigProto(allow_soft_placement=True,
+                                     ~~~~~~~~~~~~~~                            
+    New:       self.session_config = tf.compat.v1.ConfigProto(allow_soft_placement=True,
+                                     ~~~~~~~~~~~~~~~~~~~~~~~~                            
+
+'SNVA/utils/analyzer.py' Line 155
+--------------------------------------------------------------------------------
+
+Renamed function 'tf.image.resize_bilinear' to 'tf.compat.v1.image.resize_bilinear'
+
+    Old:       image = tf.image.resize_bilinear(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~  
+    New:       image = tf.compat.v1.image.resize_bilinear(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  
+
+'SNVA/utils/analyzer.py' Line 184
+--------------------------------------------------------------------------------
+
+tf.device no longer takes function as an argument. 'devide_name_or_function' argument has been renamed to 'device_name'.
+
+    Old:     with tf.device('/cpu:0') if self.device_type == 'cpu' else \
+                  ~~~~~~~~~                                               
+    New:     with tf.device('/cpu:0') if self.device_type == 'cpu' else \
+                  ~~~~~~~~~                                               
+
+'SNVA/utils/analyzer.py' Line 185
+--------------------------------------------------------------------------------
+
+tf.device no longer takes function as an argument. 'devide_name_or_function' argument has been renamed to 'device_name'.
+
+    Old:         tf.device(None):
+                 ~~~~~~~~~        
+    New:         tf.device(None):
+                 ~~~~~~~~~        
+
+'SNVA/utils/analyzer.py' Line 186
+--------------------------------------------------------------------------------
+
+Renamed function 'tf.Session' to 'tf.compat.v1.Session'
+
+    Old:       with tf.Session(config=self.session_config) as session:
+                    ~~~~~~~~~~                                         
+    New:       with tf.compat.v1.Session(config=self.session_config) as session:
+                    ~~~~~~~~~~~~~~~~~~~~                                         
+
+'SNVA/utils/analyzer.py' Line 193
+--------------------------------------------------------------------------------
+
+(Manual edit required) The `tf.data.Dataset.make_one_shot_iterator()` method has been removed. If you are using eager execution, you can iterate over `dataset` using a Python `for` loop. If you are using the Estimator API, you can return a dataset directly from your input functions without creating an iterator. As a last resort, please replace calls to that method on `dataset` with a call to `tf.compat.v1.data.make_one_shot_iterator(dataset)`.
+
+    Old:         next_batch = frame_dataset.make_one_shot_iterator().get_next()
+                                                                                
+    New:         next_batch = frame_dataset.make_one_shot_iterator().get_next()
+                                                                                
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/io.py'
+ outputting to 'SNVA2.0/utils/io.py'
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+Processing file 'SNVA/utils/logger.py'
+ outputting to 'SNVA2.0/utils/logger.py'
+--------------------------------------------------------------------------------
+
+
