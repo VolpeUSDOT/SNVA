@@ -1,6 +1,6 @@
 # SNVA Control Node
 
-The Control Node for the SNVA 2.0 Architecture Design. The control node is responsible for monitoring and assigning work to processor nodes.
+The Control Node for the SNVA v0.2.2 Architecture Design. The control node is responsible for monitoring and assigning work to processor nodes.
 
 ## Requirements
 

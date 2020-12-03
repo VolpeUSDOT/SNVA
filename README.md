@@ -1,4 +1,4 @@
-# SHRP2 NDS Video Analytics (SNVA) v0.2.1
+# SHRP2 NDS Video Analytics (SNVA) v0.2.2
 
 This repository houses the SNVA application and additional code used to develop the computer vision models at the core of SNVA. Model development code is based on [TensorFlow-Slim](https://github.com/tensorflow/models/tree/master/research/slim). 
 
