@@ -48,5 +48,5 @@ services:
             - type: bind
               source: /home/bsumner/Documents/testLogs
               target: /usr/logs
-        command: -et -cpu -cnh localhost:8081 -msh localhost:8500 -wir true
+        command: -et -cnh 0.0.0.0:8081 -msh 0.0.0.0:8500 -wir true
 
