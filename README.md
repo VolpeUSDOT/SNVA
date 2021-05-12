@@ -12,7 +12,7 @@ SNVA v0.2 is intended to run in a networked environment, and is comprised of thr
 
 ### Control Node
 
-Manages the assignment of tasks to other working nodes.  For more details view [here](ControlNode/README.md).
+Manages the assignment of tasks to other working nodes. For more details view [here](ControlNode/README.md).
 
 ### Analyzer Node
 
@@ -20,7 +20,34 @@ The anaylzer node is a tf-serving 2.1 instance built from the official docker im
 
 ### Processor Node
 
-The processor node is assigned videos by the Control Node.  It then handles making inference requests to the analyzer node, as well as pre/post processing and writing the results.  The rest of this document describes the Processor Node.
+The processor node is assigned videos by the Control Node.  It then handles making inference requests to the analyzer node, as well as pre/post processing and writing the results. 
+
+## Deployment
+
+To deploy the SNVA application, follow the below steps:
+
+1. Start at least one tf serving instance hosting your model to serve as an analyzer node. For more details, view [here](https://www.tensorflow.org/tfx/serving/docker).
+
+```
+sudo docker run -p 8500:8500 -p 8501:8501 --runtime=nvidia --mount type=bind,source=/path/to/your/model,target=/models/modelname -e MODEL_NAME=modelname -e CUDA_VISIBLE_DEVICES=0 -t tensorflow/serving:latest-gpu --enable_batching 
+```
+
+2. Start a single Control Node, passing it a list of video file names (NOT full paths) you wish to process and a log directory. For more details, or instructions on how to run the control node without docker, view [here](ControlNode/README.md).
+
+```
+sudo docker run --mount type=bind,src=/path/to/list/of/videos.txt,dst=/usr/config/Paths.txt --mount type=bind,src=/path/to/log/directory,dst=/usr/logs -d –p 8081:8081 control-node –inputFile /usr/config/Paths.txt --logDir /usr/logs 
+```
+
+3. Start one or more processor nodes, passing each the address of the control node, one analyzer node, and other configuration options for your environment. More information about the processor node may be found later in this document.
+
+```
+sudo docker run --runtime=nvidia --mount type=bind,src=/path/to/your/model/, dst=/usr/model --mount type=bind,src=/path/to/desired/output/directory,dst=/usr/output --mount type=bind,src=/path/to/directory/containing/videos,dst=/usr/videos --mount type=bind,src=/path/to/desired/log/directory,dst=/usr/logs snva-processor -et -cpu -cnh <IP of Control Node>:8081 -msh <IP of Analyzer Node>:8500 
+```
+
+Upon connecting to the Control Node, the Processor Node will request the name of a video to process and begin work. When all videos are complete, the Control Node will request each Processor shut down before stopping.
+
+
+The rest of this document outlines the Processor Node
 
 ## Required Software Dependencies
 
