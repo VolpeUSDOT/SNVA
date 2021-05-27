@@ -5,7 +5,7 @@ const path = require('path');
 const winston = require('winston');
 const http = require('http');
 const url = require('url');
-var express = require('express')
+var express = require('express');
 const VideoManager = require('./modules/videoPathManager.js');
 const DockerManager = require('./modules/dockerManager.js');
 
@@ -155,9 +155,9 @@ if (argv.nodes != null) {
     }
 }
 
-var app = express()
+var app = express();
 
-app.use(express.static('web'))
+app.use(express.static('web'));
 
 const server = http.createServer(app);
 
@@ -330,8 +330,8 @@ function parseMessage(message, ws) {
     }
     if (processorNodes[id].closed) {
         logger.warn("Message received from closed processor " + id + ": requesting shutdown");
-        shutdownProcessor(ws)
-        return
+        shutdownProcessor(ws);
+        return;
     }
     
     try {
@@ -423,7 +423,7 @@ function processTimeout(video, ws) {
         VideoManager.addVideo(video);
         broadcastStatus();
         pending[video] = null;
-    }
+    };
 }
 
 function processStatusReport(msg, ws) {

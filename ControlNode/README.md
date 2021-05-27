@@ -42,4 +42,4 @@ Flag | Short Flag | Properties | Description
 
 ## GUI
 
-A web-based monitoring GUI is available at \<deploymentIp\>:\<port\>/snvaGui. This will display the status of all connected Processor nodes, as well as the number of videos remaining in the processing queue. The page will automatically update as the status changes.
+A web-based monitoring GUI is available at \<deploymentIp\>:\<port\>/snvaStatus. This will display the status of all connected Processor nodes, as well as the number of videos remaining in the processing queue. The page will automatically update as the status changes.
