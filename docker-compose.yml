@@ -3,7 +3,7 @@ version: '2.4'
 
 services:
     analyzer:
-      image: tensorflow/serving:latest-gpu
+      image: docker.io/tensorflow/serving:2.1.4-gpu
       runtime: nvidia
       ports:
         - 8500:8500

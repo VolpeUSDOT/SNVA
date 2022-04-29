@@ -29,7 +29,7 @@ To deploy the SNVA application, follow the below steps:
 1. Start at least one tf serving instance hosting your model to serve as an analyzer node. For more details, view [here](https://www.tensorflow.org/tfx/serving/docker).
 
 ```
-sudo docker run -p 8500:8500 -p 8501:8501 --runtime=nvidia --mount type=bind,source=/path/to/your/model,target=/models/modelname -e MODEL_NAME=modelname -e CUDA_VISIBLE_DEVICES=0 -t tensorflow/serving:latest-gpu --enable_batching 
+sudo docker run -p 8500:8500 -p 8501:8501 --runtime=nvidia --mount type=bind,source=/path/to/your/model,target=/models/modelname -e MODEL_NAME=modelname -e CUDA_VISIBLE_DEVICES=0 -t docker.io/tensorflow/serving:2.1.4-gpu --enable_batching
 ```
 
 2. Start a single Control Node, passing it a list of video file names (NOT full paths) you wish to process and a log directory. For more details, or instructions on how to run the control node without docker, view [here](ControlNode/README.md).
