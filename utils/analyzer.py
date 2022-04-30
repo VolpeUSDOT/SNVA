@@ -18,7 +18,7 @@ class VideoAnalyzer:
       model_signature_name, model_server_host, model_input_size,
       should_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
       timestamp_max_width, should_crop, crop_x, crop_y, crop_width,
-      crop_height, ffmpeg_command, max_num_threads):
+      crop_height, ffmpeg_command, max_num_threads, processor_mode):
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.should_crop = should_crop
@@ -55,7 +55,7 @@ class VideoAnalyzer:
     self.num_frames_processed = 0
 
     self.model_name = model_name
-    if model_name == 'weather':
+    if processor_mode == 'weather':
       self.input_name = 'keras_layer_input'
       self.output_name = 'output'
     else:
