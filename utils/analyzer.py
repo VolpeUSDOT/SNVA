@@ -5,10 +5,7 @@ import numpy as np
 from skimage import img_as_float32
 from skimage.transform import resize
 from subprocess import PIPE, Popen
-from tensorboard._vendor.tensorflow_serving.apis.predict_pb2 \
-  import PredictRequest  #TODO or not todo, find an alternative source of TF serving api
-from tensorboard._vendor.tensorflow_serving.apis.prediction_service_pb2_grpc \
-  import PredictionServiceStub
+from tensorflow_serving.apis import predict_pb2, prediction_service_pb2_grpc
 import tensorflow as tf
 
 
@@ -62,7 +59,7 @@ class VideoAnalyzer:
       self.input_name = 'input'
       self.output_name = 'probabilities'
     self.signature_name = model_signature_name
-    self.service_stub = PredictionServiceStub(
+    self.service_stub = prediction_service_pb2_grpc.PredictionServiceStub(
       insecure_channel(model_server_host))
 
     logging.debug('opening video frame pipe')
@@ -129,7 +126,7 @@ class VideoAnalyzer:
 
         frame = np.expand_dims(frame, axis=0)  # batchify single frame
 
-        request = PredictRequest()
+        request = predict_pb2.PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
         request.inputs['input'].CopyFrom(
@@ -188,7 +185,7 @@ class VideoAnalyzer:
 
         frame = self._preprocess_frame_batch(frame)
 
-        request = PredictRequest()
+        request = predict_pb2.PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
         request.inputs[self.input_name].CopyFrom(
