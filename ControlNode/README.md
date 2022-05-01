@@ -4,7 +4,7 @@ The Control Node for the SNVA v0.2.2 Architecture Design. The control node is re
 
 ## Requirements
 
-- Node.js 12.15.0 LTS
+- Node.js 14 LTS
 
 ## Installation
 
