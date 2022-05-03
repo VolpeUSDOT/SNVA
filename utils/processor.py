@@ -180,7 +180,7 @@ def process_video(
     model_signature_name, model_server_host, model_input_size,
     do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
     timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
-    ffmpeg_command, max_threads)
+    ffmpeg_command, max_threads, processor_mode)
 
   try:
     start = time()
