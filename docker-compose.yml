@@ -28,7 +28,7 @@ services:
             - type: bind
               source: <<local directory to save log files in>>
               target: /usr/logs
-        command: --paths /usr/config/Paths.txt --logDir /usr/logs
+        command: --inputFile /usr/config/Paths.txt --logDir /usr/logs
     processor:
         build: .
         image: snva-processor
