@@ -2,6 +2,7 @@ FROM python:3.6
 WORKDIR /usr/src/app
 COPY . .
 RUN pip install tensorflow-gpu==2.1.0
+RUN pip install tensorflow-serving-api-gpu==2.1.0
 RUN pip install tensorboard==2.1.0
 RUN pip install websockets
 RUN pip install numpy

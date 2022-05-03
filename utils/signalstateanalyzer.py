@@ -5,10 +5,7 @@ import numpy as np
 from skimage import img_as_float32
 from skimage.transform import resize
 from subprocess import PIPE, Popen
-from tensorboard._vendor.tensorflow_serving.apis.predict_pb2 \
-  import PredictRequest  #TODO or not todo, find an alternative source of TF serving api
-from tensorboard._vendor.tensorflow_serving.apis.prediction_service_pb2_grpc \
-  import PredictionServiceStub
+from tensorflow_serving.apis import predict_pb2, prediction_service_pb2_grpc
 import tensorflow as tf
 
 
@@ -58,7 +55,7 @@ class SignalVideoAnalyzer:
     max_msg_length = 100* 1024 * 1024
     options = [('grpc.max_message_length', max_msg_length), ('grpc.max_receive_message_length', max_msg_length)]
     channel = insecure_channel(model_server_host, options=options)
-    self.service_stub = PredictionServiceStub(channel)
+    self.service_stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
 
     logging.debug('opening video frame pipe')
 
@@ -124,7 +121,7 @@ class SignalVideoAnalyzer:
 
         frame = np.expand_dims(frame, axis=0)  # batchify single frame
 
-        request = PredictRequest()
+        request = predict_pb2.PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
         request.inputs['input'].CopyFrom(
@@ -191,7 +188,7 @@ class SignalVideoAnalyzer:
           frame = frame[:, self.crop_y:self.crop_y + self.crop_height,
                   self.crop_x:self.crop_x + self.crop_width]
 
-        request = PredictRequest()
+        request = predict_pb2.PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = self.signature_name
         request.inputs['inputs'].CopyFrom(
