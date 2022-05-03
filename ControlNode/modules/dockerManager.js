@@ -6,7 +6,7 @@ exports.startAnalyzer = startAnalyzer;
 async function startAnalyzer(host, port) {
     var docker = new Docker();
     var containerSettings = {
-        Image: 'tensorflow/serving:latest-gpu',
+        Image: 'docker.io/tensorflow/serving:2.1.4-gpu',
         Cmd: ['--enable_batching'],
         Env: ['MODEL_NAME=mobilenet_v2', 'CUDA_VISIBLE_DEVICES=1'],
         HostConfig: {
@@ -38,6 +38,6 @@ async function startAnalyzer(host, port) {
     };
     var container = await docker.createContainer(containerSettings);
     await container.start();
-    //var container = await docker.run('tensorflow/serving:latest-gpu', ['--enable_batching'], process.stdout, containerSettings);
+    //var container = await docker.run('docker.io/tensorflow/serving:2.1.4-gpu', ['--enable_batching'], process.stdout, containerSettings);
     return container;
 }
