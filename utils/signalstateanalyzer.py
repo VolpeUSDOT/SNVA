@@ -1,5 +1,4 @@
 from concurrent import futures
-from grpc import insecure_channel
 import logging
 import numpy as np
 from skimage import img_as_float32
@@ -7,6 +6,7 @@ from skimage.transform import resize
 from subprocess import PIPE, Popen
 from tensorflow_serving.apis import predict_pb2, prediction_service_pb2_grpc
 import tensorflow as tf
+from utils.transport import create_model_channel
 
 
 class SignalVideoAnalyzer:
@@ -15,7 +15,8 @@ class SignalVideoAnalyzer:
       model_signature_name, model_server_host, model_input_size,
       should_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
       timestamp_max_width, should_crop, crop_x, crop_y, crop_width,
-      crop_height, ffmpeg_command, max_num_threads):
+      crop_height, ffmpeg_command, max_num_threads,
+      tls_ca=None, tls_cert=None, tls_key=None):
     #### frame generator variables ####
     self.frame_shape = frame_shape
     self.should_crop = should_crop
@@ -54,7 +55,8 @@ class SignalVideoAnalyzer:
     self.signature_name = model_signature_name
     max_msg_length = 100* 1024 * 1024
     options = [('grpc.max_message_length', max_msg_length), ('grpc.max_receive_message_length', max_msg_length)]
-    channel = insecure_channel(model_server_host, options=options)
+    channel = create_model_channel(
+      model_server_host, tls_ca, tls_cert, tls_key, options=options)
     self.service_stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
 
     logging.debug('opening video frame pipe')
@@ -251,7 +253,8 @@ class SignalVideoAnalyzer:
     return self.num_frames_processed, self.signal_maps, self.timestamp_array
 
   def __del__(self):
-    if self.frame_pipe.returncode is None:
+    frame_pipe = getattr(self, 'frame_pipe', None)
+    if frame_pipe is not None and frame_pipe.returncode is None:
       logging.debug(
         'video frame pipe with pid {} remained alive after being instructed to '
         'temrinate and had to be killed'.format(self.frame_pipe.pid))

@@ -26,23 +26,39 @@ The processor node is assigned videos by the Control Node.  It then handles maki
 
 To deploy the SNVA application, follow the below steps:
 
-1. Start at least one tf serving instance hosting your model to serve as an analyzer node. For more details, view [here](https://www.tensorflow.org/tfx/serving/docker).
+All control and inference traffic requires verified mutual TLS. There is no `ws://`, plaintext gRPC, or certificate-verification bypass. Upgrade the control node and processors together: old clients cannot use the new assignment/reconnect protocol.
 
-```
-sudo docker run -p 8500:8500 -p 8501:8501 --runtime=nvidia --mount type=bind,source=/path/to/your/model,target=/models/modelname -e MODEL_NAME=modelname -e CUDA_VISIBLE_DEVICES=0 -t docker.io/tensorflow/serving:2.1.4-gpu --enable_batching
+1. Provision certificates through your organization's PKI. Each server needs a PEM certificate chain and private key with `serverAuth` usage and a subject alternative name matching the hostname clients use. Each processor and GUI user needs a trusted `clientAuth` certificate and private key. Use a dedicated SNVA client CA: any certificate it signs grants access to the processor and status endpoints. Use distinct certificates for users/processors, restrict network access, and rotate/revoke credentials through your PKI. A reconnect token is also tied to the original client certificate, so a certificate change requires a new registration.
+
+2. Place `ca.pem`, `cert.pem`, and `key.pem` in separate control and processor credential directories **outside the repository/build context**. `ca.pem` must trust the relevant server and client issuers. Protect directories and keys with owner-only POSIX permissions, or equivalent Windows ACLs. Never commit keys, GUI PKCS#12 files, or the generated serving config. On Compose, the control and analyzer server certificates must include DNS SANs `control` and `analyzer`, respectively; add real external names if remote clients use them. Do not connect to `0.0.0.0`, a listening address rather than a server identity.
+
+3. Generate the TensorFlow Serving 2.1.4 SSLConfig, which embeds the analyzer key, certificate, and client CA and requires client certificates. The helper needs only Python's standard library:
+
+```shell
+python3 -m utils.transport --tls-ca /secure/analyzer/ca.pem \
+  --tls-cert /secure/analyzer/cert.pem --tls-key /secure/analyzer/key.pem \
+  --serving-config /secure/analyzer/serving-tls.pbtxt
 ```
 
-2. Start a single Control Node, passing it a list of video file names (NOT full paths) you wish to process and a log directory. For more details, or instructions on how to run the control node without docker, view [here](ControlNode/README.md).
+Keep the generated file private (the helper creates mode `0600` on POSIX). On Windows, explicitly apply restrictive ACLs. Start serving with TLS and **disable its cleartext REST API**, not just port publication:
 
-```
-sudo docker run --mount type=bind,src=/path/to/list/of/videos.txt,dst=/usr/config/Paths.txt --mount type=bind,src=/path/to/log/directory,dst=/usr/logs -d –p 8081:8081 control-node –inputFile /usr/config/Paths.txt --logDir /usr/logs 
+```shell
+docker run --runtime=nvidia -p 8500:8500 \
+  --mount type=bind,src=/path/to/model,dst=/models/mobilenet_v2,readonly \
+  --mount type=bind,src=/secure/analyzer/serving-tls.pbtxt,dst=/run/secrets/serving-tls.pbtxt,readonly \
+  --entrypoint tensorflow_model_server docker.io/tensorflow/serving:2.1.4-gpu \
+  --port=8500 --rest_api_port=0 --model_name=mobilenet_v2 \
+  --model_base_path=/models/mobilenet_v2 --enable_batching \
+  --ssl_config_file=/run/secrets/serving-tls.pbtxt
 ```
 
-3. Start one or more processor nodes, passing each the address of the control node, one analyzer node, and other configuration options for your environment. More information about the processor node may be found later in this document.
+4. Start the [control node](ControlNode/README.md) with its server cert/key and client CA. Supply video paths relative to the processor input directory; nested directories are supported. Start processors with their client cert/key and server CA using the commands below. Open the GUI at `https://<control-host>:8081/snvaGui.html` after importing the trusted GUI client certificate/key into the browser/OS certificate store.
 
-```
-sudo docker run --runtime=nvidia --mount type=bind,src=/path/to/your/model/, dst=/usr/model --mount type=bind,src=/path/to/desired/output/directory,dst=/usr/output --mount type=bind,src=/path/to/directory/containing/videos,dst=/usr/videos --mount type=bind,src=/path/to/desired/log/directory,dst=/usr/logs snva-processor -et -cpu -cnh <IP of Control Node>:8081 -msh <IP of Analyzer Node>:8500 
-```
+The provided `docker-compose.yml` mounts only each service's required credentials read-only. Set these absolute paths in your shell (all are required): `SNVA_MODEL_PATH`, `SNVA_MODEL_METADATA`, `SNVA_VIDEO_LIST`, `SNVA_VIDEOS`, `SNVA_CONTROL_LOGS`, `SNVA_CONTROL_OUTPUT`, `SNVA_PROCESSOR_LOGS`, `SNVA_PROCESSOR_OUTPUT`, `SNVA_CONTROL_TLS_DIR`, `SNVA_PROCESSOR_TLS_DIR`, and `SNVA_SERVING_TLS_CONFIG`. Also set `SNVA_CONTROL_ORIGIN` to the exact canonical HTTPS origin used by GUI browsers, such as `https://control.example.org:8081` (no trailing slash, no explicit default `:443`). Foreign-Origin browser requests are rejected even when the browser has a trusted client certificate; Python clients do not send Origin. Then run `docker compose up --build` on a GPU-enabled Linux host. `SNVA_MODEL_METADATA` contains `class_names.txt` and the model subdirectory with `input_size.txt`; `SNVA_MODEL_PATH` is the versioned SavedModel directory. No port 8501 or processor logging port is enabled. Custom deployments must preserve these TLS boundaries.
+
+Only validated assignments may be acknowledged or completed. `PROCESS` includes an `assignmentId`; processors echo that ID and the exact relative video path in `REQUEST_RECEIVED` and `COMPLETE`. Reconnect uses the registered ID plus `reconnectToken` received over WSS. Treat tokens as credentials, not loggable URLs. The final `outputList.txt` is now **JSON Lines**, one `{"video":"relative/path.mp4","output":"..."}` object per line, written at successful control-node shutdown. Update any external parser previously expecting `video: output` text; newlines and delimiters in fields are escaped rather than creating forged entries.
+
+Processors retain completions until an exact `COMPLETE_ACCEPTED` receipt arrives, and replay unconfirmed results after reconnect without double-counting. Completed controller sessions can recover terminal status, but expired sessions cannot reconnect. Processor logging uses spawned workers, trusted child-process queues, and one main-process rotating writer, with child cleanup preceding writer shutdown. The former TCP pickle receiver on localhost:9020 has been removed; do not recreate it in custom deployments.
 
 Upon connecting to the Control Node, the Processor Node will request the name of a video to process and begin work. When all videos are complete, the Control Node will request each Processor shut down before stopping.
 
@@ -77,31 +93,36 @@ git clone https://github.com/VolpeUSDOT/SNVA.git SNVA
 ## To run on Ubuntu:
 
 ```shell
-python3 snva.py
+python3 snva.py \
   -et --modelname desired_model_name \
-  -cnh controlodeHostOrIP \
+  -cnh control.example.org:8081 \
+  --tls-ca /secure/processor/ca.pem \
+  --tls-cert /secure/processor/cert.pem --tls-key /secure/processor/key.pem \
   -l /path/to/your/desired/log/directory  \
   --modelsdirpath /path/to/your/model/directory \
-  -msh analyzerHostOrIP \
+  -msh analyzer.example.org:8500 \
   -ip /path/to/directory/containing/your/video/files \
   --writeinferencereports True
 ```
 
-## To run using NVIDIA-Docker on Ubuntu (for a text file listing absolute paths to videos):
+## To run using NVIDIA-Docker on Ubuntu:
 
 ```shell
-	sudo docker run \
-    --runtime=nvidia 
+  sudo docker run \
+    --runtime=nvidia \
     --mount type=bind,\
     src=/path/to/your/model/directory,dst=/usr/model \
     --mount type=bind,\
-    src=/path/to/your/desired/output/directory,dst=/usr/output 
+    src=/path/to/your/desired/output/directory,dst=/usr/output \
     --mount type=bind,\
-    src=/path/to/directory/containing/your/video/files,dst=/usr/videos 
+    src=/path/to/directory/containing/your/video/files,dst=/usr/videos,readonly \
     --mount type=bind,\
-    src=/path/to/your/desired/log/directory,dst=/usr/logs\
-    snva-processor -et -cnh controlnodeHoseOrIP -msh analzyerHostOrIP -wir true 
-    --mn desired_model_name -pm <workzone/signalstate/weather>
+    src=/path/to/your/desired/log/directory,dst=/usr/logs \
+    --mount type=bind,src=/secure/processor,dst=/run/secrets/tls,readonly \
+    snva-processor -et -cnh control.example.org:8081 -msh analyzer.example.org:8500 \
+    --tls-ca /run/secrets/tls/ca.pem --tls-cert /run/secrets/tls/cert.pem \
+    --tls-key /run/secrets/tls/key.pem -wir true \
+    -mn desired_model_name -pm workzone
 ```
 
 ## Model directory structure
@@ -148,8 +169,11 @@ Flag | Short Flag | Properties | Description
 --timestampy|-ty|type=int, default=340|y-component of top-left corner of timestamp (before cropping)
 --writeeventreports|-wer|type=bool, default=True|Output a CVS file for each video containing one or more feature events
 --writeinferencereports|-wir|type=bool, default=False|For every video, output a CSV file containing a probability distribution over class labels, a timestamp, and a frame number for each frame
---controlnodehost|-cnh|default=localhost:8080|Control Node, colon-separated hostname or IP and Port
---modelserverhost|-msh|default=0.0.0.0:8500|Tensorflow Serving Instance, colon-separated hostname or IP and Port
+--controlnodehost|-cnh|default=localhost:8081|Control hostname:port or wss://hostname:port; verified TLS required
+--modelserverhost|-msh|default=localhost:8500|TensorFlow Serving hostname:port; verified mutual TLS required
+--tls-ca||required=True|PEM CA bundle trusted for control and inference servers
+--tls-cert||required=True|PEM processor client certificate chain
+--tls-key||required=True|PEM private key matching the client certificate
 --processormode|-pm|default=workzone|Indicates what model pipeline to use: 'workzone', 'signalstate', or 'weather'
 --writebbox|-bb|action=store_true|Create JSON files with raw bounding box coordinates when run in 'signalstate' mode
 
@@ -165,6 +189,8 @@ When terminating the app using ctrl-c, there may be a delay while the app termin
 When terminating the dockerized app, use ctrl-c to let the app terminate gracefully before invoking the nvidia-docker stop command (which actually shouldn't be needed).
 
 Windows is not officially supported but may be used with minor code tweaks.
+
+Security regression tests run without models or GPUs: `python3 -B -m unittest discover -s tests -v` (install `grpcio` and provide OpenSSL for live TLS tests), and `npm ci && npm test` in `ControlNode`. Tests generate temporary certificates and exercise mutual TLS, rejected identities, reconnect cleanup, assignment ownership/replay, escaped manifests, and queue-only logging. Legacy Python/TensorFlow/container versions remain a separate maintenance concern; these security fixes do not modernize the inference stack.
 
 When using Docker, some extraneous C++ output is passed to the host machine's console that is not actually logged to file and is not intended to be seen. Consider this a bug and ignore it.
 ## License
