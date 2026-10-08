@@ -1,26 +1,27 @@
 import argparse
 import asyncio
+from collections import deque
 import json
 import logging
-from logging.handlers import QueueHandler, SocketHandler
-from multiprocessing import Process, Queue
+from logging.handlers import QueueHandler
+from multiprocessing import get_context
 import os
 import platform
 from queue import Empty
 import signal
 import socket
-from subprocess import PIPE, Popen
-from threading import Thread
-from time import sleep, time
+from threading import Event, Thread
+from time import time
 from utils.io import IO
 from utils.processor import process_video, process_video_signalstate
+from utils.logger import configure_logging
+from utils.transport import build_control_url, create_client_context
 import websockets as ws
 
 path = os.path
 
 logger = logging.getLogger('websockets')
 logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
 
 def main_logger_fn(log_queue):
   while True:
@@ -28,8 +29,7 @@ def main_logger_fn(log_queue):
       message = log_queue.get()
       if message is None:
         break
-      logger = logging.getLogger(__name__)
-      logger.handle(message)
+      logging.getLogger().handle(message)
     except Exception as e:
       logging.error(e)
       break
@@ -37,13 +37,17 @@ def main_logger_fn(log_queue):
 
 # Logger thread: listens for updates to log queue and writes them as they arrive
 # Terminates after we add None to the queue
-def child_logger_fn(main_log_queue, child_log_queue):
-  while True:
+def child_logger_fn(main_log_queue, child_log_queue, stop_event=None):
+  while stop_event is None or not stop_event.is_set():
     try:
-      message = child_log_queue.get()
+      message = child_log_queue.get(timeout=0.2)
       if message is None:
         break
+      if stop_event is not None and stop_event.is_set():
+        break
       main_log_queue.put(message)
+    except Empty:
+      continue
     except Exception as e:
       logging.error(e)
       break
@@ -83,15 +87,6 @@ async def main():
 
     # if total_num_video_to_process is None \
     #     or total_num_video_to_process == len(video_file_paths):
-
-    # Signal the logging thread to finish up
-    logging.debug('signaling logger thread to end service.')
-
-    log_queue.put_nowait(None)
-
-    logger_thread.join()
-
-    logging.shutdown()
 
   signal.signal(signal.SIGINT, interrupt_handler)
 
@@ -213,34 +208,45 @@ async def main():
   return_code_queue_map = {}
   child_logger_thread_map = {}
   child_process_map = {}
+  assignment_map = {}
+  completed_result_map = {}
+  child_log_queue_map = {}
+  child_log_stop_map = {}
+  control_messages = deque()
+  process_context = get_context('spawn')
 
   total_num_processed_videos = 0
   total_num_processed_frames = 0
   total_analysis_duration = 0
 
-  def start_video_processor(video_file_path):
+  def start_video_processor(video_file_path, assignment):
     # Before popping the next video off of the list and creating a process to
     # scan it, check to see if fewer than logical_device_count + 1 processes are
     # active. If not, Wait for a child process to release its semaphore
     # acquisition. If so, acquire the semaphore, pop the next video name,
     # create the next child process, and pass the semaphore to it
-    return_code_queue = Queue()
+    return_code_queue = process_context.Queue()
 
-    return_code_queue_map[video_file_path] = return_code_queue
+    assignment_id = assignment['assignmentId']
+    return_code_queue_map[assignment_id] = return_code_queue
+    assignment_map[assignment_id] = assignment
 
     logging.debug('creating new child process.')
 
-    child_log_queue = Queue()
+    child_log_queue = process_context.Queue()
+    child_log_queue_map[assignment_id] = child_log_queue
 
+    stop_event = Event()
+    child_log_stop_map[assignment_id] = stop_event
     child_logger_thread = Thread(target=child_logger_fn,
-                                 args=(log_queue, child_log_queue))
+                                 args=(log_queue, child_log_queue, stop_event),
+                                 daemon=True)
 
     child_logger_thread.start()
-
-    child_logger_thread_map[video_file_path] = child_logger_thread
+    child_logger_thread_map[assignment_id] = child_logger_thread
 
     if 'signalstate' == args.processormode:
-      child_process = Process(
+      child_process = process_context.Process(
         target=process_video_signalstate,
         name=path.splitext(path.split(video_file_path)[1])[0],
         args=(video_file_path, output_dir_path, class_name_map, args.modelname, args.modelsignaturename, args.modelserverhost,model_input_size,
@@ -250,9 +256,10 @@ async def main():
               args.timestampmaxwidth, args.timestampheight, args.timestampx,
               args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
               args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-              args.writebbox, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
+              args.writebbox, args.writeeventreports, args.maxanalyzerthreads, args.processormode,
+              args.tls_ca, args.tls_cert, args.tls_key))
     else:
-      child_process = Process(
+      child_process = process_context.Process(
       target=process_video,
       name=path.splitext(path.split(video_file_path)[1])[0],
       args=(video_file_path, output_dir_path, class_name_map, args.modelname, args.modelsignaturename, args.modelserverhost,model_input_size,
@@ -262,229 +269,207 @@ async def main():
             args.timestampmaxwidth, args.timestampheight, args.timestampx,
             args.timestampy, args.deinterlace, args.numchannels, args.batchsize,
             args.smoothprobs, args.smoothingfactor, args.binarizeprobs,
-            args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode))
+            args.writeinferencereports, args.writeeventreports, args.maxanalyzerthreads, args.processormode,
+            args.tls_ca, args.tls_cert, args.tls_key))
     logging.debug('starting child process.')
 
+    child_process_map[assignment_id] = child_process
     child_process.start()
 
-    child_process_map[video_file_path] = child_process
+  def close_worker(assignment_id, abort=False):
+    child = child_process_map.get(assignment_id)
+    forced = False
+    if child is not None and child.pid is not None:
+      if abort and child.is_alive():
+        forced = True
+        child.terminate()
+      child.join(timeout=15)
+      if child.is_alive():
+        forced = True
+        child.terminate()
+        child.join(timeout=15)
+      if child.is_alive():
+        os.kill(child.pid, signal.SIGKILL)
+        child.join()
+      forced = forced or child.exitcode not in (None, 0)
+    child_queue = child_log_queue_map.get(assignment_id)
+    forwarder = child_logger_thread_map.get(assignment_id)
+    if child_queue is not None:
+      # The producer is stopped before the sentinel; forward all final records.
+      child_queue.put(None)
+    if forwarder is not None:
+      forwarder.join(timeout=1 if forced else None)
+      if forced:
+        # A killed Queue producer can abandon a pipe/write lock mid-record.
+        child_log_stop_map[assignment_id].set()
+        if forwarder.is_alive():
+          logging.warning('abandoning corrupted worker log queue after forced termination')
+    for queue in (child_queue, return_code_queue_map.get(assignment_id)):
+      if queue is not None:
+        if forced:
+          queue.cancel_join_thread()
+        queue.close()
+        if not forced:
+          queue.join_thread()
+    for mapping in (return_code_queue_map, child_logger_thread_map,
+                    child_process_map, child_log_queue_map, assignment_map,
+                    completed_result_map, child_log_stop_map):
+      mapping.pop(assignment_id, None)
 
-  async def close_completed_video_processors(
-      total_num_processed_videos, total_num_processed_frames,
-      total_analysis_duration, websocket_conn):
-    for video_file_path in list(return_code_queue_map.keys()):
-      return_code_queue = return_code_queue_map[video_file_path]
+  async def receive_message(conn):
+    if control_messages:
+      return control_messages.popleft()
+    return json.loads(await conn.recv())
+
+  async def close_completed_video_processors(websocket_conn):
+    nonlocal total_num_processed_videos, total_num_processed_frames
+    nonlocal total_analysis_duration
+    for assignment_id in list(return_code_queue_map.keys()):
+      return_code_queue = return_code_queue_map[assignment_id]
+      assignment = assignment_map[assignment_id]
 
       try:
-        return_code_map = return_code_queue.get_nowait()
+        if assignment_id not in completed_result_map:
+          completed_result_map[assignment_id] = return_code_queue.get_nowait()
+        return_code_map = completed_result_map[assignment_id]
 
         return_code = return_code_map['return_code']
         return_value = return_code_map['return_value']
 
-        child_process = child_process_map[video_file_path]
+        child_process = child_process_map[assignment_id]
 
         logging.debug(
           'child process {} returned with exit code {} and exit value '
           '{}'.format(child_process.pid, return_code, return_value))
 
         if return_code == 'success':
-          total_num_processed_videos += 1
-          total_num_processed_frames += return_value
-          total_analysis_duration += return_code_map['analysis_duration']
-
           logging.info('notifying control node of completion')
 
           complete_request = json.dumps({
             'action': 'COMPLETE',
-            'video': os.path.basename(video_file_path),
+            'video': assignment['path'],
+            'assignmentId': assignment_id,
             'output': return_code_map['output_locations']})
           await websocket_conn.send(complete_request)
+          while True:
+            receipt = json.loads(await asyncio.wait_for(websocket_conn.recv(), 30))
+            if receipt.get('action') == 'COMPLETE_ACCEPTED':
+              if (receipt.get('video') == assignment['path']
+                  and receipt.get('assignmentId') == assignment_id):
+                break
+              continue
+            control_messages.append(receipt)
+          total_num_processed_videos += 1
+          total_num_processed_frames += return_value
+          total_analysis_duration += return_code_map['analysis_duration']
 
-        child_logger_thread = child_logger_thread_map[video_file_path]
-        
-        logging.debug('joining logger thread for child process {}'.format(
-          child_process.pid))
-
-        child_logger_thread.join(timeout=15)
-
-        if child_logger_thread.is_alive():
-          logging.warning(
-            'logger thread for child process {} remained alive following join '
-            'timeout'.format(child_process.pid))
-        
-        logging.debug('joining child process {}'.format(child_process.pid))
-        
-        child_process.join(timeout=15)
-
-        # if the child process has not yet terminated, kill the child process at
-        # the risk of losing any log message not yet buffered by the main logger
-        try:
-          os.kill(child_process.pid, signal.SIGKILL)
-          logging.warning(
-            'child process {} remained alive following join timeout and had to '
-            'be killed'.format(child_process.pid))
-        except:
-          pass
-        
-        return_code_queue.close()
-        
-        return_code_queue_map.pop(video_file_path)
-        child_logger_thread_map.pop(video_file_path)
-        child_process_map.pop(video_file_path)
+        close_worker(assignment_id)
       except Empty:
         pass
-
-    return total_num_processed_videos, total_num_processed_frames, \
-           total_analysis_duration
 
   start = time()
 
   sleep_duration = 1
   breakLoop = False
+  shutdown_requested = False
   connectionId = None
+  reconnect_token = None
+  control_tls = create_client_context(args.tls_ca, args.tls_cert, args.tls_key)
   isIdle = False
-  while True:
-    try:
-      if breakLoop:
-        break
-      wsUrl = 'ws://' + args.controlnodehost + '/registerProcess'
-      if connectionId is not None:
-        wsUrl = wsUrl + '?id=' + connectionId
-      logging.debug("Connecting with URL {}".format(wsUrl))
-      async with ws.connect(wsUrl) as conn:
-        response = await conn.recv()
-        response = json.loads(response)
-        logging.info(response)
-
-        if response['action'] != 'CONNECTION_SUCCESS':
-          raise ConnectionError(
-            'control node connection failed with response: {}'.format(response))
-        if connectionId is None:
-          connectionId = response['id']
-        logging.debug("Assigned id {}".format(connectionId))
-        while True:
-          # block if num_processes child processes are active
-          while len(return_code_queue_map) >= num_processes:
-            total_num_processed_videos, total_num_processed_frames, \
-            total_analysis_duration = await close_completed_video_processors(
-              total_num_processed_videos, total_num_processed_frames,
-              total_analysis_duration, conn)
-            sleep(sleep_duration)
-
-          try:  # todo poll for termination signal from control node
-            _ = main_interrupt_queue.get_nowait()
-            logging.debug(
-              'breaking out of child process generation following interrupt signal')
-            break
-          except:
-            pass
-          
-          if not isIdle:
-            logging.info('requesting video')
-            request = json.dumps({'action': 'REQUEST_VIDEO'})
-            await conn.send(request)
-            logging.info('reading response')
-            response = await conn.recv()
-          else:
-            # If idle, we will try to close completed processors until all are done
-            while len(return_code_queue_map) > 0:
-              # Before checking for completed processes, check for a new message
-              logging.info('Checking for new message')
-              try:
-                # If we get a response quickly, break our waiting loop and process the command
-                response = await asyncio.wait_for(conn.recv(), 1)
-                break
-              except asyncio.TimeoutError:
-                # Otherwise, go back to finishing our current tasks
-                logging.debug('No new message from control node, continuing...')
-                pass
-              total_num_processed_videos, total_num_processed_frames, \
-              total_analysis_duration = await close_completed_video_processors(
-                total_num_processed_videos, total_num_processed_frames,
-                total_analysis_duration, conn)
-              # by now, the last device_id_queue_len videos are being processed,
-              # so we can afford to poll for their completion infrequently
-              if len(return_code_queue_map) > 0:
-                sleep(sleep_duration)
-            # Once all are complete, if still idle we have no work left to do - we just wait for a new message
-            response = await conn.recv() 
-          
-          response = json.loads(response)
-
-          if response['action'] == 'STATUS_REQUEST':
-            logging.info('control node requested status request')
-            pass
-          elif response['action'] == 'CEASE_REQUESTS':
-            logging.info('control node has no more videos to process')
-            isIdle = True
-            pass
-          elif response['action'] == 'RESUME_REQUESTS':
-            logging.info('control node has instructed to resume requests')
-            isIdle = False
-            pass
-          elif response['action'] == 'SHUTDOWN':
-            logging.info('control node requested shutdown')
-            breakLoop = True
-            break
-          elif response['action'] == 'PROCESS':
-            # TODO Prepend input path
-            video_file_path = os.path.join(args.inputpath, response['path'])
-            request_received = json.dumps({'action': 'REQUEST_RECEIVED', 'video': response['path']})
-            await conn.send(request_received)
+  try:
+    while not breakLoop:
+      try:
+        wsUrl = build_control_url(args.controlnodehost, connectionId, reconnect_token)
+        logging.debug("Connecting to secure control node %s", args.controlnodehost)
+        async with ws.connect(wsUrl, ssl=control_tls) as conn:
+          response = json.loads(await conn.recv())
+          if response['action'] != 'CONNECTION_SUCCESS':
+            raise ConnectionError('control node registration failed')
+          if connectionId is None:
+            connectionId = response['id']
+          reconnect_token = response['reconnectToken']
+          logging.debug("Assigned id {}".format(connectionId))
+          # Replay locally sent but unconfirmed results before requesting work.
+          if completed_result_map:
+            await close_completed_video_processors(conn)
+          while not shutdown_requested:
+            while len(return_code_queue_map) >= num_processes:
+              await close_completed_video_processors(conn)
+              await asyncio.sleep(sleep_duration)
             try:
-              start_video_processor(video_file_path)
-            except Exception as e:
-              logging.error('an unknown error has occured while processing {}'.format(video_file_path))
-              logging.error(e)
-          else:
-            raise ConnectionError(
-              'control node replied with unexpected response: {}'.format(response))
-        logging.debug('{} child processes remain enqueued'.format(len(return_code_queue_map)))
-        while len(return_code_queue_map) > 0:
-          #logging.debug('waiting for the final {} child processes to '
-          #              'terminate'.format(len(return_code_queue_map)))
-
-          total_num_processed_videos, total_num_processed_frames, \
-          total_analysis_duration = await close_completed_video_processors(
-            total_num_processed_videos, total_num_processed_frames,
-            total_analysis_duration, conn)
-
-          # by now, the last device_id_queue_len videos are being processed,
-          # so we can afford to poll for their completion infrequently
-          if len(return_code_queue_map) > 0:
-            #logging.debug('sleeping for {} seconds'.format(sleep_duration))
-            sleep(sleep_duration)
-
-        end = time() - start
-
-        processing_duration = IO.get_processing_duration(
-          end, 'snva {} processed a total of {} videos and {} frames in:'.format(
-            snva_version_string, total_num_processed_videos,
-            total_num_processed_frames))
-        logging.info(processing_duration)
-
-        logging.info('Video analysis alone spanned a cumulative {:.02f} '
-                    'seconds'.format(total_analysis_duration))
-
-        logging.info('exiting snva {} main process'.format(snva_version_string))
-        breakLoop = True
-    except socket.gaierror:
-      # log something
-      logging.info('gaierror')
-      continue
-    except ConnectionRefusedError:
-      # log something else
-      logging.info('connection refused')
-      break
-    except ws.exceptions.ConnectionClosed:
-      logging.info('Connection lost.  Attempting reconnect...')
-      continue
-    except Exception as e:
-      logging.error("Unknown Exception")
-      logging.error(e)
-      raise e
-    if breakLoop:
-      break
+              main_interrupt_queue.get_nowait()
+              shutdown_requested = True
+              break
+            except Empty:
+              pass
+            if control_messages:
+              response = await receive_message(conn)
+            elif not isIdle:
+              logging.info('requesting video')
+              await conn.send(json.dumps({'action': 'REQUEST_VIDEO'}))
+              response = await receive_message(conn)
+            else:
+              response = None
+              while return_code_queue_map:
+                try:
+                  response = await asyncio.wait_for(receive_message(conn), 1)
+                  break
+                except asyncio.TimeoutError:
+                  await close_completed_video_processors(conn)
+                  if control_messages:
+                    response = await receive_message(conn)
+                    break
+                  if return_code_queue_map:
+                    await asyncio.sleep(sleep_duration)
+              if response is None:
+                response = await receive_message(conn)
+            if response['action'] == 'STATUS_REQUEST':
+              logging.info('control node requested status request')
+            elif response['action'] == 'CEASE_REQUESTS':
+              isIdle = True
+            elif response['action'] == 'RESUME_REQUESTS':
+              isIdle = False
+            elif response['action'] == 'SHUTDOWN':
+              logging.info('control node requested shutdown')
+              shutdown_requested = True
+            elif response['action'] == 'COMPLETE_ACCEPTED':
+              # A duplicate receipt cannot release or count another assignment.
+              continue
+            elif response['action'] == 'PROCESS':
+              if (not isinstance(response.get('path'), str) or not response['path']
+                  or not isinstance(response.get('assignmentId'), str)
+                  or not response['assignmentId']
+                  or response['assignmentId'] in assignment_map):
+                raise ValueError('invalid or duplicate video assignment')
+              video_file_path = os.path.join(args.inputpath, response['path'])
+              await conn.send(json.dumps({
+                'action': 'REQUEST_RECEIVED', 'video': response['path'],
+                'assignmentId': response['assignmentId']}))
+              start_video_processor(video_file_path, response)
+            else:
+              raise ConnectionError('unexpected control node action')
+          while return_code_queue_map:
+            await close_completed_video_processors(conn)
+            if return_code_queue_map:
+              await asyncio.sleep(sleep_duration)
+          logging.info(IO.get_processing_duration(
+            time() - start, 'snva {} processed a total of {} videos and {} frames in:'.format(
+              snva_version_string, total_num_processed_videos, total_num_processed_frames)))
+          logging.info('Video analysis alone spanned a cumulative {:.02f} '
+                       'seconds'.format(total_analysis_duration))
+          breakLoop = True
+      except socket.gaierror:
+        logging.info('control node name resolution failed')
+        await asyncio.sleep(sleep_duration)
+      except ConnectionRefusedError:
+        logging.info('connection refused')
+        break
+      except (ws.exceptions.ConnectionClosed, asyncio.TimeoutError):
+        logging.info('Connection or completion receipt lost. Attempting reconnect...')
+  finally:
+    # Child log producers and forwarders stop before the outer writer sentinel.
+    for assignment_id in list(assignment_map):
+      close_worker(assignment_id, abort=True)
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
@@ -497,9 +482,14 @@ if __name__ == '__main__':
                            ' two 0.5 values, both will be rounded up to 1.0')
   parser.add_argument('--classnamesfilepath', '-cnfp',
                       help='Path to the class ids/names text file.')
-  parser.add_argument('--controlnodehost', '-cnh', default='localhost:8080',
-                      help='control node colon-separated host name or IP and '
-                           'port')
+  parser.add_argument('--controlnodehost', '-cnh', default='localhost:8081',
+                       help='control node host:port or wss://host:port; TLS is required')
+  parser.add_argument('--tls-ca', required=True,
+                      help='PEM CA bundle trusted for control and inference servers')
+  parser.add_argument('--tls-cert', required=True,
+                      help='PEM client certificate chain for mutual TLS')
+  parser.add_argument('--tls-key', required=True,
+                      help='PEM private key for the client certificate')
   parser.add_argument('--numprocesses', '-np', type=int, default=3, 
                       help='Number of videos to process at one time')
   parser.add_argument('--crop', '-c', action='store_true',
@@ -554,7 +544,7 @@ if __name__ == '__main__':
                       help='Name of the signature that specifies what model is '
                            'being served, and that model\'s input and output '
                            'tensors')
-  parser.add_argument('--modelserverhost', '-msh', default='0.0.0.0:8500',
+  parser.add_argument('--modelserverhost', '-msh', default='localhost:8500',
                       help='tensorflow serving colon-separated host name or IP '
                            'and port')
   parser.add_argument('--numchannels', '-nc', type=int, default=3,
@@ -600,6 +590,9 @@ if __name__ == '__main__':
 
 
   args = parser.parse_args()
+  # Validate transport credentials before starting logging or media workers.
+  create_client_context(args.tls_ca, args.tls_cert, args.tls_key)
+  build_control_url(args.controlnodehost)
 
   try:
     snva_home = os.environ['SNVA_HOME']
@@ -645,33 +638,10 @@ if __name__ == '__main__':
   log_format = '%(asctime)s:%(processName)s:%(process)d:%(levelname)s:' \
                '%(module)s:%(lineno)d:%(funcName)s:%(message)s'
 
-  logger_script_path = path.join(snva_home, 'utils/logger.py')
+  configure_logging(log_file_path, log_format, log_level,
+                    args.logmode, args.logmaxbytes)
 
-  log_file_max_bytes = '{}'.format(args.logmaxbytes)
-
-  stdin = os.dup(0)
-
-  logger_subprocess = Popen(
-    ['python', logger_script_path, log_file_path, log_format, args.loglevel,
-     args.logmode, log_file_max_bytes, '{}'.format(stdin)], stdout=PIPE)
-
-  # wait for logger.py to indicate readiness
-  _ = logger_subprocess.stdout.readline()
-
-  log_handlers = [SocketHandler(
-    host='localhost', port=logging.handlers.DEFAULT_TCP_LOGGING_PORT)]
-
-  valid_log_modes = ['verbose', 'silent']
-
-  if args.logmode == 'verbose':
-    log_handlers.append(logging.StreamHandler())
-  elif not args.logmode == 'silent':
-    raise ValueError(
-      'The specified logmode is not in the set {}.'.format(valid_log_modes))
-
-  logging.basicConfig(level=log_level, format=log_format, handlers=log_handlers)
-
-  log_queue = Queue()
+  log_queue = get_context('spawn').Queue()
 
   logger_thread = Thread(target=main_logger_fn, args=(log_queue,))
 
@@ -679,18 +649,17 @@ if __name__ == '__main__':
 
   logging.debug('SNVA_HOME set to {}'.format(snva_home))
 
-  main_interrupt_queue = Queue()
+  main_interrupt_queue = get_context('spawn').Queue()
 
   try:
     asyncio.get_event_loop().run_until_complete(main())
   except Exception as e:
     logging.error(e)
-
-  logging.debug('signaling logger thread to end service.')
-  log_queue.put(None)
-
-  logger_thread.join()
-
-  logging.shutdown()
-
-  logger_subprocess.terminate()
+    raise
+  finally:
+    logging.debug('signaling logger thread to end service.')
+    log_queue.put(None)
+    logger_thread.join()
+    log_queue.close()
+    log_queue.join_thread()
+    logging.shutdown()

@@ -15,11 +15,20 @@ path = os.path
 
 
 def configure_logger(log_level, log_queue):
-  root_logger = logging.getLogger(__name__)
-  if root_logger.hasHandlers():  # Clear any handlers to avoid duplicate entries
-    root_logger.handlers.clear()
+  root_logger = logging.getLogger()
+  # Forked workers must not inherit the parent's rotating file writer.
+  for handler in root_logger.handlers[:]:
+    root_logger.removeHandler(handler)
+    handler.close()
+  worker_logger = logging.getLogger(__name__)
+  for handler in worker_logger.handlers[:]:
+    worker_logger.removeHandler(handler)
+    handler.close()
+  worker_logger.propagate = True
+  worker_logger.setLevel(logging.NOTSET)
   root_logger.setLevel(log_level)
   queue_handler = QueueHandler(log_queue)
+  queue_handler.setLevel(log_level)
   root_logger.addHandler(queue_handler)
 
 
@@ -72,7 +81,8 @@ def process_video(
     timestamp_max_width, timestamp_height, timestamp_x, timestamp_y,
     do_deinterlace, num_channels, batch_size, do_smooth_probs,
     smoothing_factor, do_binarize_probs, do_write_inference_reports,
-    do_write_event_reports, max_threads, processor_mode):
+    do_write_event_reports, max_threads, processor_mode,
+    tls_ca=None, tls_cert=None, tls_key=None):
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
@@ -180,7 +190,7 @@ def process_video(
     model_signature_name, model_server_host, model_input_size,
     do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
     timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
-    ffmpeg_command, max_threads, processor_mode)
+    ffmpeg_command, max_threads, processor_mode, tls_ca, tls_cert, tls_key)
 
   try:
     start = time()
@@ -385,7 +395,8 @@ def process_video_signalstate(
     timestamp_max_width, timestamp_height, timestamp_x, timestamp_y,
     do_deinterlace, num_channels, batch_size, do_smooth_probs,
     smoothing_factor, do_binarize_probs, do_write_bbox_reports,
-    do_write_event_reports, max_threads, processor_mode):
+    do_write_event_reports, max_threads, processor_mode,
+    tls_ca=None, tls_cert=None, tls_key=None):
   configure_logger(log_level, log_queue)
 
   interrupt_queue = Queue()
@@ -493,7 +504,7 @@ def process_video_signalstate(
   model_signature_name, model_server_host, model_input_size,
   do_extract_timestamps, timestamp_x, timestamp_y, timestamp_height,
   timestamp_max_width, do_crop, crop_x, crop_y, crop_width, crop_height,
-  ffmpeg_command, max_threads)
+  ffmpeg_command, max_threads, tls_ca, tls_cert, tls_key)
 
   try:
     start = time()

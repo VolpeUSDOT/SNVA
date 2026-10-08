@@ -6,16 +6,22 @@ services:
       image: docker.io/tensorflow/serving:2.1.4-gpu
       runtime: nvidia
       ports:
-        - 8500:8500
-        - 8501:8501
+         - 8500:8500
       volumes:
         - type: bind
-          source: <<path to the model model>>
+          source: ${SNVA_MODEL_PATH:?Set SNVA_MODEL_PATH to the SavedModel directory}
           target: /models/mobilenet_v2
+          read_only: true
+        - type: bind
+          source: ${SNVA_SERVING_TLS_CONFIG:?Set SNVA_SERVING_TLS_CONFIG to the private SSLConfig file}
+          target: /run/secrets/serving-tls.pbtxt
+          read_only: true
       environment:
-        - MODEL_NAME=mobilenet_v2
-        - CUDA_VISIBLE_DEVICES=0
-      command: --enable_batching
+         - MODEL_NAME=mobilenet_v2
+         - CUDA_VISIBLE_DEVICES=0
+      # Override the image wrapper so it cannot enable the cleartext REST port.
+      entrypoint: ["tensorflow_model_server"]
+      command: ["--port=8500", "--rest_api_port=0", "--model_name=mobilenet_v2", "--model_base_path=/models/mobilenet_v2", "--enable_batching", "--ssl_config_file=/run/secrets/serving-tls.pbtxt"]
     control:
         build: ./ControlNode
         image: control-node
@@ -23,12 +29,20 @@ services:
             - 8081:8081
         volumes:
             - type: bind
-              source: <<local path to list of video paths>>
+              source: ${SNVA_VIDEO_LIST:?Set SNVA_VIDEO_LIST to the video list file}
               target: /usr/config/Paths.txt
+              read_only: true
             - type: bind
-              source: <<local directory to save log files in>>
+              source: ${SNVA_CONTROL_LOGS:?Set SNVA_CONTROL_LOGS to the control log directory}
               target: /usr/logs
-        command: --inputFile /usr/config/Paths.txt --logDir /usr/logs
+            - type: bind
+              source: ${SNVA_CONTROL_OUTPUT:?Set SNVA_CONTROL_OUTPUT to the control output directory}
+              target: /usr/output
+            - type: bind
+              source: ${SNVA_CONTROL_TLS_DIR:?Set SNVA_CONTROL_TLS_DIR to the control certificate directory}
+              target: /run/secrets/tls
+              read_only: true
+        command: ["--inputFile", "/usr/config/Paths.txt", "--logDir", "/usr/logs", "--outputPath", "/usr/output/outputList.txt", "--tlsCa", "/run/secrets/tls/ca.pem", "--tlsCert", "/run/secrets/tls/cert.pem", "--tlsKey", "/run/secrets/tls/key.pem", "--allowedOrigin", "${SNVA_CONTROL_ORIGIN:?Set SNVA_CONTROL_ORIGIN to the exact HTTPS GUI origin}"]
     processor:
         build: .
         image: snva-processor
@@ -37,16 +51,22 @@ services:
           - "control"
         volumes:
             - type: bind
-              source: <<parent directory of model (should contain class_names.txt)>>
+              source: ${SNVA_MODEL_METADATA:?Set SNVA_MODEL_METADATA to the model metadata directory}
               target: /usr/model
+              read_only: true
             - type: bind
-              source: <<path to output directory>>
+              source: ${SNVA_PROCESSOR_OUTPUT:?Set SNVA_PROCESSOR_OUTPUT to the report directory}
               target: /usr/output
             - type: bind
-              source: <<local directory containing video files>>
+              source: ${SNVA_VIDEOS:?Set SNVA_VIDEOS to the input video directory}
               target: /usr/videos
+              read_only: true
             - type: bind
-              source: /home/bsumner/Documents/testLogs
+              source: ${SNVA_PROCESSOR_LOGS:?Set SNVA_PROCESSOR_LOGS to the processor log directory}
               target: /usr/logs
-        command: -et -cnh 0.0.0.0:8081 -msh 0.0.0.0:8500 -wir true
+            - type: bind
+              source: ${SNVA_PROCESSOR_TLS_DIR:?Set SNVA_PROCESSOR_TLS_DIR to the client certificate directory}
+              target: /run/secrets/tls
+              read_only: true
+        command: ["-et", "-cnh", "control:8081", "-msh", "analyzer:8500", "-wir", "true", "--tls-ca", "/run/secrets/tls/ca.pem", "--tls-cert", "/run/secrets/tls/cert.pem", "--tls-key", "/run/secrets/tls/key.pem"]
 

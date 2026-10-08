@@ -1,0 +1,12 @@
+.git
+.kilo
+*.xlsx
+**/__pycache__
+**/node_modules
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*tls*.pbtxt
+.env
+secrets

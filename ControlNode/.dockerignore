@@ -1,2 +1,9 @@
+.git
 node_modules
 npm-debug.log
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+secrets

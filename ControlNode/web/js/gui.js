@@ -1,6 +1,9 @@
 $(document).ready(function() {
 
-    var url = "ws://" + window.location.hostname + ":" + window.location.port + "/snvaStatus";
+    if (window.location.protocol !== "https:") {
+        throw new Error("SNVA status requires HTTPS and a trusted client certificate");
+    }
+    var url = "wss://" + window.location.host + "/snvaStatus";
     const socket = new WebSocket(url);
 
     socket.addEventListener('message', function (event) {

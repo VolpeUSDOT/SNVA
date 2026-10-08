@@ -8,3 +8,10 @@ models
 checkpoints
 .vscode
 utils/__pycache__
+**/__pycache__/
+*.pem
+*.key
+*.p12
+*.pfx
+*tls*.pbtxt
+secrets/
