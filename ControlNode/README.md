@@ -4,13 +4,13 @@ The Control Node for the SNVA v0.2.2 Architecture Design. The control node is re
 
 ## Requirements
 
-- Node.js 12.15.0 LTS
+- Node.js 24 LTS
 
 ## Installation
 
 Download the application and in its directory run
 ```
-npm install 
+npm ci
 ```
 to download all required dependencies
 
